@@ -301,7 +301,7 @@ export function createServer(options: ServerOptions = {}) {
           const resynced = resyncClock(state, Date.now());
           setState(orgId, { ...state, ...resynced, sequenceId: state.sequenceId + 1 }, matchId);
         })
-        .catch(err => console.error(`[relay] failed to acquire tick lock for room ${room}`, err));
+        .catch(err => console.error("[relay] failed to acquire tick lock for room", room, err));
     }
   }, 1000);
 
