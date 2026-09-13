@@ -20,8 +20,8 @@
     "@scorehub/db": "*",
     "@scorehub/types": "*",
     "@sentry/nextjs": "^10.71.0",
-    "@simplewebauthn/browser": "^13.3.0",
-    "@simplewebauthn/server": "^13.3.3",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.1",
     "@stripe/react-stripe-js": "^6.8.2",
     "@stripe/stripe-js": "^9.14.0",
     "bcryptjs": "^3.0.3",
@@ -46,14 +46,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^9",
     "eslint-config-next": "^16.3.3",
     "jsdom": "^30.0.1",
     "postcss": "^8.5.26",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.0"
   },
   "overrides": {
     "uuid": "^11.1.1"
