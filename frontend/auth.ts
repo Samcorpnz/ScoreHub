@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import {
   verifyAuthenticationResponse,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
+  type AuthenticatorTransport,
 } from "@simplewebauthn/server";
 import { prisma, Role, recordAuditEvent } from "@scorehub/db";
 import { isRateLimited, clientIp } from "@/lib/rateLimit";
@@ -184,7 +184,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               id: authenticator.credentialId,
               publicKey: Buffer.from(authenticator.publicKey, "base64url"),
               counter: Number(authenticator.counter),
-              transports: authenticator.transports as AuthenticatorTransportFuture[],
+              transports: authenticator.transports as AuthenticatorTransport[],
             },
           });
         } catch {
