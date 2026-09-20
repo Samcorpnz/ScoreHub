@@ -12,7 +12,7 @@
     "test:coverage": "jest --coverage --coverageReporters=lcov --coverageReporters=text-summary"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1119.0",
+    "@aws-sdk/client-s3": "^3.1134.0",
     "@logtail/node": "^0.5.8",
     "@scorehub/db": "*",
     "@scorehub/types": "*",
@@ -25,10 +25,10 @@
     "express-rate-limit": "^8.6.0",
     "ioredis": "^6.0.0",
     "jose": "^6.2.9",
-    "jsdom": "^30.0.1",
-    "multer": "^2.2.0",
+    "jsdom": "^30.1.0",
+    "multer": "^2.4.0",
     "socket.io": "^4.8.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -37,7 +37,7 @@
     "@types/jest": "^30.0.0",
     "@types/jsdom": "^30.0.0",
     "@types/multer": "^2.2.0",
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.6.1",
     "@types/supertest": "^7.2.1",
     "jest": "^30.4.2",
     "socket.io-client": "^4.8.3",
