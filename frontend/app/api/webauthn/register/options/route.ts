@@ -3,7 +3,7 @@ import { generateRegistrationOptions } from "@simplewebauthn/server";
 import { prisma } from "@scorehub/db";
 import { auth } from "@/auth";
 import { isRateLimited } from "@/lib/rateLimit";
-import { createChallenge, rpID, rpName } from "@/lib/webauthn";
+import { createChallenge, rpID, rpName, supportedAlgorithmIDs } from "@/lib/webauthn";
 
 export async function POST(_req: NextRequest) {
   const session = await auth();
@@ -29,9 +29,10 @@ export async function POST(_req: NextRequest) {
     userName: user.email,
     userDisplayName: user.name,
     attestationType: "none",
+    supportedAlgorithmIDs,
     excludeCredentials: user.authenticators.map((a) => ({
       id: a.credentialId,
-      transports: a.transports as ("ble" | "cable" | "hybrid" | "internal" | "nfc" | "smart-card" | "usb")[],
+      transports: a.transports,
     })),
     authenticatorSelection: {
       residentKey: "required",
