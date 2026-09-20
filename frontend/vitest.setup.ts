@@ -1,4 +1,12 @@
-import "@testing-library/jest-dom/vitest";
+import { expect } from "vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
+
+// Not `@testing-library/jest-dom/vitest`: that entry point does its own
+// `import "vitest"`, resolved from jest-dom's location — so it only works if
+// vitest happens to be hoisted next to it in the workspace's node_modules.
+// Registering the matchers against this package's own `expect` doesn't care
+// where npm places things.
+expect.extend(matchers);
 
 // Node's own experimental global `localStorage` getter shadows jsdom's
 // working implementation and throws when accessed without a CLI flag.
