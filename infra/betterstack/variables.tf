@@ -27,3 +27,43 @@ variable "check_frequency_seconds" {
   type        = number
   default     = 30
 }
+
+# SA-109 — internal-only deep health check
+
+variable "deep_health_secret" {
+  description = <<-EOT
+    Shared secret sent as the x-deep-health-secret header when polling
+    relay's GET /health/deep (SA-109) — must match the relay deployment's
+    DEEP_HEALTH_SECRET env var. No default; set via TF_VAR_deep_health_secret
+    or a .tfvars file that's gitignored, same as BETTERUPTIME_API_TOKEN.
+  EOT
+  type        = string
+  sensitive   = true
+}
+
+# SA-111 — marketing/help/downloads Workers + uat status page
+
+variable "marketing_url" {
+  description = "Marketing site (marketing/wrangler.jsonc's production custom_domain)."
+  type        = string
+  default     = "https://scorehub.co.nz"
+}
+
+variable "help_url" {
+  description = "Help centre (help/wrangler.jsonc's production custom_domain)."
+  type        = string
+  default     = "https://help.scorehub.co.nz"
+}
+
+variable "downloads_url" {
+  description = "Downloads redirect Worker (downloads/wrangler.jsonc's production custom_domain)."
+  type        = string
+  default     = "https://downloads.scorehub.co.nz"
+}
+
+# A private uat status page was scoped out for now (2026-08-24): the
+# frontend uat hostname (app.uat.scorehub.co.nz) sits behind a two-layer
+# block (Cloudflare Access + Vercel deployment protection, see
+# docs/uat-environment.md), so a plain monitor would just show perpetually
+# down without the same bypass dance documented there for the Stripe
+# webhook fix. Revisit if uat monitoring becomes worth that setup cost.

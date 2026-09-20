@@ -32,11 +32,28 @@ export interface ServerOptions {
   controlSecret?: string;
   graphicsSecret?: string;
   dataFeedSecret?: string;
+  deepHealthSecret?: string;
   displayTokenRequired?: boolean;
   uploadDir?: string;
   allowedOrigins?: string | string[];
   controlRateLimit?: number;
   controllerTokenTtlMs?: number;
+}
+
+// Bounds a dependency check so a hung Postgres/Redis connection degrades
+// GET /health/deep's response instead of hanging the request indefinitely.
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 // Constant-time secret/token compare — same approach as auth.ts's
@@ -121,6 +138,10 @@ export function createServer(options: ServerOptions = {}) {
   // add-on is opt-in, left unset means legacy-mode data-feed auth always
   // fails closed until an operator configures it.
   const DATA_FEED_SECRET = options.dataFeedSecret || process.env.DATA_FEED_SECRET || "";
+  // Gates GET /health/deep (SA-109) — internal-only, so left unset means
+  // that route always 401s rather than becoming a public info-leak/DoS
+  // surface (it touches Postgres/Redis, unlike the public /health above).
+  const DEEP_HEALTH_SECRET = options.deepHealthSecret || process.env.DEEP_HEALTH_SECRET || "";
   // Display-URL lockdown rollout flag (see the Match.displayToken column
   // comment in packages/db/prisma/schema.prisma) — false/unset validates a
   // token IF one is present but still allows requests with none at all, so
@@ -635,6 +656,44 @@ export function createServer(options: ServerOptions = {}) {
   // this process is alive, not whether its backing stores are reachable.
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // Internal-only dependency + live-match-loss signal (SA-109), separate from
+  // the shallow /health above so Fly's own healthcheck (which polls /health)
+  // never restart-loops on a downstream Postgres/Redis blip (SA-29). Gated by
+  // a shared secret rather than left public, since a DB/Redis reachability
+  // probe is exactly the kind of endpoint that shouldn't be discoverable.
+  app.get("/health/deep", async (req, res) => {
+    const secret = req.headers["x-deep-health-secret"];
+    if (!DEEP_HEALTH_SECRET || typeof secret !== "string" || !tokensEqual(secret, DEEP_HEALTH_SECRET)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+
+    const [postgres, redis] = await Promise.all([
+      !process.env.DATABASE_URL
+        ? Promise.resolve("skipped" as const)
+        : withTimeout(prisma.$queryRaw`SELECT 1`, 3000).then(() => "ok" as const).catch(() => "error" as const),
+      (() => {
+        const redisClients = getRedisClients();
+        return !redisClients
+          ? Promise.resolve("skipped" as const)
+          : withTimeout(redisClients.pub.ping(), 3000).then(() => "ok" as const).catch(() => "error" as const);
+      })(),
+    ]);
+
+    // matchStates/roomCounts are this instance's in-memory view only — a
+    // multi-instance deployment (SA-19) needs its own monitor per instance
+    // to see each one's slice, same as any other single-process metric.
+    let activeMatches = 0;
+    for (const entry of matchStates.values()) {
+      if (entry.state.isRunning) activeMatches++;
+    }
+    let connectedSockets = 0;
+    for (const count of roomCounts.values()) connectedSockets += count;
+
+    const ok = postgres !== "error" && redis !== "error";
+    res.status(ok ? 200 : 503).json({ postgres, redis, activeMatches, connectedSockets });
   });
 
   // Used by the Stream Deck plugin on startup: exchange a CONTROL token for
