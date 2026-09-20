@@ -27,6 +27,7 @@ vi.mock("@/lib/webauthn", () => ({
   consumeChallenge: (...a: unknown[]) => consumeChallengeMock(...a),
   rpID: () => "localhost",
   expectedOrigin: () => "http://localhost:3000",
+  supportedAlgorithmIDs: [-8, -7, -257],
 }));
 
 function validClientDataJSON(challenge: string) {
@@ -146,6 +147,9 @@ describe("POST /api/webauthn/register/verify", () => {
     const { POST } = await import("../route");
     const res = await POST(makeRequest({ response: makeResponse(), name: "My laptop" }));
 
+    expect(verifyRegistrationResponseMock).toHaveBeenCalledWith(
+      expect.objectContaining({ supportedAlgorithmIDs: [-8, -7, -257] }),
+    );
     expect(authenticatorCreateMock).toHaveBeenCalledWith({
       data: {
         userId: "u1",
