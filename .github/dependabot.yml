@@ -9,23 +9,9 @@ updates:
         patterns: ["*"]
     open-pull-requests-limit: 10
     ignore:
-      # ts-jest@29.x (relay's test runner) and Next.js 16.2.12's TypeScript
-      # integration (frontend's build) don't support TypeScript 7 yet. Revisit
-      # once those tools ship compatible releases.
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: npm
-    directory: "/bridge"
-    schedule:
-      interval: weekly
-    groups:
-      npm-dependencies:
-        patterns: ["*"]
-    open-pull-requests-limit: 10
-    ignore:
-      # ts-jest@29.x doesn't support TypeScript 7 yet (peer range >=4.3 <7),
-      # which breaks bridge's Jest suite. Revisit once ts-jest ships support.
+      # ts-jest@29.x (relay's and bridge's test runner) and Next.js 16.2.12's
+      # TypeScript integration (frontend's build) don't support TypeScript 7
+      # yet. Revisit once those tools ship compatible releases.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
