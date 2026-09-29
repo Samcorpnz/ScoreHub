@@ -103,20 +103,32 @@ jobs:
 
   # Playwright suite against a full docker-compose stack (postgres/redis/
   # relay/frontend) — see frontend/e2e/playwright.config.ts and CLAUDE.md's
-  # "no hosted staging" note. New and untested as a CI job (previously only
-  # ever run manually), and it now also depends on a real external network
+  # "no hosted staging" note. It also depends on a real external network
   # call (Stripe test-mode API + CLI) on top of the relay-contention
   # flakiness the suite's own comments already document even without Stripe
-  # in the mix — continue-on-error keeps it informational rather than a
-  # required check until it's proven stable over a bake-in period.
-  # `npm run test:e2e` excludes the @full-sports-tagged deep per-sport spec
-  # (frontend/e2e/specs/sport-rules.spec.ts) by default; that one runs via
-  # `npm run test:e2e:full-sports`, on demand, not in this job.
+  # in the mix.
+  #
+  # Two tiers (SA-30):
+  #   * @critical (frontend/e2e/specs/control-to-display.spec.ts) — the
+  #     control -> relay -> display scoring/clock path. This is the tier that
+  #     must fail CI on a scoring/clock regression. It runs FIRST and is the
+  #     only step that decides whether this job fails.
+  #   * everything else (`test:e2e:rest`) — stays informational
+  #     (continue-on-error) because billing needs live Stripe test-mode calls.
+  #
+  # The gate is switched by the repo variable E2E_CRITICAL_GATE (Settings ->
+  # Secrets and variables -> Actions -> Variables). Unset/anything but "true"
+  # keeps the whole job informational, as it was before SA-30, so the new
+  # critical spec can bake in CI before it can block a deploy. Set it to
+  # "true" once it has been green for a bake-in period; deploy.yml and
+  # deploy-uat.yml both `needs: test`, so from then on a red critical spec
+  # blocks the deploy. `npm run test:e2e:full-sports` (the deep per-sport
+  # spec) remains on-demand and is not part of this job.
   test-e2e:
     name: E2E (Playwright, docker-compose)
     runs-on: ubuntu-latest
     needs: [test-relay, test-frontend]
-    continue-on-error: true
+    continue-on-error: ${{ vars.E2E_CRITICAL_GATE != 'true' }}
     env:
       AUTH_SECRET: ci-placeholder-secret
       # Test-mode Stripe account only (acct_1Tl1sw... per CLAUDE.md) — named
@@ -184,7 +196,15 @@ jobs:
       # override the in-container default and point Prisma at the container's
       # own localhost (no Postgres there). Only the Playwright process on the
       # runner host needs it, via the published 5432 port (e2e/helpers/billing.ts).
-      - run: npm run test:e2e
+      - name: E2E critical path (control -> relay -> display)
+        run: npm run test:e2e:critical
+        env:
+          DATABASE_URL: postgresql://scorehub:scorehub@localhost:5432/scorehub
+
+      - name: E2E remaining specs (informational)
+        if: always()
+        continue-on-error: true
+        run: npm run test:e2e:rest
         env:
           DATABASE_URL: postgresql://scorehub:scorehub@localhost:5432/scorehub
 

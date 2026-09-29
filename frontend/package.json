@@ -11,6 +11,8 @@
     "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run",
     "test:coverage": "NODE_OPTIONS=--no-experimental-webstorage vitest run --coverage",
     "test:e2e": "playwright test --config=e2e/playwright.config.ts --grep-invert @full-sports",
+    "test:e2e:critical": "playwright test --config=e2e/playwright.config.ts --grep @critical",
+    "test:e2e:rest": "playwright test --config=e2e/playwright.config.ts --grep-invert \"@critical|@full-sports\"",
     "test:e2e:ui": "playwright test --ui --config=e2e/playwright.config.ts",
     "test:e2e:full-sports": "playwright test --config=e2e/playwright.config.ts --grep @full-sports"
   },
