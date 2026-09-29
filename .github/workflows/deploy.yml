@@ -49,6 +49,30 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+  # Post-deploy smoke test (SA-30): credential-free checks against the LIVE
+  # relay and frontend once both deploys (each behind the production
+  # reviewer gate) have finished — see scripts/smoke.mjs. It can't roll back,
+  # it makes a bad deploy loudly red instead of silently live. Needs no
+  # secrets and no environment approval. Override the URLs with the repo
+  # variables SMOKE_RELAY_URL / SMOKE_FRONTEND_URL.
+  smoke-test:
+    name: Post-deploy smoke test
+    needs: [deploy-relay, deploy-frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL || 'https://scorehub-relay.fly.dev' }}
+      SMOKE_FRONTEND_URL: ${{ vars.SMOKE_FRONTEND_URL || 'https://app.scorehub.co.nz' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --frontend "$SMOKE_FRONTEND_URL" --expect multi --wait 180
+
   deploy-marketing:
     name: Deploy marketing site (Cloudflare Worker)
     needs: test
