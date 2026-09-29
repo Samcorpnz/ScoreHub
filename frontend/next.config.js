@@ -20,7 +20,9 @@ const nextConfig = {
   },
 };
 
-const { withSentryConfig } = require("@sentry/nextjs");
+// @sentry/nextjs 11 moved this export out of the package root and into a
+// dedicated build-config subpath.
+const { withSentryConfig } = require("@sentry/nextjs/config");
 
 // Wraps the build to upload source maps to Sentry so production/UAT stack
 // traces are readable instead of minified. No-op without SENTRY_AUTH_TOKEN
