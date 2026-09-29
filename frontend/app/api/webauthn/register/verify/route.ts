@@ -3,7 +3,7 @@ import { verifyRegistrationResponse, type RegistrationResponseJSON } from "@simp
 import { prisma, recordAuditEvent } from "@scorehub/db";
 import { auth } from "@/auth";
 import { isRateLimited } from "@/lib/rateLimit";
-import { consumeChallenge, expectedOrigin, rpID } from "@/lib/webauthn";
+import { consumeChallenge, expectedOrigin, rpID, supportedAlgorithmIDs } from "@/lib/webauthn";
 import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       expectedChallenge: clientData.challenge,
       expectedOrigin: expectedOrigin(),
       expectedRPID: rpID(),
+      supportedAlgorithmIDs,
     });
   } catch (err) {
     // Individual failures are often legitimate (stale/replayed response,

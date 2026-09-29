@@ -14,7 +14,7 @@ vi.mock("@scorehub/db", () => ({
   },
 }));
 
-import { rpID, expectedOrigin, rpName, createChallenge, consumeChallenge } from "../webauthn";
+import { rpID, expectedOrigin, rpName, supportedAlgorithmIDs, createChallenge, consumeChallenge } from "../webauthn";
 
 describe("webauthn helpers", () => {
   const originalUrl = process.env.NEXTAUTH_URL;
@@ -56,6 +56,10 @@ describe("webauthn helpers", () => {
       delete process.env.NEXTAUTH_URL;
       expect(expectedOrigin()).toBe("http://localhost:3000");
     });
+  });
+
+  it("supportedAlgorithmIDs is pinned to EdDSA/ES256/RS256 — no post-quantum ML-DSA (-48/-49/-50)", () => {
+    expect(supportedAlgorithmIDs).toEqual([-8, -7, -257]);
   });
 
   it("rpName is a fixed constant", () => {

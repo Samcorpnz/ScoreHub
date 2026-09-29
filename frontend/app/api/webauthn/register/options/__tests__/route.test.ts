@@ -26,6 +26,7 @@ vi.mock("@/lib/webauthn", () => ({
   createChallenge: (...a: unknown[]) => createChallengeMock(...a),
   rpID: () => "localhost",
   rpName: "ScoreHub",
+  supportedAlgorithmIDs: [-8, -7, -257],
 }));
 
 function makeRequest() {
@@ -80,6 +81,7 @@ describe("POST /api/webauthn/register/options", () => {
       expect.objectContaining({
         rpName: "ScoreHub",
         rpID: "localhost",
+        supportedAlgorithmIDs: [-8, -7, -257],
         userName: "a@b.com",
         userDisplayName: "A",
         excludeCredentials: [{ id: "cred-1", transports: ["internal"] }],

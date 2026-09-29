@@ -20,6 +20,13 @@ export function expectedOrigin(): string {
 
 export const rpName = "ScoreHub";
 
+// COSE algorithms accepted for new passkeys: EdDSA, ES256, RS256 — the
+// @simplewebauthn/server v13 defaults. v14 additionally prefers post-quantum
+// ML-DSA-44 first whenever the runtime supports it, which would make the
+// algorithm of newly registered passkeys depend on the deploy's Node version.
+// Pin explicitly and opt in to PQC deliberately, not via a dependency bump.
+export const supportedAlgorithmIDs = [-8, -7, -257];
+
 export async function createChallenge(
   challenge: string,
   purpose: WebAuthnChallengePurpose,
