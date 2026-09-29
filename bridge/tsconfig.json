@@ -11,5 +11,9 @@
     "skipLibCheck": true,
     "types": ["node", "jest"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  // Tests are type-checked by ts-jest at test time. Keeping them out of the
+  // build also keeps them out of dist/ (and the packaged installer), and lets
+  // contract tests import the relay's schemas from outside rootDir.
+  "exclude": ["src/**/__tests__/**"]
 }
