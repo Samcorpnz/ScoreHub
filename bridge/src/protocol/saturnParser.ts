@@ -210,7 +210,10 @@ function applyPoints(
   for (let i = 0; i < Math.min(16, players.length); i++) {
     const base = 3 + i * 2;
     if (base + 1 >= raw.length) break;
-    const points = (raw[base] - 0x30) * 10 + (raw[base + 1] - 0x30);
+    // Non-digit bytes (e.g. a space-padded field) count as 0. Subtracting
+    // 0x30 unchecked yields a negative number, which the relay's stateUpdate
+    // schema rejects for the *whole* state — freezing every display.
+    const points = digitOrZero(raw[base]) * 10 + digitOrZero(raw[base + 1]);
     players[i] = { ...players[i], points };
   }
 
@@ -271,11 +274,16 @@ function applyDateTime(raw: Buffer, state: MatchState): MatchState {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Digits only: parseInt would happily read "-5" as -5 or "12x" as 12, and a
+// negative score is rejected by the relay's stateUpdate schema (see applyPoints).
 function parsePaddedInt(buf: Buffer): number | null {
   const s = buf.toString("ascii").trim();
-  if (s === "") return null;
-  const n = Number.parseInt(s, 10);
-  return Number.isNaN(n) ? null : n;
+  if (!/^\d+$/.test(s)) return null;
+  return Number.parseInt(s, 10);
+}
+
+function digitOrZero(byte: number): number {
+  return byte >= 0x30 && byte <= 0x39 ? byte - 0x30 : 0;
 }
 
 function parseSingleDigit(byte: number): number | null {

@@ -244,6 +244,49 @@ describe("applySaturnMessage 'F3' / 'F4'", () => {
   });
 });
 
+describe("applySaturnMessage — non-numeric bytes never produce a negative number", () => {
+  // The relay's stateUpdate schema rejects a negative score or points value for
+  // the whole state, which freezes every display until the field is valid again.
+  const withPlayer = (): MatchState => ({
+    ...freshState(),
+    home: { ...DEFAULT_MATCH_STATE.home, players: [{ number: 7, name: "", onCourt: true, faults: 0, points: 4 }] },
+  });
+
+  it("F3 treats a space-padded points field as 0, not a negative value", () => {
+    const next = applySaturnMessage({ type: "F3", raw: buildFrame("F3", [0x20, 0x20]) }, withPlayer());
+    expect(next.home.players[0].points).toBe(0);
+  });
+
+  it("F3 reads a right-aligned single digit (' 5') as 5", () => {
+    const next = applySaturnMessage({ type: "F3", raw: buildFrame("F3", [0x20, 0x35]) }, withPlayer());
+    expect(next.home.players[0].points).toBe(5);
+  });
+
+  it("F3 stays within 0-99 for arbitrary bytes", () => {
+    for (const [a, b] of [[0x00, 0xff], [0x2d, 0x39], [0x7f, 0x80], [0x3a, 0x3a]]) {
+      const next = applySaturnMessage({ type: "F3", raw: buildFrame("F3", [a, b]) }, withPlayer());
+      expect(next.home.players[0].points).toBeGreaterThanOrEqual(0);
+      expect(next.home.players[0].points).toBeLessThanOrEqual(99);
+    }
+  });
+
+  it("D keeps the previous score when the score field is not a plain number ('-5 ')", () => {
+    const start: MatchState = { ...freshState(), home: { ...DEFAULT_MATCH_STATE.home, score: 12 } };
+    const data = [...D_DATA];
+    data.splice(6, 3, 0x2d, 0x35, 0x20); // home score field raw[8..10] -> "-5 " (D_DATA is offset by 2)
+    const next = applySaturnMessage({ type: "D", raw: buildFrame("D", data) }, start);
+    expect(next.home.score).toBe(12);
+  });
+
+  it("D keeps the previous score for a field with trailing junk ('12x')", () => {
+    const start: MatchState = { ...freshState(), home: { ...DEFAULT_MATCH_STATE.home, score: 30 } };
+    const data = [...D_DATA];
+    data.splice(6, 3, 0x31, 0x32, 0x78);
+    const next = applySaturnMessage({ type: "D", raw: buildFrame("D", data) }, start);
+    expect(next.home.score).toBe(30);
+  });
+});
+
 // ─── applySaturnMessage — 'N' names ──────────────────────────────────────────
 
 describe("applySaturnMessage 'N'", () => {
