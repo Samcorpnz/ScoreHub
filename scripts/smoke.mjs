@@ -11,13 +11,23 @@
 // Against a multi-tenant relay (the default expectation) it also proves the
 // database round trip works: `GET /state?matchId=<unknown>` must answer a clean
 // 400 (a real Prisma lookup returned "no such match"), not a 500 or a hang.
+//
+// Authenticated checks (SA-30): with the smoke org's credentials in the
+// environment it also drives a real match through the relay — a score change and
+// a clock start/stop made with a match-pinned CONTROL token must reach a live
+// viewer socket, and the score is always restored afterwards. Provision the
+// org with `npm run smoke:provision --workspace=relay` (docs/smoke-org.md), then
+// set SMOKE_CONTROL_TOKEN, SMOKE_ORG_ID, SMOKE_MATCH_ID, SMOKE_DISPLAY_TOKEN.
+//   --auth optional (default)  skip, loudly, when the credentials are absent
+//   --auth required            fail when they are absent (use once configured)
+//   --auth off                 never run them
 // Exit code: 0 all passed, 1 a check failed, 2 usage error.
 
 import { io } from "socket.io-client";
 import crypto from "node:crypto";
 
 function parseArgs(argv) {
-  const out = { expect: "multi", wait: 120 };
+  const out = { expect: "multi", wait: 120, auth: "optional" };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const v = () => argv[++i];
@@ -25,10 +35,12 @@ function parseArgs(argv) {
     else if (k === "--frontend") out.frontend = String(v() ?? "").replace(/\/$/, "");
     else if (k === "--expect") out.expect = v();
     else if (k === "--wait") out.wait = Number(v());
+    else if (k === "--auth") out.auth = v();
     else throw new Error(`unknown argument ${JSON.stringify(k)}`);
   }
   if (!out.relay && !out.frontend) throw new Error("give at least one of --relay / --frontend");
   if (!["multi", "legacy"].includes(out.expect)) throw new Error('--expect must be "multi" or "legacy"');
+  if (!["optional", "required", "off"].includes(out.auth)) throw new Error('--auth must be "optional", "required" or "off"');
   if (!Number.isFinite(out.wait) || out.wait < 0) throw new Error("--wait must be a non-negative number of seconds");
   return out;
 }
@@ -143,16 +155,145 @@ function buildChecks(cfg) {
   return checks;
 }
 
+
+// ─── Authenticated checks ────────────────────────────────────────────────────
+
+function readCreds(env) {
+  return { control: env.SMOKE_CONTROL_TOKEN, org: env.SMOKE_ORG_ID, match: env.SMOKE_MATCH_ID, display: env.SMOKE_DISPLAY_TOKEN };
+}
+
+function credsMissing(cfg, c) {
+  const need = cfg.expect === "legacy"
+    ? [["SMOKE_CONTROL_TOKEN", c.control]]
+    : [["SMOKE_CONTROL_TOKEN", c.control], ["SMOKE_ORG_ID", c.org], ["SMOKE_MATCH_ID", c.match], ["SMOKE_DISPLAY_TOKEN", c.display]];
+  return need.filter(([, v]) => !v).map(([k]) => k);
+}
+
+// A viewer socket exactly as a display page opens one (org + match + display
+// token, no secret), which remembers the latest state and lets a check wait
+// for a state satisfying a predicate.
+function openViewer(cfg, c) {
+  const auth = cfg.expect === "legacy" ? {} : { orgId: c.org, matchId: c.match, token: c.display };
+  return new Promise((resolve, reject) => {
+    const socket = io(cfg.relay, { auth, reconnection: false, transports: ["websocket"], timeout: 10_000 });
+    const viewer = { socket, state: null, lastSeq: -1, regressions: 0, waiters: [] };
+    socket.on("matchStateChange", state => {
+      if (viewer.state && state.sequenceId < viewer.lastSeq) viewer.regressions++;
+      viewer.lastSeq = Math.max(viewer.lastSeq, state.sequenceId);
+      viewer.state = state;
+      viewer.waiters = viewer.waiters.filter(w => { if (w.pred(state)) { w.resolve(state); return false; } return true; });
+    });
+    viewer.waitFor = (pred, ms, what) => new Promise((res, rej) => {
+      if (viewer.state && pred(viewer.state)) return res(viewer.state);
+      const timer = setTimeout(() => rej(new Error(`viewer never saw ${what} within ${ms}ms`)), ms);
+      viewer.waiters.push({ pred, resolve: st => { clearTimeout(timer); res(st); } });
+    });
+    viewer.close = () => socket.close();
+    socket.once("connect_error", err => reject(new Error(`viewer socket refused: ${err.message}`)));
+    viewer.waitFor(() => true, 10_000, "an initial state").then(() => resolve(viewer), reject);
+  });
+}
+
+const control = (cfg, c) => (path, init = {}) =>
+  get(`${cfg.relay}${path}`, { method: "POST", headers: { "x-control-secret": c.control }, ...init });
+
+async function readState(cfg, c) {
+  const q = cfg.expect === "legacy" ? "" : `?org=${encodeURIComponent(c.org)}&matchId=${encodeURIComponent(c.match)}&token=${encodeURIComponent(c.display)}`;
+  const res = await get(`${cfg.relay}/state${q}`);
+  expectStatus(res, [200], "relay /state for the smoke match");
+  return res.json();
+}
+
+function authChecks(cfg, c) {
+  const post = control(cfg, c);
+  return [
+    {
+      name: "smoke control token is valid and pinned to the smoke match",
+      run: async () => {
+        const res = await get(`${cfg.relay}/api/me`, { headers: { "x-control-secret": c.control } });
+        expectStatus(res, [200], "relay /api/me with the smoke control token");
+        const body = await res.json();
+        if (cfg.expect === "multi" && (body.orgId !== c.org || body.matchId !== c.match)) {
+          throw new Error(`token resolves to org=${body.orgId} match=${body.matchId}, expected org=${c.org} match=${c.match} (wrong or unpinned token?)`);
+        }
+      },
+      retry: true,
+    },
+    {
+      // Not retried: each attempt mutates the match. The score is put back in
+      // `finally` whatever happens, so a failed attempt never leaves it changed.
+      name: "score change reaches a live viewer (control token -> relay -> socket), then is restored",
+      retry: false,
+      run: async () => {
+        const viewer = await openViewer(cfg, c);
+        const base = viewer.state.home.score;
+        try {
+          const t0 = Date.now();
+          const res = await post("/action/score/home?delta=1");
+          expectStatus(res, [200], "POST /action/score/home");
+          const body = await res.json();
+          if (body.score !== base + 1) throw new Error(`relay reported score ${body.score}, expected ${base + 1}`);
+          await viewer.waitFor(st => st.home.score === base + 1, 5000, `home score ${base + 1}`);
+          const ms = Date.now() - t0;
+          if (ms > 5000) throw new Error(`score took ${ms}ms to reach the viewer`);
+          if (viewer.regressions > 0) throw new Error("viewer saw a sequenceId go backwards");
+        } finally {
+          try {
+            const now = await readState(cfg, c);
+            if (now.home.score !== base) {
+              const delta = Math.max(-99, Math.min(99, base - now.home.score));
+              await post(`/action/score/home?delta=${delta}`);
+            }
+          } finally {
+            viewer.close();
+          }
+        }
+      },
+    },
+    {
+      name: "clock start/stop reaches a live viewer",
+      retry: false,
+      run: async () => {
+        const viewer = await openViewer(cfg, c);
+        try {
+          if (viewer.state.isRunning) await post("/action/stop"); // start from a known state
+          await viewer.waitFor(st => !st.isRunning, 5000, "a stopped clock");
+          expectStatus(await post("/action/start"), [200], "POST /action/start");
+          await viewer.waitFor(st => st.isRunning, 5000, "a running clock");
+          expectStatus(await post("/action/stop"), [200], "POST /action/stop");
+          await viewer.waitFor(st => !st.isRunning, 5000, "a stopped clock again");
+        } finally {
+          try { await post("/action/stop"); } finally { viewer.close(); }
+        }
+      },
+    },
+  ];
+}
+
 async function main() {
   let cfg;
   try { cfg = parseArgs(process.argv.slice(2)); } catch (err) { console.error(err.message); process.exit(2); }
 
   console.log(`smoke test: relay=${cfg.relay ?? "-"} frontend=${cfg.frontend ?? "-"} expect=${cfg.expect} wait=${cfg.wait}s`);
   const results = [];
-  for (const check of buildChecks(cfg)) {
+  const checks = buildChecks(cfg);
+
+  if (cfg.relay && cfg.auth !== "off") {
+    const creds = readCreds(process.env);
+    const missing = credsMissing(cfg, creds);
+    if (missing.length === 0) {
+      checks.push(...authChecks(cfg, creds));
+    } else if (cfg.auth === "required") {
+      checks.push({ name: "authenticated smoke checks are configured", run: async () => { throw new Error(`missing ${missing.join(", ")}`); }, retry: false });
+    } else {
+      console.log(`  SKIP  authenticated checks — not configured (missing ${missing.join(", ")}); see docs/smoke-org.md`);
+    }
+  }
+
+  for (const check of checks) {
     const t0 = Date.now();
     try {
-      await retrying(check.run, cfg.wait);
+      await retrying(check.run, check.retry === false ? 0 : cfg.wait);
       console.log(`  ok    ${check.name} (${Date.now() - t0}ms)`);
       results.push({ name: check.name, ok: true });
     } catch (err) {

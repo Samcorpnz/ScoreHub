@@ -49,20 +49,37 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-  # Post-deploy smoke test (SA-30): credential-free checks against the LIVE
-  # relay and frontend once both deploys (each behind the production
-  # reviewer gate) have finished — see scripts/smoke.mjs. It can't roll back,
-  # it makes a bad deploy loudly red instead of silently live. Needs no
-  # secrets and no environment approval. Override the URLs with the repo
-  # variables SMOKE_RELAY_URL / SMOKE_FRONTEND_URL.
+  # Post-deploy smoke test (SA-30) against the LIVE relay and frontend once both
+  # deploys (each behind the production reviewer gate) have finished — see
+  # scripts/smoke.mjs and docs/smoke-org.md. It can't roll back; it makes a bad
+  # deploy loudly red instead of silently live.
+  #
+  # Unauthenticated checks need no configuration. The authenticated checks
+  # (a score change made with a match-pinned CONTROL token must reach a viewer
+  # socket AND the rendered display page in a real browser) need the smoke org's
+  # credentials: repo variables SMOKE_ORG_ID / SMOKE_MATCH_ID and secrets
+  # SMOKE_CONTROL_TOKEN / SMOKE_DISPLAY_TOKEN, created by
+  # `npm run smoke:provision --workspace=relay -- --env prod`. Until they exist
+  # the authenticated part is SKIPPED (not failed); set the repo variable
+  # SMOKE_AUTH_MODE=required once configured so a missing credential fails loudly.
   smoke-test:
     name: Post-deploy smoke test
     needs: [deploy-relay, deploy-frontend]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # Every run scores +1 then -1 on the one smoke match; two overlapping runs
+    # would corrupt each other's baseline, so they queue rather than cancel.
+    concurrency:
+      group: smoke-prod
+      cancel-in-progress: false
     env:
       SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL || 'https://scorehub-relay.fly.dev' }}
       SMOKE_FRONTEND_URL: ${{ vars.SMOKE_FRONTEND_URL || 'https://app.scorehub.co.nz' }}
+      SMOKE_AUTH_MODE: ${{ vars.SMOKE_AUTH_MODE || 'optional' }}
+      SMOKE_ORG_ID: ${{ vars.SMOKE_ORG_ID }}
+      SMOKE_MATCH_ID: ${{ vars.SMOKE_MATCH_ID }}
+      SMOKE_CONTROL_TOKEN: ${{ secrets.SMOKE_CONTROL_TOKEN }}
+      SMOKE_DISPLAY_TOKEN: ${{ secrets.SMOKE_DISPLAY_TOKEN }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -71,7 +88,23 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci --ignore-scripts
-      - run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --frontend "$SMOKE_FRONTEND_URL" --expect multi --wait 180
+      - name: Relay + frontend smoke checks
+        run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --frontend "$SMOKE_FRONTEND_URL" --expect multi --auth "$SMOKE_AUTH_MODE" --wait 180
+      - name: Install Chromium for the display-page check
+        if: env.SMOKE_CONTROL_TOKEN != ''
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Display page renders a live change (real browser)
+        if: env.SMOKE_CONTROL_TOKEN != ''
+        working-directory: frontend
+        run: npm run test:smoke
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-smoke-report
+          path: frontend/playwright-smoke-report/
+          if-no-files-found: ignore
+          retention-days: 7
 
   deploy-marketing:
     name: Deploy marketing site (Cloudflare Worker)

@@ -42,6 +42,9 @@ describe("OverlayDisplay", () => {
     expect(screen.getByText("Eagles")).toBeInTheDocument();
     expect(screen.getByText("14")).toBeInTheDocument();
     expect(screen.getByText("10")).toBeInTheDocument();
+    // e2e/smoke specs read the score through these hooks — keep them stable.
+    expect(screen.getByTestId("display-score-home")).toHaveTextContent("14");
+    expect(screen.getByTestId("display-score-visitor")).toHaveTextContent("10");
   });
 
   it("shows PAUSED when the clock is stopped and not on a period break", () => {

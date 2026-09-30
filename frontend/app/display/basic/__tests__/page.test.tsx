@@ -45,6 +45,9 @@ describe("BasicDisplay", () => {
     expect(screen.getByText("Eagles")).toBeInTheDocument();
     expect(screen.getByText("21")).toBeInTheDocument();
     expect(screen.getByText("18")).toBeInTheDocument();
+    // e2e/smoke specs read the score through these hooks — keep them stable.
+    expect(screen.getByTestId("display-score-home")).toHaveTextContent("21");
+    expect(screen.getByTestId("display-score-visitor")).toHaveTextContent("18");
   });
 
   it("does not render a match-name label when matchName is empty", () => {

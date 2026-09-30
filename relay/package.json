@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest",
+    "smoke:provision": "ts-node --transpile-only scripts/provision-smoke-org.ts",
     "loadtest": "ts-node --transpile-only loadtest/run.ts",
     "test:coverage": "jest --coverage --coverageReporters=lcov --coverageReporters=text-summary"
   },

@@ -62,7 +62,8 @@ the gating `@critical` Playwright set (needs `docker compose up`); whether it ac
 deploys is switched by the `E2E_CRITICAL_GATE` repo variable, not by code. `npm run loadtest
 --workspace=relay` drives N concurrent matches against a relay (`docs/load-testing.md`; never
 point it at production — it seeds orgs/matches into the DB it's given). `node scripts/smoke.mjs`
-runs after each deploy.
+runs after each deploy; its authenticated half uses a dedicated smoke org (`docs/smoke-org.md`) and is
+skipped until that org's credentials are configured.
 
 Single test file:
 ```bash

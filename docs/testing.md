@@ -11,6 +11,7 @@ What runs where, and which parts can block a deploy. (SA-30.)
 | E2E `@full-sports` | `sport-rules.spec.ts` | on demand: `npm run test:e2e:full-sports` | No |
 | Load test | `relay/loadtest` | manual: *Load test* workflow, or `npm run loadtest --workspace=relay` | No — see [load-testing.md](load-testing.md) |
 | Post-deploy smoke | `scripts/smoke.mjs` | after the prod and UAT deploy jobs | Marks the deploy run red; cannot roll back |
+| Authenticated smoke (real match end to end) | `scripts/smoke.mjs` + `frontend/e2e/smoke/` | same jobs, once the smoke org is provisioned — see [smoke-org.md](smoke-org.md) | Same; skipped until configured |
 
 ## The E2E gate switch
 
@@ -34,7 +35,7 @@ docker compose up -d --build             # stack for E2E / load test
 npm run test:e2e:critical                # just the gating E2E set
 npm run test:e2e                         # everything except @full-sports
 npm run loadtest --workspace=relay -- --matches 20 --viewers 10   # flags: docs/load-testing.md
-node scripts/smoke.mjs --relay http://localhost:4000 --expect multi
+node scripts/smoke.mjs --relay http://localhost:4000 --expect multi   # + SMOKE_* env for the authenticated checks
 ```
 
 ## The bridge → relay contract

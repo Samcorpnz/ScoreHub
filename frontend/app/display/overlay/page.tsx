@@ -189,6 +189,7 @@ function TeamBlock({
           )}
         </span>
         <span
+          data-testid={align === "right" ? "display-score-home" : "display-score-visitor"}
           className="score-digit"
           style={{ fontSize: "2.2rem", color, textShadow: `0 0 20px ${color}44` }}
         >
