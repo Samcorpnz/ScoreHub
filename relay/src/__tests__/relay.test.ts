@@ -67,6 +67,25 @@ function nextEvent<T = unknown>(socket: Socket, event: string): Promise<T> {
   return new Promise<T>(resolve => socket.once(event, resolve));
 }
 
+// Resolves with the first `event` payload that satisfies `predicate`, ignoring
+// earlier ones. Use when other broadcasts for the same room (e.g. a late
+// initial-state emit on a slow CI runner) could otherwise be mistaken for the
+// event under test.
+function nextEventMatching<T = unknown>(
+  socket: Socket,
+  event: string,
+  predicate: (payload: T) => boolean,
+): Promise<T> {
+  return new Promise<T>(resolve => {
+    const handler = (payload: T) => {
+      if (!predicate(payload)) return;
+      socket.off(event, handler);
+      resolve(payload);
+    };
+    socket.on(event, handler);
+  });
+}
+
 // Connects as "control" and ensures the controller token is granted.
 // If another controller already holds the token (30s TTL from a prior test's
 // disconnect), we send takeControl immediately so the socket is always the
@@ -441,7 +460,14 @@ describe("socket — control resetMatch", () => {
     const control = await connectControl();
     const { socket: viewer } = await connectAndWait();
     try {
-      const broadcastPromise = nextEvent<MatchState>(viewer, "matchStateChange");
+      // Wait for the reset broadcast itself: the first matchStateChange the viewer
+      // sees can be a stale (pre-reset) snapshot on a slow runner, which made this
+      // test flaky in the coverage-instrumented SonarQube job.
+      const broadcastPromise = nextEventMatching<MatchState>(
+        viewer,
+        "matchStateChange",
+        state => state.home.score === 0 && state.visitor.score === 0,
+      );
       control.emit("resetMatch");
 
       const received = await broadcastPromise;
