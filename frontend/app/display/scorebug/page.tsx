@@ -209,7 +209,7 @@ function TeamBlock({ name, score, color, hasPossession, logoSrc, side }: {
           {name}
           {hasPossession && <span style={{ color, marginLeft: 5 }}>●</span>}
         </span>
-        <span style={{
+        <span data-testid={`display-score-${side}`} style={{
           fontVariantNumeric: "tabular-nums", fontWeight: 900,
           fontSize: "2rem", color, lineHeight: 1,
           textShadow: `0 0 16px ${color}55`,

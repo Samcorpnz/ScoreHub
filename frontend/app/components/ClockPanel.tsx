@@ -52,6 +52,7 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
 
       {/* Clock */}
       <div
+        data-testid="display-clock"
         className={`clock-digit ${hornActive ? "horn-active" : ""}`}
         style={{
           fontSize: isCompact ? "2rem" : "calc(4.5rem * var(--text-scale, 1))",
@@ -65,6 +66,7 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
       {/* Period */}
       <div className="flex flex-col items-center gap-1">
         <p
+          data-testid="display-period"
           className="uppercase font-black tracking-widest"
           style={{ fontSize: isCompact ? "1.2rem" : "calc(2rem * var(--text-scale, 1))", color: periodColor }}
         >
@@ -90,6 +92,7 @@ function RunningIndicator({ isRunning }: { readonly isRunning: boolean }) {
   const stateColor = isRunning ? "var(--running)" : "var(--stopped)";
   return (
     <div
+      data-testid="display-running-indicator"
       className="flex items-center gap-1.5 rounded-full px-3 py-1"
       style={{
         background: isRunning ? "rgba(34,197,94,0.1)" : "rgba(148,163,184,0.08)",

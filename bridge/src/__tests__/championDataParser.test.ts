@@ -1,5 +1,7 @@
 import { parseChampionDataJson } from "../protocol/championDataParser";
 import { DEFAULT_MATCH_STATE, MatchState } from "../types";
+// The relay's own stateUpdate validator — see relayContract.test.ts for why.
+import { matchStateSchema } from "../../../relay/src/schemas";
 
 function makePlayer(overrides: Record<string, unknown> = {}) {
   return {
@@ -166,5 +168,20 @@ describe("parseChampionDataJson", () => {
   it("does not throw on null/undefined input — surfaces as the generic unrecognised-payload error", () => {
     expect(() => parseChampionDataJson(null)).toThrow(/Unrecognised ChampionData payload/);
     expect(() => parseChampionDataJson(undefined)).toThrow(/Unrecognised ChampionData payload/);
+  });
+});
+
+describe("parseChampionDataJson -> relay stateUpdate contract", () => {
+  it("produces a state the relay's schema accepts, after a JSON round trip over the socket", () => {
+    const state = parseChampionDataJson(makePayload());
+    const result = matchStateSchema.safeParse(JSON.parse(JSON.stringify(state)));
+    expect(result.success ? [] : result.error.issues).toEqual([]);
+  });
+
+  it("stays valid when the feed reports a completed match", () => {
+    const state = parseChampionDataJson(makePayload({ matchStatus: "complete", period: 4 }));
+    expect(state.isRunning).toBe(false);
+    const result = matchStateSchema.safeParse(JSON.parse(JSON.stringify(state)));
+    expect(result.success ? [] : result.error.issues).toEqual([]);
   });
 });

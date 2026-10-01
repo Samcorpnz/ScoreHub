@@ -22,6 +22,7 @@
     "db:migrate": "npm run migrate --workspace=packages/db",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "npm run test:e2e --workspace=frontend",
+    "test:e2e:critical": "npm run test:e2e:critical --workspace=frontend",
     "test:e2e:full-sports": "npm run test:e2e:full-sports --workspace=frontend",
     "scan:sonar": "bash scripts/sonar-scan.sh",
     "postinstall": "node scripts/patch-postcss-cve-2026-41305.js"

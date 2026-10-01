@@ -1,0 +1,85 @@
+name: Load test
+
+# Manual only. Brings up the docker-compose stack (postgres/redis/relay/
+# frontend) on the runner and runs relay/loadtest against it — see
+# docs/load-testing.md. A shared 2-vCPU runner is a smoke test for
+# correctness under concurrency (dropped/reordered updates, connect failures),
+# NOT a capacity measurement; use the UAT relay for that.
+
+on:
+  workflow_dispatch:
+    inputs:
+      matches:
+        description: Concurrent simulated matches
+        default: "20"
+      viewers:
+        description: Viewers per match
+        default: "10"
+      duration:
+        description: Seconds of scoring
+        default: "30"
+      rate:
+        description: Score changes per second, per match
+        default: "1"
+      p95_ms:
+        description: Fail if p95 latency exceeds this (ms)
+        default: "500"
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    name: Relay load test (docker-compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AUTH_SECRET: ci-placeholder-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build --workspace=packages/db
+
+      - run: docker compose build
+      - run: docker compose up -d
+      - name: Wait for the stack to become healthy
+        run: |
+          timeout 120 sh -c 'until curl -sf http://localhost:3000 && curl -sf http://localhost:4000/health; do sleep 2; done'
+
+      - name: Run load test
+        # Inputs go through env, not inline ${{ }} interpolation into the
+        # script, so a crafted input can't inject shell.
+        run: |
+          ulimit -n 65535 || true
+          npm run loadtest --workspace=relay -- \
+            --url http://localhost:4000 \
+            --matches "$LT_MATCHES" \
+            --viewers "$LT_VIEWERS" \
+            --duration "$LT_DURATION" \
+            --rate "$LT_RATE" \
+            --p95 "$LT_P95_MS" \
+            --json "$RUNNER_TEMP/load-report.json"
+        env:
+          DATABASE_URL: postgresql://scorehub:scorehub@localhost:5432/scorehub
+          LT_MATCHES: ${{ inputs.matches }}
+          LT_VIEWERS: ${{ inputs.viewers }}
+          LT_DURATION: ${{ inputs.duration }}
+          LT_RATE: ${{ inputs.rate }}
+          LT_P95_MS: ${{ inputs.p95_ms }}
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: load-test-report
+          path: ${{ runner.temp }}/load-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - if: failure()
+        run: docker compose logs relay --tail 300
+      - if: always()
+        run: docker compose down -v

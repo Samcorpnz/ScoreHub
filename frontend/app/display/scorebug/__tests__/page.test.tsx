@@ -54,6 +54,9 @@ describe("ScorebugPage", () => {
     expect(screen.getByText("Eagles")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+    // e2e/smoke specs read the score through these hooks — keep them stable.
+    expect(screen.getByTestId("display-score-home")).toHaveTextContent("5");
+    expect(screen.getByTestId("display-score-visitor")).toHaveTextContent("3");
   });
 
   it("shows initials instead of a logo image when no logoUrl is set", () => {

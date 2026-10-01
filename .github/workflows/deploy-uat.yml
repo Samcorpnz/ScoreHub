@@ -27,6 +27,41 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_UAT }}
 
+  # Post-deploy smoke test (SA-30) — relay only. UAT's frontend deploys via
+  # Vercel's own Git integration (no job here to wait on, so a browser check
+  # could hit the previous build) and sits behind Cloudflare Zero Trust Access,
+  # so the display-page check is prod-only. The relay scales to zero on Fly,
+  # hence the long --wait for the first request to wake it.
+  #
+  # Authenticated checks use the UAT smoke org (variables SMOKE_UAT_ORG_ID /
+  # SMOKE_UAT_MATCH_ID, secrets SMOKE_UAT_CONTROL_TOKEN / SMOKE_UAT_DISPLAY_TOKEN,
+  # from `npm run smoke:provision --workspace=relay -- --env uat`); skipped until
+  # set. Repo variable SMOKE_AUTH_MODE=required makes a missing credential fail.
+  smoke-test-uat:
+    name: Post-deploy smoke test (UAT relay)
+    needs: deploy-relay-uat
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: smoke-uat
+      cancel-in-progress: false
+    env:
+      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL_UAT || 'https://scorehub-relay-uat.fly.dev' }}
+      SMOKE_AUTH_MODE: ${{ vars.SMOKE_AUTH_MODE || 'optional' }}
+      SMOKE_ORG_ID: ${{ vars.SMOKE_UAT_ORG_ID }}
+      SMOKE_MATCH_ID: ${{ vars.SMOKE_UAT_MATCH_ID }}
+      SMOKE_CONTROL_TOKEN: ${{ secrets.SMOKE_UAT_CONTROL_TOKEN }}
+      SMOKE_DISPLAY_TOKEN: ${{ secrets.SMOKE_UAT_DISPLAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --expect multi --auth "$SMOKE_AUTH_MODE" --wait 180
+
   # Frontend needs no job here: Vercel's GitHub integration auto-deploys a
   # preview on every push to any branch, including `uat`, using the
   # branch-scoped env vars set via `vercel env add --git-branch uat` (see

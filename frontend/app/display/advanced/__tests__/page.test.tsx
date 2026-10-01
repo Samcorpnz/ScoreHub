@@ -54,6 +54,9 @@ describe("AdvancedDisplay", () => {
     expect(screen.getByText("Eagles")).toBeInTheDocument();
     expect(screen.getByText("33")).toBeInTheDocument();
     expect(screen.getByText("27")).toBeInTheDocument();
+    // e2e/smoke specs read the score through these hooks — keep them stable.
+    expect(screen.getByTestId("display-score-home")).toHaveTextContent("33");
+    expect(screen.getByTestId("display-score-visitor")).toHaveTextContent("27");
   });
 
   it("renders timeout dots when a team has timeouts remaining", () => {

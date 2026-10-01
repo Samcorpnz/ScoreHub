@@ -148,6 +148,9 @@ export interface MatchState {
   clockSeconds: number;
   countDown: boolean;
   period: string;
+  // Required by the relay's stateUpdate schema (relay/src/schemas.ts) — a
+  // state without it is rejected wholesale. Bridges never set it themselves.
+  periodBreak: boolean;
   matchName: string;
   isRunning: boolean;
   possession: Possession;
@@ -166,6 +169,7 @@ export const DEFAULT_MATCH_STATE: MatchState = {
   clockSeconds: 0,
   countDown: false,
   period: "1",
+  periodBreak: false,
   matchName: "",
   isRunning: false,
   possession: "none",

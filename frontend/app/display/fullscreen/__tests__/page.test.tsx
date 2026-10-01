@@ -35,6 +35,19 @@ describe("FullscreenDisplay", () => {
     expect(screen.getByText("Eagles")).toBeInTheDocument();
   });
 
+  it.each([["wide", null], ["stacked", "2"], ["minimal", "3"]])("exposes the live scores via display-score-* test IDs in the %s layout", (_name, key) => {
+    useMatchStateMock.mockReturnValue({
+      state: makeState({ home: { ...DEFAULT_MATCH_STATE.home, score: 8 }, visitor: { ...DEFAULT_MATCH_STATE.visitor, score: 6 } }),
+      status: "connected",
+      relayUnreachable: false,
+    });
+    render(<FullscreenDisplay />);
+    if (key) fireEvent.keyDown(window, { key });
+    // e2e/smoke specs read the score through these hooks — keep them stable.
+    expect(screen.getByTestId("display-score-home")).toHaveTextContent("8");
+    expect(screen.getByTestId("display-score-visitor")).toHaveTextContent("6");
+  });
+
   it("switches to the stacked layout on pressing '2'", () => {
     render(<FullscreenDisplay />);
     fireEvent.keyDown(window, { key: "2" });

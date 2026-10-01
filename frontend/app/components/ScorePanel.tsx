@@ -30,7 +30,7 @@ function ScorebugScorePanel({ team, side, displayScore, color, logoSrc }: Scoreb
   return (
     <div className="flex items-center gap-2">
       {side === "visitor" && (
-        <span className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
+        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
       )}
       <div className="flex flex-col items-center" style={{ minWidth: 60 }}>
         {logoSrc ? (
@@ -48,7 +48,7 @@ function ScorebugScorePanel({ team, side, displayScore, color, logoSrc }: Scoreb
         </span>
       </div>
       {side === "home" && (
-        <span className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
+        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
       )}
     </div>
   );
@@ -97,6 +97,7 @@ export function ScorePanel({ team, side, possession, size = "full", relayUrl, sc
 
       {/* Score */}
       <p
+        data-testid={`display-score-${side}`}
         className="score-digit"
         style={{
           fontSize: isCompact ? "3.5rem" : "calc(7rem * var(--text-scale, 1))",

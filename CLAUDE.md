@@ -57,6 +57,14 @@ npm test --workspace=frontend      # vitest
 npm test --workspace=bridge        # jest — protocol parser tests
 ```
 
+E2E, load and smoke tests (full picture in `docs/testing.md`): `npm run test:e2e:critical` runs
+the gating `@critical` Playwright set (needs `docker compose up`); whether it actually blocks
+deploys is switched by the `E2E_CRITICAL_GATE` repo variable, not by code. `npm run loadtest
+--workspace=relay` drives N concurrent matches against a relay (`docs/load-testing.md`; never
+point it at production — it seeds orgs/matches into the DB it's given). `node scripts/smoke.mjs`
+runs after each deploy; its authenticated half uses a dedicated smoke org (`docs/smoke-org.md`) and is
+skipped until that org's credentials are configured.
+
 Single test file:
 ```bash
 cd relay && npx jest src/__tests__/entitlements.test.ts
