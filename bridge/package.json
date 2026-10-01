@@ -5,7 +5,7 @@
   "main": "dist/electron/main.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc && cp -r src/ui/public dist/ui/public",
+    "build": "tsc && node -e \"const fs=require('fs');fs.rmSync('dist/ui/public',{recursive:true,force:true});fs.cpSync('src/ui/public','dist/ui/public',{recursive:true})\"",
     "start": "node dist/index.js",
     "electron:dev": "npm run build && electron .",
     "dist:mac": "npm run build && electron-builder --mac",
