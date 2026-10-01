@@ -21,8 +21,8 @@ jobs:
       run:
         working-directory: bridge
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: npm
@@ -31,7 +31,7 @@ jobs:
       - run: npm run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bridge-mac
           path: bridge/release/*.dmg
@@ -44,15 +44,15 @@ jobs:
       run:
         working-directory: bridge
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run dist:win
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: bridge-win
           path: bridge/release/*.exe
@@ -63,16 +63,18 @@ jobs:
     needs: [build-mac, build-win]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: artifacts
       - name: Create release and upload installers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "$REF_NAME" \
             artifacts/bridge-mac/*.dmg \
             artifacts/bridge-win/*.exe \
-            --repo "${{ github.repository }}" \
-            --title "Bridge ${{ github.ref_name }}" \
+            --repo "$REPO" \
+            --title "Bridge $REF_NAME" \
             --generate-notes
