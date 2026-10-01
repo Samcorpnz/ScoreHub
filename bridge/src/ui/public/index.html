@@ -313,14 +313,42 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+  /* ── Update notice (SA-112) ── */
+  .update-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-dim); }
+  .update-meta button {
+    background: none; border: 1px solid var(--border, #333); color: var(--text-dim);
+    border-radius: 4px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+  }
+  .update-meta button:hover:not(:disabled) { color: var(--text); }
+  .update-meta button:disabled { opacity: 0.5; cursor: default; }
+  .update-banner {
+    display: none; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 20px; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+  }
+  .update-banner.show { display: flex; }
+  .update-banner a { color: #fff; text-decoration: underline; cursor: pointer; margin-right: 12px; }
+  .update-banner button { background: none; border: none; color: #fff; cursor: pointer; font-size: 16px; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">Score<span>board</span> Bridge</div>
+  <div class="update-meta">
+    <span id="versionLabel"></span>
+    <span id="updateResult"></span>
+    <button id="btnCheckUpdate" onclick="checkForUpdates()" style="display:none">Check for updates</button>
+  </div>
   <div class="badge">Admin</div>
 </header>
+
+<div class="update-banner" id="updateBanner">
+  <span id="updateBannerText"></span>
+  <span>
+    <a id="updateBannerLink" href="#" target="_blank" rel="noopener">Download</a>
+    <button onclick="dismissUpdate()" title="Dismiss" aria-label="Dismiss">&times;</button>
+  </span>
+</div>
 
 <div class="layout">
 
@@ -469,6 +497,8 @@
     connectSSE();
     pollStatus();
     setInterval(pollStatus, 3000);
+    pollUpdate();
+    setInterval(pollUpdate, 60000);
   }
 
   // ── Config ──────────────────────────────────────────────────────────────────
@@ -565,6 +595,65 @@
     const data = await res.json();
     updateStatus(data);
     setButtonsLoading(false);
+  }
+
+  // ── Update notice (SA-112) ──────────────────────────────────────────────────
+
+  let updateState = null;
+
+  function dismissedVersion() {
+    try { return localStorage.getItem('dismissedUpdateVersion'); } catch { return null; }
+  }
+
+  function dismissUpdate() {
+    if (updateState && updateState.latestVersion) {
+      try { localStorage.setItem('dismissedUpdateVersion', updateState.latestVersion); } catch {}
+    }
+    renderUpdate(false);
+  }
+
+  function renderUpdate(manual) {
+    const s = updateState;
+    if (!s) return; // update checks not enabled (headless/dev run)
+    document.getElementById('versionLabel').textContent = `v${s.currentVersion}`;
+    document.getElementById('btnCheckUpdate').style.display = '';
+    document.getElementById('btnCheckUpdate').disabled = s.status === 'checking';
+
+    const result = document.getElementById('updateResult');
+    result.textContent = '';
+    if (manual || s.status === 'checking') {
+      if (s.status === 'checking') result.textContent = 'Checking…';
+      else if (s.status === 'up-to-date') result.textContent = `You're up to date (v${s.currentVersion})`;
+      else if (s.status === 'error') result.textContent = "Couldn't check for updates — try again later";
+    }
+
+    const banner = document.getElementById('updateBanner');
+    const show = s.status === 'available' && (manual || dismissedVersion() !== s.latestVersion);
+    banner.classList.toggle('show', show);
+    if (show) {
+      document.getElementById('updateBannerText').textContent = `Update available: v${s.latestVersion}`;
+      document.getElementById('updateBannerLink').href = s.downloadUrl;
+    }
+  }
+
+  async function pollUpdate() {
+    try {
+      const res = await fetch('/api/update');
+      updateState = await res.json();
+      renderUpdate(false);
+    } catch {}
+  }
+
+  async function checkForUpdates() {
+    updateState = updateState ? { ...updateState, status: 'checking' } : updateState;
+    renderUpdate(true);
+    try {
+      const res = await fetch('/api/update/check', { method: 'POST' });
+      updateState = await res.json();
+    } catch {
+      updateState = { ...updateState, status: 'error' };
+    }
+    renderUpdate(true);
   }
 
   // ── Status polling ──────────────────────────────────────────────────────────

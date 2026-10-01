@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { BridgeController, BridgeConfig } from "../controller";
 import { addSseClient, removeSseClient } from "../logger";
+import type { UpdateChecker } from "../updateChecker";
 
 function isPrivateOrReservedHost(hostname: string): boolean {
   const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
@@ -33,7 +34,11 @@ function validateScrapeUrl(raw: string): string {
   return parsed.toString();
 }
 
-export function createUiServer(controller: BridgeController, port: number = 4002): ReturnType<typeof createServer> {
+export function createUiServer(
+  controller: BridgeController,
+  port: number = 4002,
+  updateChecker?: UpdateChecker
+): ReturnType<typeof createServer> {
   const app = express();
   app.use(express.json());
 
@@ -57,6 +62,20 @@ export function createUiServer(controller: BridgeController, port: number = 4002
         netballStats: !!controller.getState().netballStats,
       },
     });
+  });
+
+  // ── Updates (SA-112) ────────────────────────────────────────────────────────
+
+  app.get("/api/update", (_req, res) => {
+    res.json(updateChecker?.getState() ?? null);
+  });
+
+  app.post("/api/update/check", async (_req, res) => {
+    if (!updateChecker) {
+      res.status(404).json({ error: "Update checks are not enabled" });
+      return;
+    }
+    res.json(await updateChecker.check(true));
   });
 
   // ── Config ──────────────────────────────────────────────────────────────────
