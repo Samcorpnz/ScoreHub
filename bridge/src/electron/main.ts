@@ -8,9 +8,10 @@
  * unchanged — see index.ts for the headless/CLI equivalent of this entry point.
  */
 
-import { app, BrowserWindow, Menu, Tray, nativeImage } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, shell } from "electron";
 import path from "node:path";
 import type { BridgeController } from "../controller";
+import type { UpdateChecker } from "../updateChecker";
 
 const UI_PORT = Number.parseInt(process.env.UI_PORT ?? "4002", 10);
 
@@ -24,6 +25,56 @@ const ICON_DIR = path.join(__dirname, "../../resources");
 let tray: Tray | null = null;
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+let updateChecker: UpdateChecker | null = null;
+let controllerRef: BridgeController | null = null;
+// Result of the last *user-initiated* check, shown in the tray until it expires.
+// Automatic checks never populate this, so they stay invisible unless an update is found.
+let manualResult: "up-to-date" | "error" | null = null;
+let manualResultTimer: NodeJS.Timeout | null = null;
+const MANUAL_RESULT_TTL_MS = 15_000;
+
+function refreshTrayMenu(): void {
+  if (tray && controllerRef) tray.setContextMenu(buildTrayMenu(controllerRef));
+}
+
+async function checkForUpdatesFromTray(): Promise<void> {
+  if (!updateChecker) return;
+  manualResult = null;
+  const state = await updateChecker.check(true);
+  manualResult = state.status === "up-to-date" || state.status === "error" ? state.status : null;
+  if (manualResultTimer) clearTimeout(manualResultTimer);
+  manualResultTimer = setTimeout(() => {
+    manualResult = null;
+    refreshTrayMenu();
+  }, MANUAL_RESULT_TTL_MS);
+  manualResultTimer.unref();
+  refreshTrayMenu();
+}
+
+function buildUpdateMenuItems(): Electron.MenuItemConstructorOptions[] {
+  if (!updateChecker) return [];
+  const state = updateChecker.getState();
+  const items: Electron.MenuItemConstructorOptions[] = [
+    { label: `ScoreHub Bridge v${state.currentVersion}`, enabled: false },
+  ];
+  if (state.status === "available" && state.downloadUrl) {
+    const url = state.downloadUrl;
+    items.push({
+      label: `Update available: v${state.latestVersion} — Download`,
+      click: () => void shell.openExternal(url),
+    });
+  }
+  let checkLabel = "Check for updates…";
+  if (state.status === "checking") checkLabel = "Checking for updates…";
+  else if (manualResult === "up-to-date") checkLabel = `You're up to date (v${state.currentVersion})`;
+  else if (manualResult === "error") checkLabel = "Couldn't check for updates — try again later";
+  items.push({
+    label: checkLabel,
+    enabled: state.status !== "checking",
+    click: () => void checkForUpdatesFromTray(),
+  });
+  return items;
+}
 
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
@@ -35,6 +86,13 @@ async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+
+  // Links in the status page (the update banner's Download link) must open in
+  // the user's browser, not a new Electron window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) void shell.openExternal(url);
+    return { action: "deny" };
   });
 
   await mainWindow.loadURL(`http://localhost:${UI_PORT}`);
@@ -73,6 +131,8 @@ function buildTrayMenu(controller: BridgeController): Menu {
       },
     },
     { type: "separator" },
+    ...buildUpdateMenuItems(),
+    ...(updateChecker ? [{ type: "separator" } as const] : []),
     {
       label: "Quit",
       click: () => {
@@ -89,8 +149,15 @@ async function main(): Promise<void> {
   const { BridgeController } = await import("../controller");
   const { createUiServer } = await import("../ui/server");
 
+  const { UpdateChecker } = await import("../updateChecker");
+
   const controller = new BridgeController();
-  createUiServer(controller, UI_PORT);
+  controllerRef = controller;
+  updateChecker = new UpdateChecker({
+    currentVersion: app.getVersion(),
+    onChange: refreshTrayMenu,
+  });
+  createUiServer(controller, UI_PORT, updateChecker);
 
   await createWindow();
 
@@ -98,6 +165,8 @@ async function main(): Promise<void> {
   tray.setToolTip("ScoreHub Bridge");
   tray.setContextMenu(buildTrayMenu(controller));
   tray.on("click", () => mainWindow?.show());
+
+  updateChecker.start();
 
   if (process.env.CD_AUTOSTART === "true") {
     await controller.start();

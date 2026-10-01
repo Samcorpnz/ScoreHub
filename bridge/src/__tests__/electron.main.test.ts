@@ -10,9 +10,11 @@ type MenuTemplateItem = {
   label?: string;
   type?: string;
   checked?: boolean;
+  enabled?: boolean;
   click?: (menuItem: { checked: boolean }) => void | Promise<void>;
 };
 
+let windowOpenHandler: ((details: { url: string }) => unknown) | null = null;
 const windowInstances: FakeBrowserWindow[] = [];
 const trayInstances: FakeTray[] = [];
 const appListeners: Record<string, Array<() => void>> = {};
@@ -22,6 +24,11 @@ class FakeBrowserWindow {
   loadURL = jest.fn().mockResolvedValue(undefined);
   show = jest.fn();
   hide = jest.fn();
+  webContents = {
+    setWindowOpenHandler: jest.fn((handler: (details: { url: string }) => unknown) => {
+      windowOpenHandler = handler;
+    }),
+  };
   private handlers: Record<string, Array<(...args: any[]) => void>> = {};
 
   constructor(public opts: unknown) {
@@ -47,6 +54,7 @@ class FakeTray {
   }
 }
 
+const openExternal = jest.fn().mockResolvedValue(undefined);
 const buildFromTemplate = jest.fn((template: MenuTemplateItem[]) => ({ __template: template }));
 
 let loginItemSettings = { openAtLogin: false };
@@ -57,6 +65,7 @@ const setLoginItemSettings = jest.fn((settings: { openAtLogin: boolean }) => {
 const fakeApp = {
   whenReady: jest.fn().mockResolvedValue(undefined),
   getPath: jest.fn().mockReturnValue("/fake/userData"),
+  getVersion: jest.fn().mockReturnValue("1.0.0"),
   getLoginItemSettings: jest.fn(() => loginItemSettings),
   setLoginItemSettings,
   quit: jest.fn(),
@@ -71,6 +80,7 @@ jest.mock("electron", () => ({
   Tray: FakeTray,
   Menu: { buildFromTemplate },
   nativeImage: { createFromPath: jest.fn() },
+  shell: { openExternal },
 }));
 
 const fakeController = {
@@ -80,6 +90,23 @@ const fakeController = {
 };
 const ElectronBridgeControllerMock = jest.fn(() => fakeController);
 jest.mock("../controller", () => ({ BridgeController: ElectronBridgeControllerMock }));
+
+type FakeUpdateState = {
+  currentVersion: string;
+  status: string;
+  latestVersion: string | null;
+  downloadUrl: string | null;
+  checkedAt: number | null;
+};
+let updateState: FakeUpdateState;
+const updateCheck = jest.fn(async (_manual: boolean) => updateState);
+const updateStart = jest.fn();
+let updateOnChange: (() => void) | undefined;
+const FakeUpdateChecker = jest.fn((opts: { onChange?: () => void }) => {
+  updateOnChange = opts.onChange;
+  return { getState: () => updateState, check: updateCheck, start: updateStart };
+});
+jest.mock("../updateChecker", () => ({ UpdateChecker: FakeUpdateChecker }));
 
 const createUiServer = jest.fn();
 jest.mock("../ui/server", () => ({ createUiServer }));
@@ -110,6 +137,14 @@ describe("electron/main", () => {
     loginItemSettings = { openAtLogin: false };
     fakeController.status = "stopped";
     delete process.env.CD_AUTOSTART;
+    windowOpenHandler = null;
+    updateState = {
+      currentVersion: "1.0.0",
+      status: "idle",
+      latestVersion: null,
+      downloadUrl: null,
+      checkedAt: null,
+    };
   });
 
   it("sets BRIDGE_CONFIG_DIR from app.getPath('userData') before the controller is imported", async () => {
@@ -121,7 +156,7 @@ describe("electron/main", () => {
   it("starts the existing UI server and opens a window pointed at it", async () => {
     await loadMain();
     expect(ElectronBridgeControllerMock).toHaveBeenCalledTimes(1);
-    expect(createUiServer).toHaveBeenCalledWith(fakeController, 4002);
+    expect(createUiServer).toHaveBeenCalledWith(fakeController, 4002, expect.anything());
     expect(windowInstances).toHaveLength(1);
     expect(windowInstances[0].loadURL).toHaveBeenCalledWith("http://localhost:4002");
   });
@@ -209,5 +244,68 @@ describe("electron/main", () => {
     const closeEvent = { preventDefault: jest.fn() };
     win.emit("close", closeEvent);
     expect(closeEvent.preventDefault).not.toHaveBeenCalled();
+  });
+
+  describe("update notice (SA-112)", () => {
+    it("starts the update checker with the app version", async () => {
+      await loadMain();
+      expect(FakeUpdateChecker).toHaveBeenCalledWith(expect.objectContaining({ currentVersion: "1.0.0" }));
+      expect(updateStart).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the version and a Check for updates item, with no download item when up to date", async () => {
+      await loadMain();
+      const template = getTrayMenuTemplate();
+      expect(template.find((i) => i.label === "ScoreHub Bridge v1.0.0")).toBeDefined();
+      expect(template.find((i) => i.label === "Check for updates…")).toBeDefined();
+      expect(template.some((i) => i.label?.startsWith("Update available"))).toBe(false);
+    });
+
+    it("offers a Download item that opens the download URL when an update is available", async () => {
+      updateState = { ...updateState, status: "available", latestVersion: "1.1.0", downloadUrl: "https://downloads.scorehub.co.nz/mac" };
+      await loadMain();
+      const item = getTrayMenuTemplate().find((i) => i.label === "Update available: v1.1.0 — Download");
+      expect(item).toBeDefined();
+      item!.click!({ checked: false });
+      expect(openExternal).toHaveBeenCalledWith("https://downloads.scorehub.co.nz/mac");
+    });
+
+    it("Check for updates runs a manual check and shows the up-to-date result", async () => {
+      await loadMain();
+      const item = getTrayMenuTemplate().find((i) => i.label === "Check for updates…");
+      updateState = { ...updateState, status: "up-to-date", checkedAt: 1 };
+      await item!.click!({ checked: false });
+      expect(updateCheck).toHaveBeenCalledWith(true);
+      expect(getTrayMenuTemplate().find((i) => i.label === "You're up to date (v1.0.0)")).toBeDefined();
+    });
+
+    it("Check for updates surfaces a failure", async () => {
+      await loadMain();
+      const item = getTrayMenuTemplate().find((i) => i.label === "Check for updates…");
+      updateState = { ...updateState, status: "error" };
+      await item!.click!({ checked: false });
+      expect(
+        getTrayMenuTemplate().find((i) => i.label === "Couldn't check for updates — try again later")
+      ).toBeDefined();
+    });
+
+    it("rebuilds the tray menu when the checker state changes and disables the item while checking", async () => {
+      await loadMain();
+      const before = trayInstances[0].setContextMenu.mock.calls.length;
+      updateState = { ...updateState, status: "checking" };
+      updateOnChange!();
+      expect(trayInstances[0].setContextMenu.mock.calls.length).toBe(before + 1);
+      const item = getTrayMenuTemplate().find((i) => i.label === "Checking for updates…");
+      expect(item?.enabled).toBe(false);
+    });
+
+    it("opens https links from the window in the browser and denies new Electron windows", async () => {
+      await loadMain();
+      expect(windowOpenHandler!({ url: "https://downloads.scorehub.co.nz/mac" })).toEqual({ action: "deny" });
+      expect(openExternal).toHaveBeenCalledWith("https://downloads.scorehub.co.nz/mac");
+      openExternal.mockClear();
+      expect(windowOpenHandler!({ url: "file:///etc/passwd" })).toEqual({ action: "deny" });
+      expect(openExternal).not.toHaveBeenCalled();
+    });
   });
 });
