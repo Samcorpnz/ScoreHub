@@ -101,3 +101,42 @@ describe("BridgeController relay health (SA-58)", () => {
     });
   });
 });
+
+// SA-59: without this, a bridge that reconnects after missing a manualUpdate
+// (made while it was disconnected) stays permanently behind the relay's
+// sequenceId, so the relay's stateUpdate handler silently rejects every
+// hardware-driven broadcast for the rest of the match.
+describe("BridgeController sequenceId resync on reconnect (SA-59)", () => {
+  beforeEach(() => {
+    fakeSocket = makeFakeSocket();
+    ioMock.mockClear();
+  });
+
+  function startRelayOnly(): BridgeController {
+    const controller = new BridgeController();
+    (controller as any).connectRelay();
+    return controller;
+  }
+
+  it("adopts a higher sequenceId from matchStateChange without touching score/clock fields", () => {
+    const controller = startRelayOnly();
+    fakeSocket.__trigger("connect");
+
+    const before = controller.getState();
+    fakeSocket.__trigger("matchStateChange", { ...before, sequenceId: before.sequenceId + 5, home: { ...before.home, score: 999 } });
+
+    const after = controller.getState();
+    expect(after.sequenceId).toBe(before.sequenceId + 5);
+    expect(after.home.score).toBe(before.home.score); // untouched — hardware remains source of truth
+  });
+
+  it("ignores a matchStateChange whose sequenceId is not ahead of ours", () => {
+    const controller = startRelayOnly();
+    fakeSocket.__trigger("connect");
+
+    const before = controller.getState();
+    fakeSocket.__trigger("matchStateChange", { ...before, sequenceId: before.sequenceId });
+
+    expect(controller.getState().sequenceId).toBe(before.sequenceId);
+  });
+});

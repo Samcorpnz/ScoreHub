@@ -61,11 +61,23 @@ Once the hardware/bridge issue is fixed:
 1. Confirm the bridge UI on the venue laptop shows **Running** with a
    live relay connection (not just "started" — check the relay badge in
    that UI too).
-2. Watch the control panel for one or two real scoring events to confirm
-   the bridge's updates are now landing correctly before you stop
-   touching the manual controls.
+2. Watch the control panel for one real scoring event to confirm the
+   bridge's updates are landing correctly before you stop touching the
+   manual controls. On reconnect, the bridge picks up the relay's current
+   sequence number automatically, so its very next hardware update should
+   land — you don't need to wait for several events "to catch up."
 3. Stop making manual edits once you've confirmed it — there's no
    "switch back" action needed, you just stop and let the bridge resume.
+
+If you make a manual edit *after* the bridge has already reconnected (for
+example, a one-off correction), that's fine — the same automatic resync
+applies next time the bridge sends an update. The one case this doesn't
+cover: a bridge running software from before this fix was deployed will
+not resync and can stay silently locked out for the rest of the match —
+if step 2 doesn't show a real scoring event landing within a few seconds
+of reconnecting, stay on manual control for the rest of the match and
+flag it in the incident note (step 5) so engineering can check the
+bridge's version.
 
 ## 5. Who to notify
 

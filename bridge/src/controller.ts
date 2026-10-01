@@ -186,6 +186,17 @@ export class BridgeController {
       log.info("State patched from control panel");
     });
 
+    // Adopts the relay's sequenceId (never its score/clock fields — those stay
+    // hardware-sourced) whenever it's ahead of ours. Without this, reconnecting
+    // after any manualUpdate we missed while disconnected leaves our counter
+    // permanently behind, so the relay's `>=` check in its stateUpdate handler
+    // silently rejects every subsequent broadcast for the rest of the match.
+    this.socket.on("matchStateChange", (state: MatchState) => {
+      if (state.sequenceId > this.state.sequenceId) {
+        this.state = { ...this.state, sequenceId: state.sequenceId };
+      }
+    });
+
     // Saturn source broadcasts on a timer; CD sources push immediately on each poll
     if (this.config.source === "saturn") {
       this.broadcastTimer = setInterval(() => {
