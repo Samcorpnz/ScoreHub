@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { PlanBadge } from "../components/PlanBadge";
@@ -70,6 +71,22 @@ function parseFixtureCsv(text: string): { rows: FixtureRow[]; errors: string[] }
   return { rows, errors };
 }
 
+async function fetchMatches(
+  orgId: string,
+  tab: TabKey,
+  sportFilter: string,
+  competitionFilter: string,
+  search: string,
+): Promise<MatchRow[]> {
+  const params = new URLSearchParams({ status: TAB_STATUS[tab] });
+  if (sportFilter) params.set("sport", sportFilter);
+  if (competitionFilter) params.set("competition", competitionFilter);
+  if (search.trim()) params.set("q", search.trim());
+  const res = await fetch(`/api/orgs/${orgId}/matches?${params.toString()}`);
+  const body = await res.json().catch(() => ({}));
+  return res.ok ? body.matches ?? [] : [];
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession({
@@ -81,36 +98,21 @@ export default function DashboardPage() {
   const orgId = session?.user?.activeOrgId;
 
   const [tab, setTab] = useState<TabKey>("live");
-  const [matches, setMatches] = useState<MatchRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sportFilter, setSportFilter] = useState("");
   const [competitionFilter, setCompetitionFilter] = useState("");
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  const { data: matches = [], isLoading: loading, mutate: load } = useSWR(
+    orgId ? [orgId, tab, sportFilter, competitionFilter, search] : null,
+    () => fetchMatches(orgId as string, tab, sportFilter, competitionFilter, search),
+  );
+
   const competitions = useMemo(
     () => Array.from(new Set(matches.map(m => m.competition).filter((c): c is string => !!c))).sort((a, b) => a.localeCompare(b)),
     [matches]
   );
-
-  async function load() {
-    if (!orgId) return;
-    setLoading(true);
-    const params = new URLSearchParams({ status: TAB_STATUS[tab] });
-    if (sportFilter) params.set("sport", sportFilter);
-    if (competitionFilter) params.set("competition", competitionFilter);
-    if (search.trim()) params.set("q", search.trim());
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/matches?${params.toString()}`);
-      const body = await res.json().catch(() => ({}));
-      setMatches(res.ok ? body.matches ?? [] : []);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { load(); }, [orgId, tab, sportFilter, competitionFilter, search]);
 
   function copy(url: string) {
     navigator.clipboard.writeText(url).then(() => {

@@ -33,7 +33,11 @@ export default function GraphicsDisplay() {
   const { state, unauthorized } = useMatchState();
   const { scene } = useGraphicsScene();
   const [entitled, setEntitled] = useState<boolean | null>(null);
-  const [org, setOrg] = useState<string | null>(null);
+  // Read once from the URL. Only consumed by useRoster, whose result is empty
+  // until its fetch resolves, so the server and first client render agree.
+  const [org] = useState<string | null>(() =>
+    typeof globalThis.window === "undefined" ? null : new URLSearchParams(globalThis.location.search).get("org"),
+  );
   // Only the ids currently on the live feed are fetched from the roster
   // endpoint (which returns nothing for ids it isn't given) — the whole-roster
   // fetch would expose the org's people database to anyone with the share URL.
@@ -42,15 +46,12 @@ export default function GraphicsDisplay() {
   const { backgroundColor, textScale: _textScale, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
 
   useEffect(() => {
-    const params = new URLSearchParams(globalThis.location.search);
-    const orgParam = params.get("org");
-    setOrg(orgParam);
-    const url = orgParam ? `${RELAY_URL}/api/graphics/entitlement?org=${encodeURIComponent(orgParam)}` : `${RELAY_URL}/api/graphics/entitlement`;
+    const url = org ? `${RELAY_URL}/api/graphics/entitlement?org=${encodeURIComponent(org)}` : `${RELAY_URL}/api/graphics/entitlement`;
     fetch(url)
       .then(res => res.json())
       .then(data => setEntitled(Boolean(data.entitled)))
       .catch(() => setEntitled(null));
-  }, []);
+  }, [org]);
 
   const SceneComponent = scene ? SCENE_REGISTRY[scene.sceneType] : undefined;
 

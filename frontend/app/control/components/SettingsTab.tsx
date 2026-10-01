@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
 import { SPORT_TEMPLATES, getTemplate } from "../../sport-templates";
@@ -23,6 +24,13 @@ interface MatchOption {
   status: string;
 }
 
+async function fetchTokensByType(orgId: string, type: BridgeToken["type"]): Promise<BridgeToken[]> {
+  const res = await fetch(`/api/orgs/${orgId}/tokens`);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return (data.tokens || []).filter((t: BridgeToken) => t.type === type);
+}
+
 function templateClockLabel(clockSeconds: number, countDown: boolean): string {
   if (clockSeconds === 0) {
     return countDown ? "0:00 (no clock)" : "Counts up from 0:00";
@@ -34,28 +42,14 @@ function templateClockLabel(clockSeconds: number, countDown: boolean): string {
 }
 
 function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
-  const [tokens, setTokens] = useState<BridgeToken[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
+    [orgId, "tokens", "CONTROL"],
+    () => fetchTokensByType(orgId, "CONTROL"),
+  );
   const [label, setLabel] = useState("");
   const [generating, setGenerating] = useState(false);
   const [justCreated, setJustCreated] = useState<string | null>(null);
   const [error, setError] = useState("");
-
-  const loadTokens = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTokens((data.tokens || []).filter((t: BridgeToken) => t.type === "CONTROL"));
-    } catch {
-      setError("Failed to load tokens");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadTokens(); }, [orgId]);
 
   const generateToken = async () => {
     setGenerating(true);
@@ -170,7 +164,7 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
         </button>
       </div>
 
-      {error && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error}</p>}
+      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load tokens"}</p>}
 
       {!loading && tokens.length > 0 && (
         <div className="space-y-1 mb-4">
@@ -229,8 +223,10 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
 }
 
 function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
-  const [tokens, setTokens] = useState<BridgeToken[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
+    [orgId, "tokens", "BRIDGE"],
+    () => fetchTokensByType(orgId, "BRIDGE"),
+  );
   const [label, setLabel] = useState("");
   const [pinnedMatchId, setPinnedMatchId] = useState("");
   const [matches, setMatches] = useState<MatchOption[]>([]);
@@ -244,22 +240,6 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
       .then(data => setMatches(data.matches || []))
       .catch(() => setMatches([]));
   }, [orgId]);
-
-  const loadTokens = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTokens((data.tokens || []).filter((t: BridgeToken) => t.type === "BRIDGE"));
-    } catch {
-      setError("Failed to load bridge tokens");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadTokens(); }, [orgId]);
 
   const generateToken = async () => {
     setGenerating(true);
@@ -380,7 +360,7 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
         </button>
       </div>
 
-      {error && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error}</p>}
+      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load bridge tokens"}</p>}
 
       {(() => {
         if (loading) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>Loading…</p>;
@@ -423,8 +403,6 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
 // prompt instead of a form that would just fail.
 function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
   const [entitled, setEntitled] = useState<boolean | null>(null);
-  const [tokens, setTokens] = useState<BridgeToken[]>([]);
-  const [loading, setLoading] = useState(true);
   const [label, setLabel] = useState("");
   const [generating, setGenerating] = useState(false);
   const [justCreated, setJustCreated] = useState<string | null>(null);
@@ -440,21 +418,10 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
       });
   }, []);
 
-  const loadTokens = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTokens((data.tokens || []).filter((t: BridgeToken) => t.type === "DATA_FEED"));
-    } catch {
-      setError("Failed to load data feed tokens");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { if (entitled) loadTokens(); }, [orgId, entitled]);
+  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
+    entitled ? [orgId, "tokens", "DATA_FEED"] : null,
+    () => fetchTokensByType(orgId, "DATA_FEED"),
+  );
 
   const generateToken = async () => {
     setGenerating(true);
@@ -548,7 +515,7 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
         </button>
       </div>
 
-      {error && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error}</p>}
+      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load data feed tokens"}</p>}
 
       {(() => {
         if (loading) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>Loading…</p>;

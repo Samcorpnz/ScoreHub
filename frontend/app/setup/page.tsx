@@ -11,6 +11,12 @@ import { CricketSquadSetup, emptySquad } from "../control/components/CricketSqua
 import { PlanBadge } from "../components/PlanBadge";
 import { OrgSwitcher } from "../components/OrgSwitcher";
 
+function defaultSportConfig(sport: SportType): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  for (const field of getTemplate(sport).matchConfig ?? []) defaults[field.key] = field.defaultValue;
+  return defaults;
+}
+
 type SetupState = "form" | "squad-entry" | "provisioning" | "applying" | "upgrade-required" | "error";
 
 export default function SetupPage() {
@@ -27,7 +33,7 @@ export default function SetupPage() {
   const [matchName, setMatchName] = useState("");
   const [homeName, setHomeName] = useState("");
   const [visitorName, setVisitorName] = useState("");
-  const [sportConfig, setSportConfig] = useState<Record<string, string>>({});
+  const [sportConfig, setSportConfig] = useState<Record<string, string>>(() => defaultSportConfig("netball"));
   const [state, setState] = useState<SetupState>("form");
   const [message, setMessage] = useState("");
   const [homeSquad, setHomeSquad] = useState<string[]>(emptySquad());
@@ -48,14 +54,12 @@ export default function SetupPage() {
     state === "applying" && controlToken ? { secret: controlToken, role: "control" } : undefined
   );
 
-  // Reset sport-specific config to template defaults when sport changes
-  useEffect(() => {
-    const template = getTemplate(sport);
-    if (!template.matchConfig?.length) { setSportConfig({}); return; }
-    const defaults: Record<string, string> = {};
-    for (const field of template.matchConfig) defaults[field.key] = field.defaultValue;
-    setSportConfig(defaults);
-  }, [sport]);
+  // Reset sport-specific config to template defaults when the sport changes
+  function selectSport(next: SportType) {
+    if (next === sport) return;
+    setSport(next);
+    setSportConfig(defaultSportConfig(next));
+  }
 
   // Once the socket is connected (only mounted once the form is submitted),
   // push the chosen sport/names and move on — the relay's manualUpdate
@@ -95,6 +99,11 @@ export default function SetupPage() {
     }).then(() => {
       router.push(`/control?matchId=${matchId}`);
     });
+    // Deliberately keyed on the state/connection transition only. The patch must
+    // be sent once when the socket connects: matchState and sendManualUpdate
+    // change identity on every relay broadcast (including the one this patch
+    // triggers), so listing them would re-send the patch in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, connStatus]);
 
   async function handleSubmit() {
@@ -219,7 +228,7 @@ export default function SetupPage() {
                       border: `1px solid ${sport === t.sport ? "var(--border-accent)" : "var(--border)"}`,
                       color: sport === t.sport ? "var(--accent)" : "var(--text-secondary)",
                     }}
-                    onClick={() => setSport(t.sport)}
+                    onClick={() => selectSport(t.sport)}
                   >
                     <div className="text-sm font-semibold">{t.label}</div>
                     <div className="text-xs mt-0.5" style={{ opacity: 0.85 }}>{t.structure}</div>

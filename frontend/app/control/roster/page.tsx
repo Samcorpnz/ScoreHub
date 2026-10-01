@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, Suspense } from "react";
+import { useRef, useState, Suspense } from "react";
+import useSWR from "swr";
 import * as Sentry from "@sentry/nextjs";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,6 +19,18 @@ interface Player {
   provider: string | null;
   photoUrl: string | null;
   bio: string | null;
+}
+
+// Distinguishes the org-lacks-add-on 403 from a real fetch failure so the
+// upsell screen and the inline error banner don't both fire for one cause.
+class RosterForbiddenError extends Error {}
+
+async function fetchPlayers(orgId: string): Promise<Player[]> {
+  const res = await fetch(`/api/orgs/${orgId}/players`);
+  if (res.status === 403) throw new RosterForbiddenError("forbidden");
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.players ?? [];
 }
 
 // Roster admin for the Graphics Operator add-on (Phase C) — a standalone
@@ -54,36 +67,23 @@ function RosterControl() {
   const { token: graphicsToken } = useGraphicsToken(matchId);
   const { state } = useMatchState({ secret: graphicsToken, role: "graphics" });
 
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [forbidden, setForbidden] = useState(false);
+  const { data: players = [], isLoading: loading, error: loadError, mutate: loadPlayers } = useSWR(
+    orgId ? [orgId, "players"] : null,
+    () => fetchPlayers(orgId as string),
+    {
+      onError: err => {
+        if (err instanceof RosterForbiddenError) return;
+        console.error("[roster] failed to load roster:", err);
+        Sentry.captureException(err, { tags: { area: "roster" } });
+      },
+    },
+  );
+  const forbidden = loadError instanceof RosterForbiddenError;
+  const [actionError, setActionError] = useState("");
+  const error = actionError || (loadError && !forbidden ? "Failed to load roster" : "");
   const [editing, setEditing] = useState<Player | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [prefill, setPrefill] = useState<{ name?: string; externalId?: string } | null>(null);
-
-  const loadPlayers = async () => {
-    if (!orgId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/players`);
-      if (res.status === 403) {
-        setForbidden(true);
-        return;
-      }
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setPlayers(data.players ?? []);
-    } catch (err) {
-      console.error("[roster] failed to load roster:", err);
-      Sentry.captureException(err, { tags: { area: "roster" } });
-      setError("Failed to load roster");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadPlayers(); }, [orgId]);
 
   if (forbidden) {
     return <RosterUpsell isAdmin={session?.user?.activeRole === "ADMIN"} />;
@@ -97,7 +97,7 @@ function RosterControl() {
       if (!res.ok) throw new Error(await res.text());
       await loadPlayers();
     } catch {
-      setError("Failed to remove player");
+      setActionError("Failed to remove player");
     }
   };
 

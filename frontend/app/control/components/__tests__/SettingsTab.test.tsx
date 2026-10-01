@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, within, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { SWRConfig } from "swr";
 import { SettingsTab } from "../SettingsTab";
 import { DEFAULT_MATCH_STATE } from "../../../types";
 import type { MatchState } from "@scorehub/types";
+
+// Several cards share an orgId across tests, so without a fresh SWR cache per
+// render, a later test would see an earlier test's cached response instead
+// of hitting its own fetch mock.
+function swrWrapper({ children }: { readonly children: React.ReactNode }) {
+  return <SWRConfig value={{ provider: () => new Map() }}>{children}</SWRConfig>;
+}
 
 const { useSessionMock } = vi.hoisted(() => ({ useSessionMock: vi.fn() }));
 
@@ -26,7 +34,7 @@ describe("SettingsTab", () => {
   });
 
   it("renders team colour, sport, and template sections", () => {
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.getByText("Home — Team Colour")).toBeInTheDocument();
     expect(screen.getByText("Visitor — Team Colour")).toBeInTheDocument();
     expect(screen.getByText("Sport")).toBeInTheDocument();
@@ -35,27 +43,27 @@ describe("SettingsTab", () => {
 
   it("pushes an updated home color when a swatch is clicked", () => {
     const push = vi.fn();
-    render(<SettingsTab state={makeState()} push={push} />);
+    render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByText("Netball").closest("button")!);
     expect(push).toHaveBeenCalledWith({ sport: "netball" });
   });
 
   it("pushes the selected sport when a sport tile is clicked", () => {
     const push = vi.fn();
-    render(<SettingsTab state={makeState()} push={push} />);
+    render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByText("Basketball").closest("button")!);
     expect(push).toHaveBeenCalledWith({ sport: "basketball" });
   });
 
   it("applies template defaults when the button is clicked", () => {
     const push = vi.fn();
-    render(<SettingsTab state={makeState()} push={push} />);
+    render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByText("Apply Template Defaults"));
     expect(push).toHaveBeenCalledWith(expect.objectContaining({ sport: "netball", period: "1", isRunning: false }));
   });
 
   it("does not render the End Match card without a matchId", () => {
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.queryByTestId("end-match")).not.toBeInTheDocument();
   });
 
@@ -64,7 +72,7 @@ describe("SettingsTab", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
     vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
     const onEnded = vi.fn();
-    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" onEnded={onEnded} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" onEnded={onEnded} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByTestId("end-match"));
     await waitFor(() => expect(onEnded).toHaveBeenCalled());
     expect(global.fetch).toHaveBeenCalledWith("/api/orgs/org1/matches/match1/end", { method: "POST" });
@@ -74,7 +82,7 @@ describe("SettingsTab", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "ADMIN", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [] }) }));
     vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
-    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" />, { wrapper: swrWrapper });
     (global.fetch as ReturnType<typeof vi.fn>).mockClear();
     fireEvent.click(screen.getByTestId("end-match"));
     expect(global.fetch).not.toHaveBeenCalled();
@@ -84,14 +92,14 @@ describe("SettingsTab", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "ADMIN", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Cannot end" }) }));
     vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
-    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="match1" />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByTestId("end-match"));
     expect(await screen.findByText("Cannot end")).toBeInTheDocument();
   });
 
   it("does not render the webhook/bridge admin cards for an OPERATOR role", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", activeOrgId: "org1" } } });
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.queryByText("Stream Deck / Webhooks")).not.toBeInTheDocument();
     expect(screen.queryByText("Bridge Devices")).not.toBeInTheDocument();
   });
@@ -99,7 +107,7 @@ describe("SettingsTab", () => {
   it("renders the webhook/bridge admin cards for a MANAGER role with an org", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [] }) }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.getByText("Stream Deck / Webhooks")).toBeInTheDocument();
     expect(screen.getByText("Bridge Devices")).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -111,7 +119,7 @@ describe("SettingsTab", () => {
       if (url.includes("/api/billing/status")) return Promise.resolve({ ok: true, json: async () => ({ addOns: [] }) });
       return Promise.resolve({ ok: true, json: async () => ({ tokens: [] }) });
     }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(await screen.findByText("Data Feed")).toBeInTheDocument();
     expect(await screen.findByText(/requires the Data Feed add-on/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Label (e.g. Singular.live)")).not.toBeInTheDocument();
@@ -127,7 +135,7 @@ describe("SettingsTab", () => {
       return Promise.resolve({ ok: true, json: async () => ({ tokens: [] }) });
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
 
     expect(await screen.findByText("No data feed tokens yet.")).toBeInTheDocument();
     const card = within(screen.getByText("Data Feed").closest("div")!);
@@ -147,7 +155,7 @@ describe("SettingsTab", () => {
   it("links the Bridge Devices card's download buttons to downloads.scorehub.co.nz", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [] }) }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />);
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     expect(screen.getByRole("link", { name: "Mac" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/mac");
     expect(screen.getByRole("link", { name: "Windows" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/windows");

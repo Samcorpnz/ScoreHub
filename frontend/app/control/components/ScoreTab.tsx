@@ -47,15 +47,18 @@ export function ScoreTab({
     clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs,
   });
 
-  // Keep stable refs so keyboard handlers don't go stale
+  // Keep stable refs so keyboard handlers don't go stale. Refreshed after each
+  // commit; the handlers only read them from key events, never during render.
   const stateRef = useRef(state);
-  stateRef.current = state;
   const pushRef = useRef(push);
-  pushRef.current = push;
   const undoRef = useRef(sendUndo);
-  undoRef.current = sendUndo;
   const adjustRef = useRef(sendScoreAdjust);
-  adjustRef.current = sendScoreAdjust;
+  useEffect(() => {
+    stateRef.current = state;
+    pushRef.current = push;
+    undoRef.current = sendUndo;
+    adjustRef.current = sendScoreAdjust;
+  });
 
   const isBasketball = state.sport === "basketball";
   const faultLabel = isBasketball ? "Fouls" : "Faults";

@@ -1,8 +1,18 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { SWRConfig } from "swr";
 import RosterControlPage from "../page";
 import { DEFAULT_MATCH_STATE } from "../../../types";
 import type { MatchState } from "@scorehub/types";
+
+// Every test in this file uses the same orgId, so without a fresh SWR cache
+// per render, a later test would see an earlier test's cached response
+// instead of hitting its own fetch mock.
+function renderPage() {
+  return render(<RosterControlPage />, {
+    wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map() }}>{children}</SWRConfig>,
+  });
+}
 
 const {
   pushMock,
@@ -81,13 +91,13 @@ describe("RosterControlPage", () => {
       opts?.onUnauthenticated?.();
       return { data: null, status: "unauthenticated" };
     });
-    render(<RosterControlPage />);
+    renderPage();
     expect(pushMock).toHaveBeenCalledWith("/login?callbackUrl=/control/roster");
   });
 
   it("shows loading, then the roster once fetched", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ players: [player] })));
-    render(<RosterControlPage />);
+    renderPage();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Jamie Lee")).toBeInTheDocument());
     expect(screen.getByText("Roster (1)")).toBeInTheDocument();
@@ -95,21 +105,21 @@ describe("RosterControlPage", () => {
 
   it("shows an empty-roster message when there are no players", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ players: [] })));
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("No players yet — add one above.")).toBeInTheDocument());
   });
 
   it("shows the upsell (with admin CTA) when the roster endpoint 403s", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "ADMIN", activeOrgId: "org1" } }, status: "authenticated" });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({}, 403)));
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("Unlock Player Photos & Bios")).toBeInTheDocument());
     expect(screen.getByRole("link", { name: /Add Graphics/ })).toBeInTheDocument();
   });
 
   it("shows an error message when the fetch throws", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("Failed to load roster")).toBeInTheDocument());
   });
 
@@ -124,7 +134,7 @@ describe("RosterControlPage", () => {
       return Promise.resolve(jsonResponse({ players: [] }));
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("No players yet — add one above.")).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId("add-player-button"));
@@ -142,7 +152,7 @@ describe("RosterControlPage", () => {
 
   it("shows a validation error when saving without a first/last name", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ players: [] })));
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("No players yet — add one above.")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("add-player-button"));
     fireEvent.click(screen.getByTestId("player-form-save"));
@@ -155,7 +165,7 @@ describe("RosterControlPage", () => {
       return Promise.resolve(jsonResponse({ players: [player] }));
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("Jamie Lee")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("Remove"));
@@ -183,7 +193,7 @@ describe("RosterControlPage", () => {
       return Promise.resolve(jsonResponse({ players: [player] }));
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<RosterControlPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("Live match — unmatched players")).toBeInTheDocument());
     expect(screen.getByText("Casey Fed")).toBeInTheDocument();
 

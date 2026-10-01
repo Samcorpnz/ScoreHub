@@ -15,15 +15,13 @@ export default function VerifyEmailPage() {
 function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get("token");
-  const [state, setState] = useState<"checking" | "ok" | "error">("checking");
-  const [error, setError] = useState<string | null>(null);
+  const [fetchState, setState] = useState<"checking" | "ok" | "error">("checking");
+  const [fetchError, setError] = useState<string | null>(null);
+  const state = token ? fetchState : "error";
+  const error = token ? fetchError : "Missing verification token.";
 
   useEffect(() => {
-    if (!token) {
-      setState("error");
-      setError("Missing verification token.");
-      return;
-    }
+    if (!token) return;
     fetch("/api/account/email/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -20,23 +20,21 @@ function SignupConfirmInner() {
   const token = params.get("token") ?? "";
 
   const [info, setInfo] = useState<SignupRequestInfo | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const loadError = token ? fetchError : "This signup link is missing a token.";
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      setLoadError("This signup link is missing a token.");
-      return;
-    }
+    if (!token) return;
     fetch(`/api/signup/confirm?token=${encodeURIComponent(token)}`)
       .then(async r => {
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error ?? "this signup link is invalid or has expired");
         setInfo(data);
       })
-      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)));
+      .catch(e => setFetchError(e instanceof Error ? e.message : String(e)));
   }, [token]);
 
   async function createAccount() {

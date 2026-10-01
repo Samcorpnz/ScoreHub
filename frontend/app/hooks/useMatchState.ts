@@ -35,7 +35,7 @@ const TIME_SYNC_SAMPLE_WINDOW = 5;
 
 export function useMatchState(auth?: { secret: string; role: string }) {
   const [state, setState] = useState<MatchState>({ ...DEFAULT_MATCH_STATE });
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [socketStatus, setStatus] = useState<ConnectionStatus>("connecting");
   // Set when the relay rejects a display connection for a bad/missing
   // displayToken (see DISPLAY_TOKEN_REQUIRED in relay/src/server.ts) — lets
   // display pages show a "get a fresh link" fallback instead of a blank
@@ -47,7 +47,9 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     auth?.role === "control" ? "connecting" : "viewer"
   );
   const socketRef = useRef<Socket | null>(null);
-  const lastUpdateRef = useRef<number>(Date.now());
+  // Only read while status === "connected", and the connect handler stamps it
+  // first, so the initial value is never observed.
+  const lastUpdateRef = useRef<number>(0);
   const disconnectedSinceRef = useRef<number | null>(null);
   // Best current estimate of (relay clock − local clock), in ms. Used to
   // timestamp operator click instants in server-clock terms so the relay's
@@ -55,12 +57,22 @@ export function useMatchState(auth?: { secret: string; role: string }) {
   // resyncClock/applyManualUpdate on the relay).
   const clockOffsetMsRef = useRef<number>(0);
   const clockOffsetSamplesRef = useRef<{ offsetMs: number; rttMs: number }[]>([]);
+  // Latest-value refs so socket/timer callbacks don't go stale. Refreshed
+  // after each commit — callbacks only ever read them from event/timer
+  // context, never during render.
   const stateRef = useRef(state);
-  stateRef.current = state;
   const controllerStatusRef = useRef(controllerStatus);
-  controllerStatusRef.current = controllerStatus;
+  useEffect(() => {
+    stateRef.current = state;
+    controllerStatusRef.current = controllerStatus;
+  });
   const secret = auth?.secret;
   const role = auth?.role;
+  // The control panel passes useControlToken()'s return value as `secret`,
+  // which is "" until the token fetch resolves — an empty-but-defined secret
+  // means "waiting for a token", not a dropped connection (see the effect
+  // below), so it always reads as "connecting" regardless of socket state.
+  const status: ConnectionStatus = secret === "" ? "connecting" : socketStatus;
 
   useEffect(() => {
     // The control panel passes useControlToken()'s return value directly as
@@ -71,10 +83,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     // silently rejected at the relay's handshake (no orgId resolves from an
     // empty secret) and retried forever by socket.io's own reconnection
     // logic, masking the real "waiting for a token" state as "OFFLINE".
-    if (secret === "") {
-      setStatus("connecting");
-      return;
-    }
+    if (secret === "") return;
 
     // Viewers/displays have no secret — scope them to an org via the page's
     // ?org= query param so multiple tenants on one relay stay isolated.

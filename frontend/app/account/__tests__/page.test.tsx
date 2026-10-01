@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { SWRConfig } from "swr";
 import AccountPage from "../page";
+
+// Every test in this file uses the same orgId, so without a fresh SWR cache
+// per render, a later test would see an earlier test's cached response
+// instead of hitting its own fetch mock.
+function renderPage() {
+  return render(<AccountPage />, {
+    wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map() }}>{children}</SWRConfig>,
+  });
+}
 
 const { useSessionMock } = vi.hoisted(() => ({ useSessionMock: vi.fn() }));
 
@@ -72,7 +82,7 @@ describe("AccountPage", () => {
   it("renders the organization card with the session's name and role", async () => {
     useSessionMock.mockReturnValue(adminSession);
     vi.stubGlobal("fetch", mockFetchRouter());
-    render(<AccountPage />);
+    renderPage();
     expect(screen.getByText("Sam Kerins")).toBeInTheDocument();
     expect(screen.getByText("Role: ADMIN")).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/billing/status"));
@@ -81,7 +91,7 @@ describe("AccountPage", () => {
   it("shows the three plan tiers on the Free plan, with Free marked current", async () => {
     useSessionMock.mockReturnValue(adminSession);
     vi.stubGlobal("fetch", mockFetchRouter());
-    render(<AccountPage />);
+    renderPage();
 
     await screen.findByText("Free");
     expect(screen.getByText("Pro")).toBeInTheDocument();
@@ -95,7 +105,7 @@ describe("AccountPage", () => {
       data: { user: { ...adminSession.data.user, activeRole: "OPERATOR" } },
     });
     vi.stubGlobal("fetch", mockFetchRouter());
-    render(<AccountPage />);
+    renderPage();
 
     await screen.findByText("Only an account ADMIN can change billing.");
     expect(screen.queryByText("Upgrade to Pro")).not.toBeInTheDocument();
@@ -109,7 +119,7 @@ describe("AccountPage", () => {
         "/api/billing/checkout": () => jsonResponse({ clientSecret: "cs_test_123" }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(await screen.findByText("Upgrade to Pro"));
 
@@ -133,7 +143,7 @@ describe("AccountPage", () => {
         "/api/billing/checkout": () => jsonResponse({ switched: true, plan: "pro" }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(await screen.findByText("Upgrade to Pro"));
 
@@ -148,7 +158,7 @@ describe("AccountPage", () => {
         "/api/billing/checkout": () => jsonResponse({ error: "card declined" }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(await screen.findByText("Upgrade to Pro"));
 
@@ -176,7 +186,7 @@ describe("AccountPage", () => {
           }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     expect(await screen.findByText("Pro plan")).toBeInTheDocument();
     expect(screen.getByText("Downgrade to Free")).toBeInTheDocument();
@@ -197,7 +207,7 @@ describe("AccountPage", () => {
       "/api/billing/cancel": () => jsonResponse({}),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(await screen.findByText("Downgrade to Free"));
 
@@ -221,7 +231,7 @@ describe("AccountPage", () => {
           }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     expect(await screen.findByText("Graphics Operator")).toBeInTheDocument();
     expect(screen.getByText("Add Graphics Operator")).toBeInTheDocument();
@@ -232,7 +242,7 @@ describe("AccountPage", () => {
   it("shows both add-ons requiring a base plan note when on Free", async () => {
     useSessionMock.mockReturnValue(adminSession);
     vi.stubGlobal("fetch", mockFetchRouter());
-    render(<AccountPage />);
+    renderPage();
 
     expect(await screen.findAllByText("Requires a Pro or Venue plan.")).toHaveLength(2);
   });
@@ -243,7 +253,7 @@ describe("AccountPage", () => {
       "/api/account/name": () => jsonResponse({}),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<AccountPage />);
+    renderPage();
 
     const nameInput = screen.getByDisplayValue("Sam Kerins");
     fireEvent.change(nameInput, { target: { value: "Samuel Kerins" } });
@@ -266,7 +276,7 @@ describe("AccountPage", () => {
         "/api/account/name": () => jsonResponse({ error: "name too long" }, false),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(screen.getByText("Save"));
     expect(await screen.findByText("name too long")).toBeInTheDocument();
@@ -278,7 +288,7 @@ describe("AccountPage", () => {
       "/api/account/password": () => jsonResponse({}),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<AccountPage />);
+    renderPage();
 
     const [currentPw, newPw] = screen.getAllByPlaceholderText(/password/i).filter(
       el => el.getAttribute("placeholder") === "Current password" || el.getAttribute("placeholder")?.startsWith("New password")
@@ -308,7 +318,7 @@ describe("AccountPage", () => {
         "/api/account/email": () => jsonResponse({ pending: "new@example.com" }),
       })
     );
-    render(<AccountPage />);
+    renderPage();
 
     expect(
       await screen.findByText("A verification link was sent to new@example.com — click it to confirm the change.")
@@ -331,7 +341,7 @@ describe("AccountPage", () => {
       })(),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<AccountPage />);
+    renderPage();
 
     fireEvent.click(await screen.findByText("Change email"));
     fireEvent.change(screen.getByPlaceholderText("New email address"), { target: { value: "changed@example.com" } });
@@ -358,7 +368,7 @@ describe("AccountPage", () => {
       "/api/orgs/org-1/invitations": () => jsonResponse({ invitations: [] }),
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<AccountPage />);
+    renderPage();
 
     await screen.findByText("Team");
     fireEvent.change(screen.getByPlaceholderText("Email address"), { target: { value: "newperson@example.com" } });
@@ -381,7 +391,7 @@ describe("AccountPage", () => {
       data: { user: { ...adminSession.data.user, activeRole: "VIEWER" } },
     });
     vi.stubGlobal("fetch", mockFetchRouter());
-    render(<AccountPage />);
+    renderPage();
 
     await screen.findByText("Display Name");
     expect(screen.queryByText("Team")).not.toBeInTheDocument();

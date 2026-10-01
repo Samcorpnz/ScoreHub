@@ -49,9 +49,10 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
   // Required alongside matchId once DISPLAY_TOKEN_REQUIRED is on
   // (relay/src/server.ts) — fetched here rather than threaded down as a prop
   // since this is the only tab that needs it.
-  const [displayToken, setDisplayToken] = useState<string | null>(null);
+  const [fetchedDisplayToken, setDisplayToken] = useState<string | null>(null);
+  const displayToken = orgId && matchId ? fetchedDisplayToken : null;
   useEffect(() => {
-    if (!orgId || !matchId) { setDisplayToken(null); return; }
+    if (!orgId || !matchId) return;
     fetch(`/api/orgs/${orgId}/matches?id=${matchId}`)
       .then(res => res.json())
       .then(data => setDisplayToken(data?.matches?.[0]?.displayToken ?? null))
