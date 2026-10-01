@@ -115,8 +115,9 @@ test.describe("control -> relay -> display", { tag: "@critical" }, () => {
     await expect(display.getByTestId("display-period")).toHaveText(/BREAK/i, { timeout: 5_000 });
     await expect(displayScore(display, "home")).toHaveText("2");
 
+    // Reopen undoes the end: back to the period that was just ended, break cleared.
     await reopenPeriod(page);
-    await expect(display.getByTestId("display-period")).toHaveText("2", { timeout: 5_000 });
+    await expect(display.getByTestId("display-period")).toHaveText("1", { timeout: 5_000 });
 
     await display.close();
     await endMatch(page);
