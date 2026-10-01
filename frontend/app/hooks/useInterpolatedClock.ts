@@ -24,15 +24,26 @@ export function useInterpolatedClock({
   const preciseSeconds = clockSeconds + direction * ((clockCarryMs ?? 0) / 1000);
 
   const [display, setDisplay] = useState(preciseSeconds);
-  const lastRef = useRef({ time: clockAnchorMs ?? Date.now(), seconds: preciseSeconds });
+  // The initial time is never read: the sync effect below runs on mount,
+  // before the first interpolation tick, and overwrites it.
+  const lastRef = useRef({ time: clockAnchorMs ?? 0, seconds: preciseSeconds });
 
-  // Sync baseline whenever the server sends a new value
+  // Snap to the precise (anchor+carry) value whenever the server sends a new
+  // value while stopped — not the bare integer: this is exactly what
+  // interpolation was already converging toward, so stopping never produces
+  // a visible backward jump. Done during render (React's "adjust state when
+  // inputs change" pattern) rather than in an effect, so it doesn't cost an
+  // extra committed render.
+  const syncKey = `${clockSeconds}|${isRunning}|${countDown}|${clockAnchorMs}|${clockCarryMs}`;
+  const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
+  if (prevSyncKey !== syncKey) {
+    setPrevSyncKey(syncKey);
+    if (!isRunning) setDisplay(preciseSeconds);
+  }
+
+  // Sync the interpolation baseline whenever the server sends a new value
   useEffect(() => {
     lastRef.current = { time: clockAnchorMs ?? Date.now(), seconds: preciseSeconds };
-    // Snap to the precise (anchor+carry) value, not the bare integer — this
-    // is exactly what interpolation was already converging toward, so
-    // stopping never produces a visible backward jump.
-    if (!isRunning) setDisplay(preciseSeconds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clockSeconds, isRunning, countDown, clockAnchorMs, clockCarryMs]);
 

@@ -21,17 +21,18 @@ export interface RosterPlayer {
 // to a photo/bio. Scoped to the ids currently on the feed rather than the
 // whole org roster — the endpoint only returns players whose id is passed, so
 // the shareable display URL can't be used to dump the org's people database.
+const NO_PLAYERS: RosterPlayer[] = [];
+
 export function useRoster(org: string | null | undefined, externalIds: string[]): RosterPlayer[] {
   const [players, setPlayers] = useState<RosterPlayer[]>([]);
   // Stable dependency key so the effect only refetches when the actual set of
   // ids changes, not on every render's fresh array identity.
   const idsKey = [...externalIds].sort((a, b) => a.localeCompare(b)).join(",");
 
+  const hasInputs = Boolean(org) && idsKey !== "";
+
   useEffect(() => {
-    if (!org || idsKey === "") {
-      setPlayers([]);
-      return;
-    }
+    if (!org || idsKey === "") return;
     const url = `${RELAY_URL}/api/graphics/roster?org=${encodeURIComponent(org)}&externalId=${encodeURIComponent(idsKey)}`;
     fetch(url)
       .then(res => res.json())
@@ -42,7 +43,7 @@ export function useRoster(org: string | null | undefined, externalIds: string[])
       });
   }, [org, idsKey]);
 
-  return players;
+  return hasInputs ? players : NO_PLAYERS;
 }
 
 // Matches a live feed player (bridge/src/graphics/feedTransform.ts's id,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import * as Sentry from "@sentry/nextjs";
 import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
@@ -119,7 +120,7 @@ export default function AccountPage() {
     "data-feed": false,
   });
 
-  const fetchBillingStatus = () =>
+  const fetchBillingStatus = useCallback(() =>
     fetch("/api/billing/status")
       .then(r => r.json())
       .then(data => {
@@ -131,9 +132,7 @@ export default function AccountPage() {
         }));
         return data;
       })
-      .catch(() => null);
-
-  const refreshBillingStatus = () => fetchBillingStatus();
+      .catch(() => null), []);
 
   // The webhook that actually updates Account.plan lands asynchronously after
   // Stripe's onComplete fires, so a single fetch right after checkout usually
@@ -167,8 +166,8 @@ export default function AccountPage() {
   }
 
   useEffect(() => {
-    refreshBillingStatus();
-  }, []);
+    fetchBillingStatus();
+  }, [fetchBillingStatus]);
 
   async function upgrade(plan: "pro" | "venue") {
     setBillingBusy(true);
@@ -184,7 +183,7 @@ export default function AccountPage() {
         setCheckoutKind("plan");
         setCheckoutSecret(data.clientSecret);
       } else if (data?.switched) {
-        await refreshBillingStatus();
+        await fetchBillingStatus();
         setSwitchNotice(`Switched to the ${data.plan} plan.`);
       } else {
         setSwitchNotice(data?.error ?? "couldn't start checkout");
@@ -208,7 +207,7 @@ export default function AccountPage() {
         setCheckoutKind(addOnId);
         setCheckoutSecret(data.clientSecret);
       } else if (data.switched) {
-        await refreshBillingStatus();
+        await fetchBillingStatus();
         setSwitchNotice(`Switched the ${ADD_ONS.find(a => a.id === addOnId)?.name} add-on billing interval.`);
       } else if (data.error) {
         setSwitchNotice(data.error);
@@ -226,7 +225,7 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resume, addOn: addOnId }),
       });
-      if (res.ok) await refreshBillingStatus();
+      if (res.ok) await fetchBillingStatus();
     } finally {
       setAddOnBusy(prev => ({ ...prev, [addOnId]: false }));
     }
@@ -251,7 +250,7 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ resume }),
       });
-      if (res.ok) await refreshBillingStatus();
+      if (res.ok) await fetchBillingStatus();
     } finally {
       setCancelBusy(false);
     }
@@ -753,29 +752,26 @@ function canActOnRole(actorRole: string, targetRole: string): boolean {
 // API route); lower-privilege roles get names/roles without everyone's email.
 type Member = { userId: string; name: string; email?: string; role: string; memberSince: string };
 type PendingInvite = { id: string; email: string; role: string; createdAt: string; expiresAt: string };
+type TeamData = { members: Member[]; invitations: PendingInvite[] };
+
+async function fetchTeam(orgId: string): Promise<TeamData> {
+  const [membersRes, invitesRes] = await Promise.all([
+    fetch(`/api/orgs/${orgId}/members`).then(r => r.json()).catch(() => ({ members: [] })),
+    fetch(`/api/orgs/${orgId}/invitations`).then(r => r.json()).catch(() => ({ invitations: [] })),
+  ]);
+  return { members: membersRes.members ?? [], invitations: invitesRes.invitations ?? [] };
+}
 
 function TeamCard({ orgId, actorRole, actorUserId }: { readonly orgId: string; readonly actorRole: string; readonly actorUserId: string }) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [invitations, setInvitations] = useState<PendingInvite[]>([]);
+  const { data, mutate: refresh } = useSWR(orgId, fetchTeam);
+  const members = data?.members ?? [];
+  const invitations = data?.invitations ?? [];
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState(assignableRoles(actorRole).at(-1) ?? "VIEWER");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
 
   const roleOptions = assignableRoles(actorRole);
-
-  async function refresh() {
-    const [membersRes, invitesRes] = await Promise.all([
-      fetch(`/api/orgs/${orgId}/members`).then(r => r.json()).catch(() => ({ members: [] })),
-      fetch(`/api/orgs/${orgId}/invitations`).then(r => r.json()).catch(() => ({ invitations: [] })),
-    ]);
-    setMembers(membersRes.members ?? []);
-    setInvitations(invitesRes.invitations ?? []);
-  }
-
-  useEffect(() => {
-    refresh();
-  }, [orgId]);
 
   async function handleInvite() {
     setBusy(true);
@@ -1096,28 +1092,22 @@ type Passkey = {
   lastUsedAt: string | null;
 };
 
+async function fetchPasskeys(): Promise<Passkey[]> {
+  const res = await fetch("/api/webauthn/passkeys");
+  const data = await res.json().catch(() => ({}));
+  return Array.isArray(data?.passkeys) ? data.passkeys : [];
+}
+
 function PasskeysCard() {
-  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  // On a transient fetch failure SWR keeps the last successful list rather
+  // than clearing it, matching the previous catch-and-keep behavior.
+  const { data: passkeys = [], mutate: refresh } = useSWR("/api/webauthn/passkeys", fetchPasskeys);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-
-  async function refresh() {
-    try {
-      const res = await fetch("/api/webauthn/passkeys");
-      const data = await res.json().catch(() => ({}));
-      setPasskeys(Array.isArray(data?.passkeys) ? data.passkeys : []);
-    } catch {
-      // leave the existing list as-is on a transient fetch failure
-    }
-  }
-
-  useEffect(() => {
-    refresh();
-  }, []);
 
   async function handleAdd() {
     setBusy(true);

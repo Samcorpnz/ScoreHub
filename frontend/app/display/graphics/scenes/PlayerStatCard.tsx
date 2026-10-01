@@ -45,6 +45,7 @@ export function PlayerStatCard({ payload, state, roster }: SceneProps) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {photoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- small overlay avatar from relay/external URL; next/image optimizer adds cost and lazy-load flicker on a live overlay
             <img src={photoSrc} alt={displayName} style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: `2px solid ${teamColor}` }} />
           ) : (
             <span style={{ width: 4, height: 20, background: teamColor, borderRadius: 2, display: "inline-block" }} />

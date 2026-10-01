@@ -17,24 +17,22 @@ function ResetPasswordInner() {
   const token = params.get("token") ?? "";
 
   const [valid, setValid] = useState<boolean | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const loadError = token ? fetchError : "This reset link is missing a token.";
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      setLoadError("This reset link is missing a token.");
-      return;
-    }
+    if (!token) return;
     fetch(`/api/auth/reset-password?token=${encodeURIComponent(token)}`)
       .then(async r => {
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error ?? "this reset link is invalid or has expired");
         setValid(true);
       })
-      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)));
+      .catch(e => setFetchError(e instanceof Error ? e.message : String(e)));
   }, [token]);
 
   async function resetPassword() {

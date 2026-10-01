@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { SWRConfig } from "swr";
 import DashboardPage from "../page";
+
+// Every test in this file uses the same orgId, so without a fresh SWR cache
+// per render, a later test would see an earlier test's cached response
+// instead of hitting its own fetch mock.
+function renderPage() {
+  return render(<DashboardPage />, {
+    wrapper: ({ children }) => <SWRConfig value={{ provider: () => new Map() }}>{children}</SWRConfig>,
+  });
+}
 
 const { pushMock, useSessionMock, signOutMock } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -52,7 +62,7 @@ afterEach(() => {
 describe("DashboardPage", () => {
   it("shows a loading state while the session is resolving", () => {
     useSessionMock.mockReturnValue({ data: null, status: "loading" });
-    render(<DashboardPage />);
+    renderPage();
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
@@ -61,7 +71,7 @@ describe("DashboardPage", () => {
       opts?.onUnauthenticated?.();
       return { data: null, status: "unauthenticated" };
     });
-    render(<DashboardPage />);
+    renderPage();
     expect(pushMock).toHaveBeenCalledWith("/login?callbackUrl=/dashboard");
   });
 
@@ -70,7 +80,7 @@ describe("DashboardPage", () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [matchRow()] }) });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<DashboardPage />);
+    renderPage();
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/orgs/org-1/matches?status=LIVE"))
@@ -82,7 +92,7 @@ describe("DashboardPage", () => {
   it("shows 'No matches here yet.' when the list is empty", async () => {
     useSessionMock.mockReturnValue(authedSession);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));
-    render(<DashboardPage />);
+    renderPage();
     await waitFor(() => expect(screen.getByText("No matches here yet.")).toBeInTheDocument());
   });
 
@@ -90,7 +100,7 @@ describe("DashboardPage", () => {
     useSessionMock.mockReturnValue(authedSession);
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
     vi.stubGlobal("fetch", fetchMock);
-    render(<DashboardPage />);
+    renderPage();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("upcoming"));
@@ -105,7 +115,7 @@ describe("DashboardPage", () => {
     useSessionMock.mockReturnValue(authedSession);
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
     vi.stubGlobal("fetch", fetchMock);
-    render(<DashboardPage />);
+    renderPage();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     fireEvent.change(screen.getByPlaceholderText("Search team name…"), { target: { value: "Sharks" } });
@@ -122,7 +132,7 @@ describe("DashboardPage", () => {
         json: async () => ({ matches: [matchRow({ id: "ended-1", status: "ENDED" })] }),
       })
     );
-    render(<DashboardPage />);
+    renderPage();
     expect(await screen.findByText("Ended")).toBeInTheDocument();
     expect(screen.queryByText("Copy display link")).not.toBeInTheDocument();
   });
@@ -133,7 +143,7 @@ describe("DashboardPage", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
-    render(<DashboardPage />);
+    renderPage();
     const copyButton = await screen.findByText("Copy display link");
     fireEvent.click(copyButton);
 
@@ -145,7 +155,7 @@ describe("DashboardPage", () => {
     useSessionMock.mockReturnValue(authedSession);
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
     vi.stubGlobal("fetch", fetchMock);
-    render(<DashboardPage />);
+    renderPage();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("upcoming"));
@@ -188,7 +198,7 @@ describe("DashboardPage", () => {
   it("shows parse errors for CSV rows missing required fields", async () => {
     useSessionMock.mockReturnValue(authedSession);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));
-    render(<DashboardPage />);
+    renderPage();
     fireEvent.click(screen.getByText("upcoming"));
     fireEvent.click(screen.getByText("Upload Fixtures"));
 
@@ -203,7 +213,7 @@ describe("DashboardPage", () => {
   it("signs out and redirects to /login", async () => {
     useSessionMock.mockReturnValue(authedSession);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));
-    render(<DashboardPage />);
+    renderPage();
     fireEvent.click(screen.getByText("Sign out"));
     expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/login" });
   });

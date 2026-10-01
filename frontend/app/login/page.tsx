@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense, SubmitEvent } from "react";
+import { useState, useSyncExternalStore, Suspense, SubmitEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -11,6 +11,9 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
+// useSyncExternalStore needs a subscribe fn; browser capabilities never change.
+const subscribeNever = () => () => {};
 
 // Bounded quantifiers (rather than unbounded `+`) cap backtracking cost even
 // though the three `[^\s@]` classes overlap — see typescript:S8786.
@@ -40,15 +43,17 @@ function LoginForm() {
   const [loading,  setLoading]  = useState(false);
   const [touched,  setTouched]  = useState<Record<string, boolean>>({});
 
-  const [passkeySupported, setPasskeySupported] = useState(false);
   const [passkeyBusy,      setPasskeyBusy]      = useState(false);
   const [passkeyError,     setPasskeyError]     = useState("");
 
-  // Feature-detect client-side only, after mount, to avoid an SSR/hydration
-  // mismatch (window.PublicKeyCredential doesn't exist on the server).
-  useEffect(() => {
-    setPasskeySupported(typeof window !== "undefined" && "PublicKeyCredential" in window);
-  }, []);
+  // Feature-detect client-side only: the server snapshot is always false, so
+  // hydration matches (window.PublicKeyCredential doesn't exist on the server)
+  // and the client then re-renders with the real value.
+  const passkeySupported = useSyncExternalStore(
+    subscribeNever,
+    () => "PublicKeyCredential" in window,
+    () => false,
+  );
 
   const errors = fieldErrors(email, password);
   const touch = (field: string) => setTouched((t) => ({ ...t, [field]: true }));

@@ -49,6 +49,7 @@ export function PlayerHeadshotBio({ payload, state, roster }: SceneProps) {
     <Card>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         {photoSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element -- small overlay headshot from relay/external URL; next/image optimizer adds cost and lazy-load flicker on a live overlay
           <img
             src={photoSrc}
             alt={displayName}

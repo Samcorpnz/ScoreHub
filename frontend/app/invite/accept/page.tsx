@@ -21,7 +21,8 @@ function InviteAcceptInner() {
   const { data: session, status: sessionStatus, update: updateSession } = useSession();
 
   const [info, setInfo] = useState<InvitationInfo | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const loadError = token ? fetchError : "This invitation link is missing a token.";
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -30,17 +31,14 @@ function InviteAcceptInner() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      setLoadError("This invitation link is missing a token.");
-      return;
-    }
+    if (!token) return;
     fetch(`/api/invitations/accept?token=${encodeURIComponent(token)}`)
       .then(async r => {
         const data = await r.json();
         if (!r.ok) throw new Error(data?.error ?? "this invitation is invalid or has expired");
         setInfo(data);
       })
-      .catch(e => setLoadError(e instanceof Error ? e.message : String(e)));
+      .catch(e => setFetchError(e instanceof Error ? e.message : String(e)));
   }, [token]);
 
   async function acceptAsLoggedInUser() {
