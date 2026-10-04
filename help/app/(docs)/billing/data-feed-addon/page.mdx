@@ -2,9 +2,13 @@ export const metadata = { title: "Data Feed add-on" };
 
 # Data Feed add-on
 
-**Data Feed** gives third-party graphics software a secure, token-authenticated feed of your live
-match state — score, clock, period, team names, colours and logos — so tools like Singular.live,
-Chyron or Vizrt can drive their own templates from ScoreHub.
+**Data Feed** connects ScoreHub to the equipment and software around it, in two directions:
+
+- **In** — score from a physical scoring console (or a ChampionData feed) through the
+  [Bridge app](/connecting-the-bridge), instead of tapping the score in by hand.
+- **Out** — give third-party graphics software a secure, token-authenticated feed of your live
+  match state — score, clock, period, team names, colours and logos — so tools like Singular.live,
+  Chyron or Vizrt can drive their own templates from ScoreHub.
 
 | | Monthly | Annual |
 | --- | --- | --- |
@@ -19,8 +23,9 @@ It requires an active **Pro** or **Venue** plan; it isn't available on Free.
   included in every plan. See [Displaying your score](/displaying-your-score).
 - **You want broadcast scenes built into ScoreHub.** That's the
   [Graphics Operator add-on](/billing/graphics-addon).
-- **You have your own graphics system and want it to read ScoreHub's data.** Yes — this is what
-  Data Feed is for.
+- **You want to score from a physical console through Bridge.** Yes. Without the add-on, the
+  **Bridge Devices** card shows an upgrade prompt and Bridge can't connect.
+- **You have your own graphics system and want it to read ScoreHub's data.** Yes.
 
 ## Buying it
 
@@ -65,4 +70,4 @@ To cut off an integration, select **Revoke** next to its token on the Data Feed 
 The add-on cancels independently of your plan, from **Cancel add-on** on the Account page. It
 stays active until the end of the current billing period — see
 [Cancelling your plan](/billing/cancelling). Once it lapses, requests with a data feed token are
-refused.
+refused and Bridge can no longer connect, so switch to scoring from the control panel first.

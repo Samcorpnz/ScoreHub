@@ -2,11 +2,11 @@ export const metadata = { title: "Squash" };
 
 # Squash
 
-Squash matches run as best of 5 games to 11 on ScoreHub's squash template.
+Squash matches run as best of 5 or best of 3 games to 11 on ScoreHub's squash template.
 
 ## Match structure
 
-- Periods: 5 × GAME
+- Periods: up to 5 × GAME (best of 5) or 3 × GAME (best of 3)
 - Clock: counts up from 0:00, no fixed length
 - Scores reset each period: each game starts back at 0–0
 
@@ -20,6 +20,13 @@ When creating the match ([Getting started](/getting-started)), choose the **Matc
 
 - **Best of 5** — WSF / PSA major events
 - **Best of 3** — circuit / club events
+
+The control panel shows where you are in the match, for example **GAME 2 of 3**, and won't go past
+the last game: on the final game the **END GAME** button changes to **FINAL GAME**. The format is
+chosen when the match is created and can't be changed afterwards. ScoreHub doesn't count games won
+— each game's score resets to 0–0 when you end it.
+
+Matches uploaded as fixtures don't have a format, so they aren't limited to a number of games.
 
 ## Running the match
 

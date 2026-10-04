@@ -32,12 +32,14 @@ already has the match open, yours shows **VIEWING ONLY** and a **Take Control** 
    the most common cause of dropped data. See [Connecting a console](/connecting-the-bridge).
 3. Confirm the token in Bridge's **Bridge Secret** field is still valid — tokens are long-lived
    but can be revoked from **Bridge Devices** on the control panel's Settings tab.
-4. Confirm the token was generated **for this match**. A token generated for a different match,
-   or left on **All matches**, won't feed this match's displays — generate a new one with the
-   match selected and paste it into **Bridge Secret**.
-5. If Bridge shows **RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL**, the venue laptop has lost its
+4. Confirm Bridge is pointed at **this match**. In Bridge, select **Refresh** next to **Match**
+   and check the right match is chosen, then **Stop** and **Start**. A token that was generated
+   for one specific match can't be moved — generate a new one.
+5. If the Live Log says connecting a console **requires the Data Feed add-on**, an Admin needs to
+   add it from the Account page. See [Data Feed add-on](/billing/data-feed-addon).
+6. If Bridge shows **RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL**, the venue laptop has lost its
    connection to ScoreHub. Check its internet connection and the **Relay URL** field.
-6. As a fallback while you debug the console connection, you can always score the match by hand
+7. As a fallback while you debug the console connection, you can always score the match by hand
    from the control panel — Bridge and manual scoring aren't mutually exclusive, either can drive
    the same match.
 

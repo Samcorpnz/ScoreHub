@@ -21,22 +21,31 @@ sources:
 The Bridge window is where you pick the source and configure it. The same screen is also served
 locally at `http://localhost:4002` while Bridge is running.
 
+## Before you start
+
+Connecting a console needs the [Data Feed add-on](/billing/data-feed-addon). Without it, the
+**Bridge Devices** card shows an upgrade prompt and Bridge can't connect. An Admin can add it from
+the Account page.
+
 ## Setting it up
 
 1. **Create the match first**, from the dashboard — either set it up now or schedule it as a
    fixture.
-2. **Generate a bridge token for that match.** In the control panel, open the **Settings** tab and
-   find **Bridge Devices**. Give the token a label (for example "Venue laptop 1"), choose the
-   match in the selector next to it, and select **Generate Token**. Copy it straight away — it's
-   shown once. Only Admins and Managers see this card. The token is a long-lived credential —
-   treat it like a password and don't share it outside your venue team.
-3. **Copy the relay URL** from the **Connection** card on the same Settings tab.
+2. **Generate a bridge token.** In the control panel, open the **Settings** tab and find
+   **Bridge Devices**. Give the token a label (for example "Venue laptop 1"), leave the selector
+   on **All matches**, and select **Generate Token**. Copy it straight away — it's shown once.
+   Only Admins and Managers see this card. The token is a long-lived credential — treat it like a
+   password and don't share it outside your venue team. One token per laptop is enough; you don't
+   need a new one for each match.
+3. **Copy the relay URL** from the **Connection** card on the same Settings tab, using its **Copy**
+   button.
 4. **Download and install Bridge** on the laptop connected to the console (or running the
    ChampionData feed):
    [Download for Mac](https://downloads.scorehub.co.nz/mac) ·
    [Download for Windows](https://downloads.scorehub.co.nz/windows).
 5. **Configure Bridge.** Under **Configuration**, paste the relay URL into **Relay URL** and the
-   token into **Bridge Secret**, choose your **Data Source**, fill in its settings (for a console:
+   token into **Bridge Secret**. Select **Refresh** next to **Match** and choose the match this
+   console is scoring. Then choose your **Data Source**, fill in its settings (for a console:
    **Serial Port** and **Baud Rate**), and select **Save Config**.
 6. **Select Start.** Bridge begins forwarding match state as soon as the console sends data, and
    the **Live Log** shows what's arriving and what's being sent.
@@ -44,10 +53,17 @@ locally at `http://localhost:4002` while Bridge is running.
    the console's score appears before the match starts.
 
 <Callout>
-  **Choose the match when you generate the token.** A token left on **All matches** isn't tied to
-  the match you set up, so the console's score won't appear on that match's displays. For the next
-  match, generate a new token for it and paste it into **Bridge Secret**.
+  **Choose the match in Bridge.** If **Match** is left on **Organisation default**, the console's
+  score won't appear on the displays of a match you opened from the dashboard. For the next match,
+  select **Stop**, choose the new match, and select **Start** — the same token keeps working.
 </Callout>
+
+If you'd rather lock a laptop to one match, choose that match in the selector when you generate
+the token. Bridge then shows the match as fixed and you'll need a new token for the next match.
+
+If your copy of Bridge has no **Match** selector, update it — see
+[ChampionData and Bridge updates](/connecting-the-bridge/championdata-and-updates) — or generate
+the token with the match selected instead.
 
 Bridge runs as a desktop app with a system tray icon — it keeps relaying even if you close its
 window. Tick **Launch at login** in the tray menu so the app reopens after a reboot; you still
