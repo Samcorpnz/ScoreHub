@@ -79,7 +79,9 @@ resource "betteruptime_status_page" "main" {
   company_name = "ScoreHub"
   company_url  = "https://scorehub.co.nz"
   subdomain    = var.status_page_subdomain
-  timezone     = "Pacific/Auckland"
+  # Better Stack stores the Rails zone name, not the IANA one — "Pacific/Auckland"
+  # is accepted on create but reads back as "Wellington", causing a perpetual diff.
+  timezone     = "Wellington"
 }
 
 resource "betteruptime_status_page_resource" "relay" {
