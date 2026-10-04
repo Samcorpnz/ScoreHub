@@ -383,6 +383,18 @@
         <label for="bridgeSecret">Bridge Secret</label>
         <input type="password" id="bridgeSecret" placeholder="changeme">
       </div>
+      <div class="field">
+        <label for="matchId">Match</label>
+        <div style="display: flex; gap: 6px;">
+          <select id="matchId" style="flex: 1;">
+            <option value="">Organisation default</option>
+          </select>
+          <button class="btn-ghost" type="button" onclick="refreshMatches(true)">Refresh</button>
+        </div>
+        <div id="matchHint" style="font-size: 11px; opacity: 0.7; margin-top: 4px;">
+          Choose the match this console is scoring so its data reaches that match's displays.
+        </div>
+      </div>
 
       <div class="field" style="margin-top: 18px;">
         <label for="sourceType">Data Source</label>
@@ -493,6 +505,7 @@
 
   async function init() {
     await loadConfig();
+    await refreshMatches(false);
     await refreshPorts();
     connectSSE();
     pollStatus();
@@ -512,6 +525,7 @@
   function applyConfigToForm(c) {
     setVal('relayUrl', c.relayUrl || '');
     setVal('bridgeSecret', c.bridgeSecret || '');
+    setMatchOptions(c.matchId ? [{ id: c.matchId, name: 'Selected match' }] : [], c.matchId || '');
     setVal('sourceType', c.source || 'saturn');
     setVal('serialPort', c.serialPort || '');
     setVal('baudRate', String(c.baudRate || 9600));
@@ -528,6 +542,7 @@
     return {
       relayUrl: getVal('relayUrl'),
       bridgeSecret: getVal('bridgeSecret'),
+      matchId: getVal('matchId'),
       source: getVal('sourceType'),
       serialPort: getVal('serialPort'),
       baudRate: Number(getVal('baudRate')),
@@ -550,6 +565,53 @@
     const data = await res.json();
     config = data.config;
     addLogEntry({ ts: Date.now(), level: 'info', msg: 'Config saved' });
+  }
+
+  // ── Match picker ────────────────────────────────────────────────────────────
+
+  function setMatchOptions(matches, selected) {
+    const sel = document.getElementById('matchId');
+    sel.innerHTML = '<option value="">Organisation default</option>';
+    matches.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.status === 'SCHEDULED' ? `${m.name} (upcoming)` : m.name;
+      sel.appendChild(opt);
+    });
+    sel.value = selected;
+    // A previously saved match that's no longer offered (ended, or the list
+    // couldn't be fetched) falls back to the default rather than a blank select.
+    if (sel.value !== selected) sel.value = '';
+  }
+
+  // The list comes from the relay using the URL and secret in the form, so a
+  // manual refresh saves them first. A change of match takes effect on the
+  // next Start.
+  async function refreshMatches(saveFirst) {
+    const hint = document.getElementById('matchHint');
+    const sel = document.getElementById('matchId');
+    if (saveFirst) await saveConfig();
+    let data;
+    try {
+      data = await (await fetch('/api/matches')).json();
+    } catch (_) {
+      data = { ok: false, matches: [], error: 'Could not reach the bridge' };
+    }
+    if (!data.ok) {
+      hint.textContent = `Couldn't load matches: ${data.error}`;
+      return;
+    }
+    if (data.pinnedMatchId) {
+      setMatchOptions(data.matches, data.pinnedMatchId);
+      sel.disabled = true;
+      hint.textContent = 'This token is pinned to one match in the control panel.';
+      return;
+    }
+    sel.disabled = false;
+    setMatchOptions(data.matches, getVal('matchId') || config.matchId || '');
+    hint.textContent = data.matches.length
+      ? "Choose the match this console is scoring so its data reaches that match's displays."
+      : 'No live or upcoming matches yet — set one up in ScoreHub, then Refresh.';
   }
 
   // ── Source selector ─────────────────────────────────────────────────────────

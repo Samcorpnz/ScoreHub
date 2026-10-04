@@ -19,6 +19,10 @@ export type SourceType = "saturn" | "cd-json" | "cd-scrape";
 export interface BridgeConfig {
   relayUrl: string;
   bridgeSecret: string;
+  // The match this bridge feeds, chosen in the UI's match picker. Empty means
+  // "whatever the token says" — a token pinned to a match in the control
+  // panel, or otherwise the organisation's default match.
+  matchId: string;
   source: SourceType;
   // Saturn
   serialPort: string;
@@ -31,6 +35,19 @@ export interface BridgeConfig {
   // CD Scrape
   cdScrapeUrl: string;
   cdScrapePollMs: number;
+}
+
+export interface RelayMatchOption {
+  id: string;
+  name: string;
+  sport: string | null;
+  status: string;
+  scheduledAt: string | null;
+}
+
+export interface RelayMatchList {
+  pinnedMatchId: string | null;
+  matches: RelayMatchOption[];
 }
 
 export type BridgeStatus = "stopped" | "connecting" | "running" | "error";
@@ -48,6 +65,7 @@ const RELAY_HEARTBEAT_CHECK_MS = 5_000;
 const DEFAULT_CONFIG: BridgeConfig = {
   relayUrl: process.env.RELAY_URL ?? "http://localhost:4000",
   bridgeSecret: process.env.BRIDGE_SECRET ?? "changeme",
+  matchId: process.env.MATCH_ID ?? "",
   source: (process.env.CD_SOURCE as SourceType) ?? "saturn",
   serialPort: process.env.SERIAL_PORT ?? "",
   baudRate: Number.parseInt(process.env.BAUD_RATE ?? "9600", 10),
@@ -139,6 +157,21 @@ export class BridgeController {
     await this.start();
   }
 
+  // Asks the relay which matches this bridge token can feed, for the UI's
+  // match picker. Throws with the relay's own message (e.g. the Data Feed
+  // add-on prompt) so the UI can show it as-is.
+  async listMatches(): Promise<RelayMatchList> {
+    const { relayUrl, bridgeSecret } = this.config;
+    const res = await fetch(`${relayUrl.replace(/\/$/, "")}/api/matches`, {
+      headers: { "x-bridge-secret": bridgeSecret },
+    });
+    const body = (await res.json().catch(() => ({}))) as Partial<RelayMatchList> & { error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? (res.status === 401 ? "Bridge Secret not recognised" : `Relay returned ${res.status}`));
+    }
+    return { pinnedMatchId: body.pinnedMatchId ?? null, matches: body.matches ?? [] };
+  }
+
   async listSerialPorts(): Promise<string[]> {
     const ports = await SerialPort.list();
     return ports.map(p => p.path);
@@ -147,10 +180,10 @@ export class BridgeController {
   // ─── Relay connection ───────────────────────────────────────────────────────
 
   private connectRelay(): void {
-    const { relayUrl, bridgeSecret } = this.config;
+    const { relayUrl, bridgeSecret, matchId } = this.config;
 
     this.socket = io(relayUrl, {
-      auth: { secret: bridgeSecret, role: "bridge" },
+      auth: { secret: bridgeSecret, role: "bridge", ...(matchId ? { matchId } : {}) },
       reconnection: true,
       reconnectionDelay: 500,
       reconnectionDelayMax: 2000,
@@ -161,6 +194,18 @@ export class BridgeController {
       this.disconnectedSince = null;
       this.alertedRelayOutage = false;
       this.socket!.emit("stateUpdate", this.state);
+    });
+
+    // The relay refuses a bridge handshake with a reason worth showing the
+    // operator (no Data Feed add-on, selected match ended) — socket.io keeps
+    // retrying, so log each distinct reason once rather than every attempt.
+    let lastConnectError = "";
+    this.socket.on("connect_error", err => {
+      this.disconnectedSince ??= Date.now();
+      if (err.message === lastConnectError) return;
+      lastConnectError = err.message;
+      this.lastError = err.message;
+      log.error(`Relay refused the connection: ${err.message}`);
     });
 
     this.socket.on("disconnect", reason => {

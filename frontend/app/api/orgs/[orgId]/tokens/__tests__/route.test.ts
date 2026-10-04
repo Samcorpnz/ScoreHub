@@ -42,6 +42,8 @@ describe("/api/orgs/[orgId]/tokens", () => {
     tokenFindManyMock.mockReset();
     orgFindUniqueMock.mockReset();
     authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN" } });
+    // BRIDGE (the default type) and DATA_FEED tokens need the data-feed add-on
+    orgFindUniqueMock.mockResolvedValue({ account: { addOns: ["data-feed"] } });
   });
 
   describe("POST", () => {
@@ -133,6 +135,23 @@ describe("/api/orgs/[orgId]/tokens", () => {
       await POST(makePostRequest({ label: "L".repeat(150) }), { params });
       const call = tokenCreateMock.mock.calls[0][0];
       expect(call.data.label).toHaveLength(100);
+    });
+
+    it("403s when creating a BRIDGE token for an org without the data-feed add-on (SA-114)", async () => {
+      orgFindUniqueMock.mockResolvedValue({ account: { addOns: [] } });
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({}), { params });
+      expect(res.status).toBe(403);
+      expect((await res.json()).error).toMatch(/data-feed add-on/);
+      expect(tokenCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("creates a CONTROL token without the data-feed add-on", async () => {
+      orgFindUniqueMock.mockResolvedValue({ account: { addOns: [] } });
+      tokenCreateMock.mockResolvedValue({});
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({ type: "CONTROL" }), { params });
+      expect(res.status).toBe(201);
     });
 
     it("403s when creating a DATA_FEED token for an org without the data-feed add-on", async () => {

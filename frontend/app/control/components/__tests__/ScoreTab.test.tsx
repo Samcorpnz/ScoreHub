@@ -95,6 +95,63 @@ describe("ScoreTab", () => {
     expect(screen.getAllByText(/Fouls: 0/).length).toBeGreaterThan(0);
   });
 
+  describe("best-of match length (SA-118)", () => {
+    it("shows the match length and still ends a game before the last one", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "squash", sportConfig: { format: "bo3" }, period: "2" })} {...handlers} />);
+      expect(screen.getByText("GAME 2 of 3")).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("score-end-period"));
+      expect(handlers.push).toHaveBeenCalledWith(expect.objectContaining({ period: "3" }));
+    });
+
+    it("won't go past the final game of a best-of-3", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "squash", sportConfig: { format: "bo3" }, period: "3" })} {...handlers} />);
+      const end = screen.getByTestId("score-end-period");
+      expect(end).toBeDisabled();
+      expect(end).toHaveTextContent("FINAL GAME");
+      fireEvent.keyDown(globalThis.window, { key: "]" });
+      expect(handlers.push).not.toHaveBeenCalled();
+    });
+
+    it("allows games 4 and 5 in a best-of-5", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "squash", sportConfig: { format: "bo5" }, period: "3" })} {...handlers} />);
+      expect(screen.getByTestId("score-end-period")).not.toBeDisabled();
+    });
+  });
+
+  describe("timeouts (SA-119)", () => {
+    it("uses a timeout for the tapped team", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "basketball", home: { ...DEFAULT_MATCH_STATE.home, timeouts: 5 } })} {...handlers} />);
+      fireEvent.click(screen.getByTestId("score-home-timeout"));
+      expect(handlers.push).toHaveBeenCalledWith({ home: expect.objectContaining({ timeouts: 4 }) });
+    });
+
+    it("never goes below zero", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "basketball", visitor: { ...DEFAULT_MATCH_STATE.visitor, timeouts: 0 } })} {...handlers} />);
+      fireEvent.click(screen.getByTestId("score-visitor-timeout"));
+      expect(handlers.push).toHaveBeenCalledWith({ visitor: expect.objectContaining({ timeouts: 0 }) });
+    });
+
+    it("restores a timeout, capped at the sport's allowance", () => {
+      const handlers = makeHandlers();
+      // basketball allows 5 per team
+      render(<ScoreTab state={makeState({ sport: "basketball", home: { ...DEFAULT_MATCH_STATE.home, timeouts: 4 }, visitor: { ...DEFAULT_MATCH_STATE.visitor, timeouts: 5 } })} {...handlers} />);
+      fireEvent.click(screen.getByTestId("score-home-timeout-restore"));
+      expect(handlers.push).toHaveBeenLastCalledWith({ home: expect.objectContaining({ timeouts: 5 }) });
+      fireEvent.click(screen.getByTestId("score-visitor-timeout-restore"));
+      expect(handlers.push).toHaveBeenLastCalledWith({ visitor: expect.objectContaining({ timeouts: 5 }) });
+    });
+
+    it("is hidden for sports with no timeouts", () => {
+      render(<ScoreTab state={makeState({ sport: "rugby_union" })} {...makeHandlers()} />);
+      expect(screen.queryByTestId("score-home-timeout")).not.toBeInTheDocument();
+    });
+  });
+
   it("toggles home possession when the home-ball button is clicked", () => {
     const handlers = makeHandlers();
     render(<ScoreTab state={makeState({ possession: "none" })} {...handlers} />);

@@ -356,4 +356,49 @@ describe("BridgeController lifecycle", () => {
 
     expect(() => onUpdate({ ...DEFAULT_MATCH_STATE })).not.toThrow();
   });
+
+  describe("match picker (SA-145)", () => {
+    it("sends the chosen match in the relay handshake", async () => {
+      const controller = controllerWithSource({ source: "saturn", serialPort: "", matchId: "m-42" });
+      await controller.start();
+      expect(ioMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        auth: { secret: expect.any(String), role: "bridge", matchId: "m-42" },
+      }));
+    });
+
+    it("omits matchId when none is chosen, leaving the token's own match in charge", async () => {
+      const controller = controllerWithSource({ source: "saturn", serialPort: "" });
+      await controller.start();
+      expect(ioMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        auth: { secret: expect.any(String), role: "bridge" },
+      }));
+    });
+
+    it("surfaces the relay's refusal reason as lastError", async () => {
+      const controller = controllerWithSource({ source: "saturn", serialPort: "" });
+      await controller.start();
+      fakeSocket.__trigger("connect_error", new Error("Connecting a console requires the Data Feed add-on"));
+      expect(controller.lastError).toMatch(/Data Feed add-on/);
+    });
+
+    it("listMatches() asks the relay with the bridge secret and returns its list", async () => {
+      const fetchMock = jest.fn(async () => ({
+        ok: true, status: 200,
+        json: async () => ({ pinnedMatchId: null, matches: [{ id: "m-1", name: "Hawks v Owls", sport: "netball", status: "LIVE", scheduledAt: null }] }),
+      }));
+      jest.spyOn(globalThis, "fetch").mockImplementation(fetchMock as unknown as typeof fetch);
+      const controller = controllerWithSource({ relayUrl: "https://relay.example/", bridgeSecret: "tok" });
+      const list = await controller.listMatches();
+      expect(fetchMock).toHaveBeenCalledWith("https://relay.example/api/matches", { headers: { "x-bridge-secret": "tok" } });
+      expect(list.matches).toHaveLength(1);
+    });
+
+    it("listMatches() throws the relay's own error message", async () => {
+      jest.spyOn(globalThis, "fetch").mockImplementation((async () => ({
+        ok: false, status: 403, json: async () => ({ error: "Connecting a console requires the Data Feed add-on" }),
+      })) as unknown as typeof fetch);
+      const controller = controllerWithSource({});
+      await expect(controller.listMatches()).rejects.toThrow(/Data Feed add-on/);
+    });
+  });
 });

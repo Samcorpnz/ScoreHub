@@ -22,8 +22,9 @@ import {
   scoreAdjustEventSchema, indoorCricketWicketEventSchema,
   graphicsSceneSchema, GraphicsScenePayload,
 } from "./schemas";
-import { applyCricketBall, applyOverComplete, applyInningsChange, applyDeclare } from "./cricket";
+import { applyCricketBall, applyOverComplete, applyInningsChange, applyDeclare, resetCricketState } from "./cricket";
 import { resyncClock } from "./clock";
+import { resolveBridgeAccess, listSelectableMatches, BRIDGE_ADDON_REQUIRED_MESSAGE } from "./matchPicker";
 import { captureException } from "./sentry";
 import { logger } from "./logger";
 
@@ -119,6 +120,59 @@ function roomFor(orgId: string, matchId?: string): string {
 // that as "not enforceable yet" regardless of the flag, same as a caller
 // supplying no matchId at all (org-singleton links have nothing to check a
 // token against).
+// Best-of sports (squash, tennis) run to the match length chosen at setup
+// (sportConfig.format "bo3" | "bo5") — mirrors getMatchLength in the
+// frontend's sport-templates.ts. undefined = no cap: every other sport, and
+// matches with no format recorded.
+const BEST_OF_SPORTS = new Set<string>(["squash", "tennis"]);
+
+export function bestOfLength(state: Pick<MatchState, "sport" | "sportConfig">): number | undefined {
+  if (!BEST_OF_SPORTS.has(state.sport)) return undefined;
+  const match = /^bo([35])$/.exec(String(state.sportConfig?.format ?? ""));
+  return match ? Number.parseInt(match[1], 10) : undefined;
+}
+
+function isFinalPeriod(state: MatchState): boolean {
+  const max = bestOfLength(state);
+  const n = Number.parseInt(state.period, 10);
+  return max !== undefined && !Number.isNaN(n) && n >= max;
+}
+
+// Reset Match zeroes what was scored and returns to period 1 with the
+// sport's default clock. Everything the operator set up — sport, match name,
+// match options, squads/rosters, team identity, theme — is kept (SA-143).
+function resetSportState(sportState: MatchState["sportState"]): MatchState["sportState"] {
+  switch (sportState?.sport) {
+    case "cricket":        return resetCricketState(sportState);
+    case "indoor_cricket": return { ...sportState, homeWickets: 0, visitorWickets: 0 };
+    case "softball":       return { ...sportState, inningHalf: "top", outs: 0, balls: 0, strikes: 0 };
+    default:               return sportState;
+  }
+}
+
+function resetTeam(team: MatchState["home"]): MatchState["home"] {
+  return { ...team, score: 0, faults: 0, players: team.players.map(p => ({ ...p, faults: 0, points: 0 })) };
+}
+
+export function resetMatchState(current: MatchState, defaultClock: number): MatchState {
+  return {
+    ...current,
+    sequenceId: current.sequenceId + 1,
+    clockSeconds: defaultClock,
+    clockAnchorMs: undefined,
+    clockCarryMs: 0,
+    isRunning: false,
+    period: "1",
+    periodBreak: false,
+    possession: "none",
+    hornActive: false,
+    home:    resetTeam(current.home),
+    visitor: resetTeam(current.visitor),
+    netballStats: undefined,
+    sportState: resetSportState(current.sportState),
+  };
+}
+
 export function isDisplayTokenValid(displayToken: string | null | undefined, token: string | undefined, required: boolean): boolean {
   if (!displayToken) return true;
   if (token) return tokensEqual(token, displayToken);
@@ -708,6 +762,27 @@ export function createServer(options: ServerOptions = {}) {
     res.json({ orgId: result.orgId, matchId: result.matchId ?? null });
   });
 
+  // Feeds the match pickers in the Bridge app (x-bridge-secret) and the
+  // Stream Deck plugin (x-control-secret) — both hold tokens that usually
+  // aren't pinned to a match, so they have to choose one themselves (SA-145).
+  app.get("/api/matches", controlRateLimit, async (req, res) => {
+    const bridgeSecret = req.headers["x-bridge-secret"];
+    const controlSecret = req.headers["x-control-secret"];
+    const asBridge = typeof bridgeSecret === "string";
+    const result = asBridge
+      ? await verifyBridgeSecret(bridgeSecret, BRIDGE_SECRET)
+      : await verifyActionSecret(typeof controlSecret === "string" ? controlSecret : undefined, CONTROL_SECRET);
+    if (!result) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (asBridge && !(await orgHasAddOn(result.orgId, "data-feed"))) {
+      res.status(403).json({ error: BRIDGE_ADDON_REQUIRED_MESSAGE });
+      return;
+    }
+    res.json(await listSelectableMatches(result, !asBridge));
+  });
+
   app.get("/state", async (req, res) => {
     let orgId = typeof req.query.org === "string" ? req.query.org : undefined;
     const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
@@ -915,6 +990,7 @@ export function createServer(options: ServerOptions = {}) {
     const matchId = (req as any).matchId as string | undefined;
     try {
       const current = await getState(orgId, matchId);
+      if (isFinalPeriod(current)) { res.json({ ok: true, period: current.period }); return; }
       const n = Number.parseInt(current.period, 10);
       const next = await applyManualUpdate(orgId, { period: String(Number.isNaN(n) ? 2 : n + 1) }, matchId);
       res.json({ ok: true, period: next.period });
@@ -952,6 +1028,7 @@ export function createServer(options: ServerOptions = {}) {
     const matchId = (req as any).matchId as string | undefined;
     try {
       const current = await getState(orgId, matchId);
+      if (isFinalPeriod(current)) { res.json({ ok: true, period: current.period, clockSeconds: current.clockSeconds }); return; }
       const n = Number.parseInt(current.period, 10);
       const defaultClock = SPORT_DEFAULT_CLOCK[current.sport] ?? 0;
       const resetScoreOnPeriod = SPORT_RESET_SCORE_ON_PERIOD.has(current.sport);
@@ -1006,10 +1083,17 @@ export function createServer(options: ServerOptions = {}) {
     let matchId: string | undefined;
 
     if (role === "bridge") {
-      const result = await verifyBridgeSecret(secret, BRIDGE_SECRET);
-      if (result) {
-        orgId = result.orgId;
-        matchId = result.matchId;
+      // Unlike graphics/data-feed below, a refused bridge is a hard error
+      // rather than a silent downgrade to viewer — the venue laptop needs to
+      // be told why its console data isn't going anywhere.
+      const access = await resolveBridgeAccess(secret, BRIDGE_SECRET, requestedMatchId);
+      if (access && !access.ok) {
+        next(new Error(access.error));
+        return;
+      }
+      if (access) {
+        orgId = access.orgId;
+        matchId = access.matchId;
         (socket as any).isBridge = true;
       }
     } else if (role === "control") {
@@ -1243,13 +1327,7 @@ export function createServer(options: ServerOptions = {}) {
         stack.push(current);
         if (stack.length > UNDO_STACK_SIZE) stack.shift();
         undoStacks.set(room, stack);
-        const next: MatchState = {
-          ...DEFAULT_MATCH_STATE,
-          sequenceId: current.sequenceId + 1,
-          home:    { ...DEFAULT_MATCH_STATE.home,    name: current.home.name,    color: current.home.color,    logoUrl: current.home.logoUrl    },
-          visitor: { ...DEFAULT_MATCH_STATE.visitor, name: current.visitor.name, color: current.visitor.color, logoUrl: current.visitor.logoUrl },
-          displayTheme: { ...current.displayTheme },
-        };
+        const next = resetMatchState(current, SPORT_DEFAULT_CLOCK[current.sport] ?? 0);
         setState(orgId, next, matchId);
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", next);

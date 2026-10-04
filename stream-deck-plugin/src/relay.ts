@@ -9,24 +9,36 @@ class RelayClient {
   private listeners = new Set<Listener>();
   private orgId: string | null = null;
   private matchId: string | undefined;
+  private displayToken: string | undefined;
 
   relayUrl = "";
   token = "";
 
-  // Called when global settings are saved in the PI. Fetches orgId/matchId
-  // from /api/me, then opens a viewer socket for live state updates.
-  async init(relayUrl: string, token: string): Promise<void> {
+  // Called when global settings are saved in the PI. Resolves which match
+  // the keys act on, then opens a viewer socket for live state updates.
+  //
+  // A token pinned to a match always uses that match. Otherwise the match
+  // chosen in the PI's picker is used — without one the keys would act on
+  // the organisation's default match, which isn't the one a match's
+  // displays and control panel are showing.
+  async init(relayUrl: string, token: string, selectedMatchId?: string | null): Promise<void> {
     this.relayUrl = relayUrl.replace(/\/$/, "");
     this.token = token;
 
-    const res = await fetch(`${this.relayUrl}/api/me`, {
+    const res = await fetch(`${this.relayUrl}/api/matches`, {
       headers: { "x-control-secret": token },
     });
-    if (!res.ok) throw new Error(`/api/me returned ${res.status}`);
+    if (!res.ok) throw new Error(`/api/matches returned ${res.status}`);
 
-    const { orgId, matchId } = (await res.json()) as { orgId: string; matchId: string | null };
+    const { orgId, pinnedMatchId, matches } = (await res.json()) as {
+      orgId: string;
+      pinnedMatchId: string | null;
+      matches: { id: string; displayToken?: string | null }[];
+    };
     this.orgId = orgId;
-    this.matchId = matchId ?? undefined;
+    this.matchId = pinnedMatchId ?? selectedMatchId ?? undefined;
+    this.displayToken = matches.find((m) => m.id === this.matchId)?.displayToken ?? undefined;
+    this.state = null;
     this.connect();
   }
 
@@ -35,7 +47,7 @@ class RelayClient {
     if (!this.orgId) return;
 
     this.socket = io(this.relayUrl, {
-      auth: { orgId: this.orgId, matchId: this.matchId },
+      auth: { orgId: this.orgId, matchId: this.matchId, token: this.displayToken },
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

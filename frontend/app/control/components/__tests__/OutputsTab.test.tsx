@@ -104,4 +104,30 @@ describe("OutputsTab", () => {
     fireEvent.click(copyButtons[0]);
     expect(writeText).toHaveBeenCalled();
   });
+
+  describe("Regenerate display link (SA-117)", () => {
+    it.each(["ADMIN", "MANAGER"])("is shown to %s", role => {
+      useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: role } } });
+      render(<OutputsTab matchId="match1" />);
+      expect(screen.getByText("Regenerate display link")).toBeInTheDocument();
+    });
+
+    it("is hidden from Operators, who the API would reject", () => {
+      useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: "OPERATOR" } } });
+      render(<OutputsTab matchId="match1" />);
+      expect(screen.queryByText("Regenerate display link")).not.toBeInTheDocument();
+    });
+
+    it("shows an error when the request fails instead of silently doing nothing", async () => {
+      useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: "ADMIN" } } });
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) =>
+        Promise.resolve(init?.method === "POST"
+          ? { ok: false, status: 403, json: () => Promise.resolve({ error: "forbidden" }) }
+          : { ok: true, json: () => Promise.resolve({ matches: [] }) })));
+      render(<OutputsTab matchId="match1" />);
+      fireEvent.click(screen.getByText("Regenerate display link"));
+      expect(await screen.findByRole("alert")).toHaveTextContent(/Couldn't regenerate the display link/);
+    });
+  });
 });

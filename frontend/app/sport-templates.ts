@@ -183,6 +183,18 @@ export const SPORT_TEMPLATES: SportTemplate[] = [
     defaultPossession: "none",
     scoreIncrements: [1],
     resetScoreOnPeriod: true,
+    matchConfig: [
+      {
+        key: "format",
+        label: "Match Format",
+        type: "select",
+        options: [
+          { value: "bo3", label: "Best of 3", description: "Most tour, club and doubles matches" },
+          { value: "bo5", label: "Best of 5", description: "Grand Slam men's singles" },
+        ],
+        defaultValue: "bo3",
+      },
+    ],
   },
   {
     sport: "touch_rugby",
@@ -397,6 +409,29 @@ function ordinalInningsLabel(n: number): string {
 
 export function getTemplate(sport: SportType): SportTemplate {
   return SPORT_TEMPLATES.find(t => t.sport === sport) ?? SPORT_TEMPLATES.at(-1)!;
+}
+
+// Best-of sports (squash, tennis) let the operator choose the match length at
+// setup (sportConfig.format: "bo3" | "bo5"). Returns how many games/sets the
+// match can run to, or undefined when there's no cap: every other sport
+// (timed sports can go to extra time), and matches with no format recorded
+// (fixtures uploaded in bulk, or created before the option existed).
+// Mirrored by bestOfLength in relay/src/server.ts for Stream Deck/webhooks.
+export function getMatchLength(state: Pick<MatchState, "sport" | "sportConfig">): number | undefined {
+  const formatField = getTemplate(state.sport).matchConfig?.find(f => f.key === "format");
+  const format = String(state.sportConfig?.format ?? "");
+  if (!formatField?.options.some(o => o.value === format)) return undefined;
+  const match = /^bo(\d+)$/.exec(format);
+  return match ? Number.parseInt(match[1], 10) : undefined;
+}
+
+// The template's structure line with the chosen match length filled in,
+// e.g. "Best of 3 games to 11" rather than the template's default.
+export function getStructureLabel(state: Pick<MatchState, "sport" | "sportConfig">): string {
+  const template = getTemplate(state.sport);
+  const length = getMatchLength(state);
+  if (length === undefined) return template.structure;
+  return template.structure.replace(/Best of \d+( or \d+)?/, `Best of ${length}`);
 }
 
 // Softball shows "TOP n" / "BOT n" instead of the static periodLabel (e.g. "INNING")

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { IndoorCricketState, formatClockDisplay, formatScore } from "../../types";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { parseClock } from "../lib/parseClock";
-import { getTemplate, ControlPanelProps } from "../../sport-templates";
+import { getTemplate, getMatchLength, ControlPanelProps } from "../../sport-templates";
 import { ClockAdjustButtons, NameField, ScoreButtons, SectionLabel, SmallBtn } from "./primitives";
 
 type Side = "home" | "visitor";
@@ -27,8 +27,8 @@ function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn
   return false;
 }
 
-function periodStatusLabel(periodBreak: boolean, periodLabel: string, period: string): string {
-  if (!periodBreak) return `${periodLabel} ${period}`;
+function periodStatusLabel(periodBreak: boolean, periodLabel: string, period: string, matchLength?: number): string {
+  if (!periodBreak) return matchLength ? `${periodLabel} ${period} of ${matchLength}` : `${periodLabel} ${period}`;
   return periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
 }
 
@@ -64,6 +64,10 @@ export function ScoreTab({
   const faultLabel = isBasketball ? "Fouls" : "Faults";
   const template = getTemplate(state.sport);
   const { scoreIncrements, scoreLabels } = template;
+  // Best-of sports stop at the chosen match length (SA-118); undefined = no cap
+  const matchLength = getMatchLength(state);
+  const currentPeriod = Number.parseInt(state.period, 10);
+  const isFinalPeriod = matchLength !== undefined && !Number.isNaN(currentPeriod) && currentPeriod >= matchLength;
 
   const isIndoorCricket = state.sport === "indoor_cricket";
   const wicketPenalty = Number(state.sportConfig?.wicketPenalty ?? 5);
@@ -103,6 +107,8 @@ export function ScoreTab({
       }
       if (e.key === "]") {
         const n = Number.parseInt(s.period, 10);
+        const max = getMatchLength(s);
+        if (max !== undefined && n >= max) return;
         p({ period: String(Number.isNaN(n) ? 2 : n + 1) });
         return;
       }
@@ -155,7 +161,9 @@ export function ScoreTab({
         <button
           data-testid="score-end-period"
           className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase transition-all"
-          style={{ background: "rgba(251,146,60,0.1)", border: "2px solid rgba(251,146,60,0.4)", color: "rgb(251,146,60)" }}
+          style={{ background: "rgba(251,146,60,0.1)", border: "2px solid rgba(251,146,60,0.4)", color: "rgb(251,146,60)", opacity: isFinalPeriod ? 0.4 : 1 }}
+          disabled={isFinalPeriod}
+          title={isFinalPeriod ? `This is the last ${template.periodLabel.toLowerCase()} of a best-of-${matchLength} match` : undefined}
           onClick={() => {
             const n = Number.parseInt(state.period, 10);
             const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
@@ -179,7 +187,7 @@ export function ScoreTab({
             });
           }}
         >
-          ⏭  END {template.periodLabel}
+          {isFinalPeriod ? `FINAL ${template.periodLabel}` : `⏭  END ${template.periodLabel}`}
         </button>
         <button
           data-testid="score-reopen-period"
@@ -215,7 +223,7 @@ export function ScoreTab({
             {formatClockDisplay(displayClock)}
           </p>
           <p className="text-xs mt-1 font-black tracking-widest" style={{ color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)" }}>
-            {periodStatusLabel(state.periodBreak, template.periodLabel, state.period)}
+            {periodStatusLabel(state.periodBreak, template.periodLabel, state.period, matchLength)}
           </p>
           <p className="text-xs mt-1 font-semibold" style={{ color: state.isRunning ? "var(--running)" : "var(--stopped)" }}>
             {state.isRunning ? "● RUNNING" : "■ PAUSED"}
@@ -245,6 +253,14 @@ export function ScoreTab({
             <SmallBtn label={`Reset ${faultLabel.toLowerCase()}`}
               onClick={() => push({ home: { ...state.home, faults: 0 } })} />
           </div>
+          {template.timeoutsPerTeam > 0 && (
+            <div className="flex gap-2 mt-2">
+              <SmallBtn label={`Timeouts left: ${state.home.timeouts}`} testId="score-home-timeout"
+                onClick={() => push({ home: { ...state.home, timeouts: Math.max(0, state.home.timeouts - 1) } })} />
+              <SmallBtn label="Restore timeout" testId="score-home-timeout-restore"
+                onClick={() => push({ home: { ...state.home, timeouts: Math.min(template.timeoutsPerTeam, state.home.timeouts + 1) } })} />
+            </div>
+          )}
           {isIndoorCricket && (
             <div className="mt-2">
               <SmallBtn label={`Wicket (-${wicketPenalty})  ·  ${homeWickets}`} onClick={() => takeWicket("home")} testId="score-home-wicket" />
@@ -264,6 +280,14 @@ export function ScoreTab({
             <SmallBtn label={`Reset ${faultLabel.toLowerCase()}`}
               onClick={() => push({ visitor: { ...state.visitor, faults: 0 } })} />
           </div>
+          {template.timeoutsPerTeam > 0 && (
+            <div className="flex gap-2 mt-2">
+              <SmallBtn label={`Timeouts left: ${state.visitor.timeouts}`} testId="score-visitor-timeout"
+                onClick={() => push({ visitor: { ...state.visitor, timeouts: Math.max(0, state.visitor.timeouts - 1) } })} />
+              <SmallBtn label="Restore timeout" testId="score-visitor-timeout-restore"
+                onClick={() => push({ visitor: { ...state.visitor, timeouts: Math.min(template.timeoutsPerTeam, state.visitor.timeouts + 1) } })} />
+            </div>
+          )}
           {isIndoorCricket && (
             <div className="mt-2">
               <SmallBtn label={`Wicket (-${wicketPenalty})  ·  ${visitorWickets}`} onClick={() => takeWicket("visitor")} testId="score-visitor-wicket" />

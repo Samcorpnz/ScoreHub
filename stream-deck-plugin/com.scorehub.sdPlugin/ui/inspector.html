@@ -83,6 +83,11 @@
 
     <button id="connectBtn">Connect &amp; Save</button>
     <div id="status" class="status idle">Not connected</div>
+
+    <label>Match</label>
+    <select id="matchId" disabled>
+      <option value="">Connect to choose a match</option>
+    </select>
   </div>
 
   <!-- ── Per-action: Score settings (shown only for score action) ───── -->
@@ -150,6 +155,7 @@
         document.getElementById("token").value = globalSettings.token ? "••••••••" : "";
         if (globalSettings.connected) {
           setStatus("ok", "Connected — " + (globalSettings.orgId || "").slice(0, 12) + "…");
+          loadMatches();
         }
       }
 
@@ -177,27 +183,32 @@
       }
       setStatus("idle", "Connecting…");
 
-      fetch(relayUrl.replace(/\/$/, "") + "/api/me", {
-        headers: { "x-control-secret": token },
-      })
-        .then(function (r) {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.json();
-        })
+      fetchMatches(relayUrl, token)
         .then(function (data) {
+          // Keep the previously chosen match if it's still on offer.
+          var previous = globalSettings.matchId || "";
+          var stillThere = data.matches.some(function (m) { return m.id === previous; });
           globalSettings = {
             relayUrl: relayUrl,
             token: token,
             orgId: data.orgId,
-            matchId: data.matchId || null,
+            matchId: stillThere ? previous : null,
+            pinnedMatchId: data.pinnedMatchId || null,
             connected: true,
           };
           send({ event: "setGlobalSettings", context: uuid, payload: globalSettings });
           setStatus("ok", "Connected — " + data.orgId.slice(0, 12) + "…");
+          renderMatches(data);
         })
         .catch(function (err) {
           setStatus("error", "Failed: " + err.message);
         });
+    });
+
+    // Choosing a match re-points every ScoreHub key at it
+    document.getElementById("matchId").addEventListener("change", function () {
+      globalSettings.matchId = document.getElementById("matchId").value || null;
+      send({ event: "setGlobalSettings", context: uuid, payload: globalSettings });
     });
 
     // Save per-action settings whenever score/period fields change
@@ -218,6 +229,41 @@
         send({ event: "setSettings", context: uuid, payload: actionSettings });
       });
     }
+  }
+
+  function fetchMatches(relayUrl, token) {
+    return fetch(relayUrl.replace(/\/$/, "") + "/api/matches", {
+      headers: { "x-control-secret": token },
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function loadMatches() {
+    if (!globalSettings.relayUrl || !globalSettings.token) return;
+    fetchMatches(globalSettings.relayUrl, globalSettings.token).then(renderMatches).catch(function () {});
+  }
+
+  // A token pinned to a match in the control panel has nothing to choose;
+  // otherwise list the organisation's live and upcoming matches.
+  function renderMatches(data) {
+    var sel = document.getElementById("matchId");
+    sel.innerHTML = "";
+    if (!data.pinnedMatchId) {
+      var none = document.createElement("option");
+      none.value = "";
+      none.textContent = data.matches.length ? "Choose a match…" : "No live or upcoming matches";
+      sel.appendChild(none);
+    }
+    data.matches.forEach(function (m) {
+      var opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.status === "SCHEDULED" ? m.name + " (upcoming)" : m.name;
+      sel.appendChild(opt);
+    });
+    sel.value = data.pinnedMatchId || globalSettings.matchId || "";
+    sel.disabled = !!data.pinnedMatchId;
   }
 
   function send(obj) { ws && ws.readyState === 1 && ws.send(JSON.stringify(obj)); }

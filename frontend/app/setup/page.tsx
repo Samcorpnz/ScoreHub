@@ -83,8 +83,8 @@ export default function SetupPage() {
       countDown: template.countDown,
       period: "1",
       possession: template.defaultPossession,
-      home: { ...matchState.home, name: homeName.trim() },
-      visitor: { ...matchState.visitor, name: visitorName.trim() },
+      home: { ...matchState.home, name: homeName.trim(), timeouts: template.timeoutsPerTeam },
+      visitor: { ...matchState.visitor, name: visitorName.trim(), timeouts: template.timeoutsPerTeam },
       ...(Object.keys(sportConfig).length > 0 && { sportConfig }),
       ...(sport === "cricket" && {
         sportState: {

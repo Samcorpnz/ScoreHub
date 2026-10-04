@@ -195,6 +195,31 @@ describe("POST /action/period/next and /prev", () => {
   });
 });
 
+describe("best-of match length (SA-118)", () => {
+  afterEach(async () => { await manual({ sport: "netball", sportConfig: {}, period: "1" }); });
+
+  it("stops a best-of-3 squash match at game 3", async () => {
+    await manual({ sport: "squash", sportConfig: { format: "bo3" }, period: "2" });
+    expect((await post("/action/period/next")).body.period).toBe("3");
+    expect((await post("/action/period/next")).body.period).toBe("3");
+    expect((await post("/action/period/end")).body.period).toBe("3");
+    expect((await getState()).periodBreak).toBe(false);
+  });
+
+  it("lets a best-of-5 tennis match run to set 5 and no further", async () => {
+    await manual({ sport: "tennis", sportConfig: { format: "bo5" }, period: "4" });
+    expect((await post("/action/period/end")).body.period).toBe("5");
+    expect((await post("/action/period/end")).body.period).toBe("5");
+  });
+
+  it("doesn't cap a match with no format recorded, or any other sport", async () => {
+    await manual({ sport: "squash", sportConfig: {}, period: "5" });
+    expect((await post("/action/period/next")).body.period).toBe("6");
+    await manual({ sport: "netball", sportConfig: { format: "bo3" }, period: "4" });
+    expect((await post("/action/period/next")).body.period).toBe("5");
+  });
+});
+
 describe("socket — adjustScore then undo", () => {
   let control: Socket;
   afterEach(() => { control?.disconnect(); });

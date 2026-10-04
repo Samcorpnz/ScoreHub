@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { prisma, MatchStatus } from "@scorehub/db";
 import { auth } from "@/auth";
+import { canRunMatches } from "@/lib/roles";
 
 // Server-side fetch — needs the relay's address as reachable from this
 // process (e.g. Docker's internal `http://relay:4000`), which can differ
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   if (!session?.user?.activeOrgId || session.user.activeOrgId !== orgId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.activeRole !== "ADMIN" && session.user.activeRole !== "OPERATOR") {
+  if (!canRunMatches(session.user.activeRole)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
