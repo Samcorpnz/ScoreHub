@@ -381,37 +381,34 @@ describe("BridgeController lifecycle", () => {
       expect(controller.lastError).toMatch(/Data Feed add-on/);
     });
 
+    const respond = (status: number, body: unknown) =>
+      jest.spyOn(globalThis, "fetch").mockImplementation((async () =>
+        new Response(typeof body === "string" ? body : JSON.stringify(body), { status })) as unknown as typeof fetch);
+    const NOT_A_RELAY = "Couldn't get the match list — check the Relay URL and Bridge Secret";
+
     it("listMatches() asks the relay with the bridge secret and returns its list", async () => {
-      const fetchMock = jest.fn(async () => ({
-        ok: true, status: 200,
-        json: async () => ({ pinnedMatchId: null, matches: [{ id: "m-1", name: "Hawks v Owls", sport: "netball", status: "LIVE", scheduledAt: null }] }),
-      }));
-      jest.spyOn(globalThis, "fetch").mockImplementation(fetchMock as unknown as typeof fetch);
+      const fetchSpy = respond(200, { pinnedMatchId: null, matches: [{ id: "m-1", name: "Hawks v Owls", sport: "netball", status: "LIVE", scheduledAt: null }] });
       const controller = controllerWithSource({ relayUrl: "https://relay.example/", bridgeSecret: "tok" });
       const list = await controller.listMatches();
-      const [url, init] = fetchMock.mock.calls[0] as unknown as [URL, RequestInit];
+      const [url, init] = fetchSpy.mock.calls[0] as unknown as [URL, RequestInit];
       expect(String(url)).toBe("https://relay.example/api/matches");
       expect(init).toMatchObject({ headers: { "x-bridge-secret": "tok" }, redirect: "error" });
-      expect(list.matches).toHaveLength(1);
+      expect(list.matches).toEqual([{ id: "m-1", name: "Hawks v Owls", sport: "netball", status: "LIVE", scheduledAt: null }]);
     });
 
     it("listMatches() refuses a non-http relay URL without making a request", async () => {
       const fetchSpy = jest.spyOn(globalThis, "fetch");
       for (const relayUrl of ["file:///etc/passwd", "https://user:pw@relay.example", "not a url"]) {
-        const controller = controllerWithSource({ relayUrl });
-        await expect(controller.listMatches()).rejects.toThrow(/Relay URL/);
+        await expect(controllerWithSource({ relayUrl }).listMatches()).rejects.toThrow(/Relay URL/);
       }
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
     it("listMatches() passes on only the expected fields, never the raw response", async () => {
-      jest.spyOn(globalThis, "fetch").mockImplementation((async () => ({
-        ok: true, status: 200,
-        json: async () => ({
-          pinnedMatchId: null, internal: "secret-thing",
-          matches: [{ id: "m-1", name: "N".repeat(500), status: "LIVE", extra: { deep: true } }, { name: "no id" }, "junk"],
-        }),
-      })) as unknown as typeof fetch);
+      respond(200, {
+        pinnedMatchId: null, internal: "secret-thing",
+        matches: [{ id: "m-1", name: "N".repeat(500), status: "LIVE", extra: { deep: true } }, { name: "no id" }, "junk"],
+      });
       const list = await controllerWithSource({ relayUrl: "https://relay.example" }).listMatches();
       expect(list).toEqual({
         pinnedMatchId: null,
@@ -419,19 +416,35 @@ describe("BridgeController lifecycle", () => {
       });
     });
 
-    it("listMatches() doesn't echo an arbitrary error body from a non-relay host", async () => {
-      jest.spyOn(globalThis, "fetch").mockImplementation((async () => ({
-        ok: false, status: 500, json: async () => ({ error: "internal service detail" }),
-      })) as unknown as typeof fetch);
-      await expect(controllerWithSource({ relayUrl: "https://relay.example" }).listMatches()).rejects.toThrow("Relay returned 500");
+    it("listMatches() surfaces the relay's add-on refusal and a rejected secret", async () => {
+      const controller = controllerWithSource({ relayUrl: "https://relay.example" });
+      respond(403, { error: "Connecting a console requires the Data Feed add-on — an Admin can add it under Account → Billing" });
+      await expect(controller.listMatches()).rejects.toThrow(/Data Feed add-on/);
+      respond(401, { error: "unauthorized" });
+      await expect(controller.listMatches()).rejects.toThrow("Bridge Secret not recognised");
     });
 
-    it("listMatches() throws the relay's own error message", async () => {
-      jest.spyOn(globalThis, "fetch").mockImplementation((async () => ({
-        ok: false, status: 403, json: async () => ({ error: "Connecting a console requires the Data Feed add-on" }),
-      })) as unknown as typeof fetch);
+    it("listMatches() gives one indistinguishable error for anything that isn't the relay", async () => {
       const controller = controllerWithSource({ relayUrl: "https://relay.example" });
-      await expect(controller.listMatches()).rejects.toThrow(/Data Feed add-on/);
+      const cases: Array<[number, unknown]> = [
+        [500, { error: "internal service detail" }],
+        [403, { error: "some other service's forbidden page" }],
+        [401, "<html>login</html>"],
+        [404, "not found"],
+        [200, "<html>ok</html>"],
+        [200, { hello: "world" }],
+      ];
+      for (const [status, body] of cases) {
+        respond(status, body);
+        await expect(controller.listMatches()).rejects.toThrow(NOT_A_RELAY);
+      }
+      jest.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
+      await expect(controller.listMatches()).rejects.toThrow(NOT_A_RELAY);
+    });
+
+    it("listMatches() stops reading an oversized response", async () => {
+      respond(200, JSON.stringify({ pinnedMatchId: null, matches: [], pad: "x".repeat(300 * 1024) }));
+      await expect(controllerWithSource({ relayUrl: "https://relay.example" }).listMatches()).rejects.toThrow(NOT_A_RELAY);
     });
   });
 });

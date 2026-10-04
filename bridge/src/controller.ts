@@ -78,6 +78,35 @@ const DEFAULT_CONFIG: BridgeConfig = {
 };
 
 const RELAY_MATCH_LIST_TIMEOUT_MS = 5_000;
+const RELAY_MATCH_LIST_MAX_BYTES = 256 * 1024;
+// Start of BRIDGE_ADDON_REQUIRED_MESSAGE in relay/src/matchPicker.ts
+const RELAY_ADDON_REQUIRED_PREFIX = "Connecting a console requires the Data Feed add-on";
+
+// Reads at most maxBytes of a response before parsing — the size limit has to
+// apply while reading, not to the parsed result, or an endpoint that streams
+// forever (or returns something huge) is buffered in full first.
+async function readJsonCapped(res: Response, maxBytes: number): Promise<Record<string, unknown> | null> {
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error("response too large");
+    }
+    chunks.push(value);
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
 
 function capText(value: unknown, max: number): string | null {
   return typeof value === "string" && value.length > 0 ? value.slice(0, max) : null;
@@ -185,25 +214,33 @@ export class BridgeController {
       throw new Error("Relay URL must be a plain http or https address");
     }
 
-    let res: Response;
+    // One message for every failure that isn't recognisably the relay talking,
+    // so this can't be used to tell apart what else answers at that address.
+    const notARelay = new Error("Couldn't get the match list — check the Relay URL and Bridge Secret");
+    let status: number;
+    let body: Record<string, unknown> | null;
     try {
-      res = await fetch(url, {
+      const res = await fetch(url, {
         headers: { "x-bridge-secret": bridgeSecret },
         redirect: "error",
         signal: AbortSignal.timeout(RELAY_MATCH_LIST_TIMEOUT_MS),
       });
+      status = res.status;
+      body = await readJsonCapped(res, RELAY_MATCH_LIST_MAX_BYTES);
     } catch {
-      throw new Error("Couldn't reach the relay — check the Relay URL");
+      throw notARelay;
     }
-    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok) {
-      if (res.status === 401) throw new Error("Bridge Secret not recognised");
-      const relayError = capText(body?.error, 200);
-      throw new Error(res.status === 403 && relayError ? relayError : `Relay returned ${res.status}`);
+    if (status !== 200) {
+      // Only the relay's own two refusals are surfaced, matched exactly.
+      const relayError = typeof body?.error === "string" ? body.error : "";
+      if (status === 401 && relayError === "unauthorized") throw new Error("Bridge Secret not recognised");
+      if (status === 403 && relayError.startsWith(RELAY_ADDON_REQUIRED_PREFIX)) throw new Error(capText(relayError, 200)!);
+      throw notARelay;
     }
-    const rows = Array.isArray(body?.matches) ? body.matches.slice(0, 100) : [];
+    if (!body || !Array.isArray(body.matches)) throw notARelay;
+    const rows = (body.matches as unknown[]).slice(0, 100);
     return {
-      pinnedMatchId: capText(body?.pinnedMatchId, 64),
+      pinnedMatchId: capText(body.pinnedMatchId, 64),
       matches: rows.flatMap((row: unknown) => {
         const m = (row ?? {}) as Record<string, unknown>;
         const id = capText(m.id, 64);
