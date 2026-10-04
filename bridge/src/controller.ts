@@ -77,6 +77,12 @@ const DEFAULT_CONFIG: BridgeConfig = {
   cdScrapePollMs: Number.parseInt(process.env.CD_POLL_MS ?? "500", 10),
 };
 
+const RELAY_MATCH_LIST_TIMEOUT_MS = 5_000;
+
+function capText(value: unknown, max: number): string | null {
+  return typeof value === "string" && value.length > 0 ? value.slice(0, max) : null;
+}
+
 export class BridgeController {
   private config: BridgeConfig;
   private state: MatchState = { ...DEFAULT_MATCH_STATE };
@@ -160,16 +166,57 @@ export class BridgeController {
   // Asks the relay which matches this bridge token can feed, for the UI's
   // match picker. Throws with the relay's own message (e.g. the Data Feed
   // add-on prompt) so the UI can show it as-is.
+  //
+  // relayUrl is operator-supplied and legitimately points at localhost or a
+  // LAN address in dev/self-hosted setups, so it can't be host-restricted the
+  // way cdScrapeUrl is. Instead this request is kept from being a useful
+  // probe of whatever that URL points at: http(s) only, no redirects, a short
+  // timeout, and only the expected, length-capped fields are passed on —
+  // never the raw response body.
   async listMatches(): Promise<RelayMatchList> {
     const { relayUrl, bridgeSecret } = this.config;
-    const res = await fetch(`${relayUrl.replace(/\/$/, "")}/api/matches`, {
-      headers: { "x-bridge-secret": bridgeSecret },
-    });
-    const body = (await res.json().catch(() => ({}))) as Partial<RelayMatchList> & { error?: string };
-    if (!res.ok) {
-      throw new Error(body.error ?? (res.status === 401 ? "Bridge Secret not recognised" : `Relay returned ${res.status}`));
+    let url: URL;
+    try {
+      url = new URL("/api/matches", relayUrl);
+    } catch {
+      throw new Error("Relay URL isn't a valid URL");
     }
-    return { pinnedMatchId: body.pinnedMatchId ?? null, matches: body.matches ?? [] };
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      throw new Error("Relay URL must be a plain http or https address");
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        headers: { "x-bridge-secret": bridgeSecret },
+        redirect: "error",
+        signal: AbortSignal.timeout(RELAY_MATCH_LIST_TIMEOUT_MS),
+      });
+    } catch {
+      throw new Error("Couldn't reach the relay — check the Relay URL");
+    }
+    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok) {
+      if (res.status === 401) throw new Error("Bridge Secret not recognised");
+      const relayError = capText(body?.error, 200);
+      throw new Error(res.status === 403 && relayError ? relayError : `Relay returned ${res.status}`);
+    }
+    const rows = Array.isArray(body?.matches) ? body.matches.slice(0, 100) : [];
+    return {
+      pinnedMatchId: capText(body?.pinnedMatchId, 64),
+      matches: rows.flatMap((row: unknown) => {
+        const m = (row ?? {}) as Record<string, unknown>;
+        const id = capText(m.id, 64);
+        if (!id) return [];
+        return [{
+          id,
+          name: capText(m.name, 200) ?? "Match",
+          sport: capText(m.sport, 40),
+          status: capText(m.status, 20) ?? "",
+          scheduledAt: capText(m.scheduledAt, 40),
+        }];
+      }),
+    };
   }
 
   async listSerialPorts(): Promise<string[]> {
