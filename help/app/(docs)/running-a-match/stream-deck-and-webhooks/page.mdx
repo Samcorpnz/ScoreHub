@@ -1,0 +1,85 @@
+export const metadata = { title: "Stream Deck and webhooks" };
+
+# Stream Deck and webhooks
+
+You can run the clock and score from an Elgato Stream Deck, or from anything that can send an HTTP
+request — a button box, a home-automation hub, a script. Both use the same control token and are
+available on every plan.
+
+## 1. Generate a control token
+
+An Admin or Manager does this once per device.
+
+1. Open the control panel's **Settings** tab and find **Stream Deck / Webhooks**.
+2. Enter a label, such as "Court 1 Stream Deck", and select **Generate Token**.
+3. Copy the token straight away. It's shown once and can't be retrieved later.
+
+The token is long-lived and lets its holder change scores for your organisation, so treat it like
+a password. To cut off a device, select **Revoke** next to its token.
+
+You'll also need the **relay URL**, shown in the **Connection** card on the same tab.
+
+## 2a. Set up a Stream Deck
+
+Requires Stream Deck software 6.4 or later, on macOS 10.15+ or Windows 10+.
+
+1. On the **Stream Deck / Webhooks** card, select **Download** to get the ScoreHub plugin, then
+   double-click the downloaded file to install it.
+2. In the Stream Deck app, find the **ScoreHub** category and drag an action onto a key.
+3. In the key's settings, paste the **Relay URL** and **Control Token**.
+
+There are three actions:
+
+| Action | What the key does | Settings |
+| --- | --- | --- |
+| **Clock** | Starts or stops the match clock. The key shows whether the clock is running. | — |
+| **Score** | Adds or removes points for one team. The key shows that team's live score. | **Team** (Home or Visitor) and **Points per press** (−2, −1, +1, +2 or +5). |
+| **Period** | Moves to the next or previous period. The key shows the current period. | **Direction**. |
+
+Add one Score key for each team and value you need. The plugin has no +3 option, so for a
+basketball three-pointer press a +2 key then a +1 key, or use the control panel.
+
+<Callout>
+  **Test the plugin against your display before match day.** The plugin can't yet be pointed at a
+  specific match, so its keys may not change the match you opened from the dashboard. Press a
+  Score key and check the match's display updates. If it doesn't, use the endpoints below, which
+  let you name the match.
+</Callout>
+
+## 2b. Call the endpoints yourself
+
+Every action is a `POST` request to the relay URL with your token in an `x-control-secret` header.
+The **Stream Deck / Webhooks** card lists each URL for the match you have open, with a **Copy**
+button.
+
+| Endpoint | Action |
+| --- | --- |
+| `/action/start` | Start the clock |
+| `/action/stop` | Stop the clock |
+| `/action/toggle` | Start if stopped, stop if running |
+| `/action/score/home?delta=1` | Change the home score by `delta` |
+| `/action/score/visitor?delta=1` | Change the visitor score by `delta` |
+| `/action/period/next` | Next period (number only) |
+| `/action/period/prev` | Previous period (number only) |
+| `/action/period/end` | End the period: stop the clock, move on, reset the clock, and reset set scores where the sport does |
+
+`delta` can be any whole number from −99 to 99, and scores stop at zero. Add `matchId=<id>` to the
+query string to target a specific match — the URLs on the Settings card already include it.
+
+Example:
+
+```
+curl -X POST \
+  -H "x-control-secret: YOUR_TOKEN" \
+  "https://RELAY_URL/action/score/home?delta=2&matchId=MATCH_ID"
+```
+
+Each call returns JSON confirming the new value, for example `{"ok":true,"score":14}`. A missing or
+revoked token returns `401`.
+
+## Things to know
+
+- Stream Deck and webhook actions work alongside whoever is scoring on screen — they don't take
+  [control](/running-a-match/sharing-control) from the operator.
+- Score changes made this way can be undone from the control panel like any other.
+- On the Free plan, one match can be live at a time, the same as scoring by hand.

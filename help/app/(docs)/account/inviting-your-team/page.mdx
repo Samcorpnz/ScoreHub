@@ -11,6 +11,8 @@ Account page.
 2. Enter the person's email address and pick a role (Manager and Admin are only offered to Admins
    inviting — see [Roles & permissions](/account/roles-and-permissions)).
 3. Send the invite. It appears in the **Pending invitations** list until it's accepted or expires.
+   Select **Revoke** next to a pending invitation to cancel it — the emailed link stops working
+   straight away.
 
 The invited person receives an email with a link to `/invite/accept?token=...`. Following it:
 
@@ -25,5 +27,6 @@ error; send a new one from the Team panel.
 ## Changing or removing a member
 
 From the same Team panel, Admins and Managers can change a member's role or remove them, subject
-to the same role limits described in [Roles & permissions](/account/roles-and-permissions) — you
-can't act on someone at or above your own rank.
+to the same role limits described in [Roles & permissions](/account/roles-and-permissions) — a
+Manager can only act on Operators and Viewers. You can't change your own role or remove yourself,
+and an organisation must always keep at least one Admin.

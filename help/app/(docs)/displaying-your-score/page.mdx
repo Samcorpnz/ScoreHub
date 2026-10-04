@@ -10,8 +10,8 @@ stream, and a scorebug, all driven from the same match). Every display route liv
 | Route | Best for |
 | --- | --- |
 | `/display/basic` | A simple, centred scoreboard — good default for a phone, tablet, or small screen. |
-| `/display/advanced` | A wider scoreboard card with a header bar and, for sports with one, a sport-specific stats panel — suited to a large venue screen or scoreboard TV. |
-| `/display/fullscreen` | Fills a second monitor edge-to-edge, or a hardware capture card (Elgato, AVerMedia, Magewell, etc.). |
+| `/display/advanced` | A wider scoreboard card with a header bar, team logos and, for sports with one, a sport-specific stats panel — suited to a large venue screen or scoreboard TV. |
+| `/display/fullscreen` | Fills a second monitor or projector edge-to-edge, or a hardware capture card (Elgato, AVerMedia, Magewell, etc.). Has three layouts: Wide, Stacked and Minimal. |
 | `/display/overlay` | Transparent background streaming overlay for OBS/vMix/Wirecast — add as a Browser Source at roughly 1920×120. |
 | `/display/scorebug` | A compact corner widget, transparent background, roughly 480×100 — for a corner scorebug that doesn't need chroma key. |
 | `/display/graphics` | The stable Browser Source URL for the [Graphics Operator add-on](/billing/graphics-addon) — drop it into your streaming software once, and switch what it shows from `/control/graphics` without ever changing the source URL again. |
@@ -23,16 +23,31 @@ stream, and a scorebug, all driven from the same match). Every display route liv
 - **Streaming a match with OBS/vMix/Wirecast:** `/display/overlay` for a full-width bar, or
   `/display/scorebug` for a small corner widget. Both have transparent backgrounds, so no chroma
   key is needed.
-- **Running broadcast-style scene graphics** (lower thirds, sponsor bugs, replay slates) alongside
-  your stream: `/display/graphics`, paired with the Graphics Operator add-on.
+- **Running broadcast-style scene graphics** (lower thirds, player stat cards, player headshots and
+  bios) alongside your stream: `/display/graphics`, paired with the Graphics Operator add-on. See
+  [Using Graphics Operator](/displaying-your-score/graphics-operator).
 
 ## Getting the link
 
-The match URL (with its ID) is shown on the control panel and the dashboard once a match is
-created — append the display route you want, e.g. `.../display/scorebug?match=<id>`. Anyone with
-the link can view it without an account; treat the link itself as the access control.
+Copy links from the app rather than typing them — each one carries your organisation, the match,
+and an access token, so a hand-built URL won't connect.
+
+- **Control panel → Outputs tab** lists every display with **Copy URL** and **Pop Out** buttons.
+- **Dashboard → Copy display link** on any live or upcoming match copies its fullscreen display
+  link.
+
+Anyone with the link can view it without an account; treat the link itself as the access control.
+If a link has been shared somewhere it shouldn't be, an Admin or Manager can select **Regenerate
+display link** on the Outputs tab. Every existing link for that match then stops working and shows
+"This display link is out of date", so re-copy the links into your screens and streaming software
+afterwards.
+
+For step-by-step setup in OBS or vMix, the fullscreen keyboard controls, and the scorebug's
+position and size options, see
+[Venue screens, OBS and vMix](/displaying-your-score/obs-and-venue-screens). To change colours,
+logos and fonts, see [Branding your displays](/displaying-your-score/branding).
 
 <Callout>
-  All display routes are read-only. Scoring only happens from `/control` — see
-  [Getting started](/getting-started).
+  All display routes are read-only. Scoring only happens from the control panel — see
+  [Using the control panel](/running-a-match).
 </Callout>

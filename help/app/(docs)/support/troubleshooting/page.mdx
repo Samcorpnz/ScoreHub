@@ -13,26 +13,55 @@ Every `/display` and `/control` page shows a small status badge (top right): **L
   isn't lost, since it's held on the server, not in the browser tab.
 - A **FEED STALE** badge next to the connection status means the connection to ScoreHub is fine,
   but the source feeding the score (Bridge, or the console behind it) has stopped sending updates
-  — check Bridge's admin UI at `http://localhost:4002` on the venue laptop, not your internet
-  connection.
+  — check the Bridge app on the venue laptop, not your internet connection.
+- A **RELAY UNREACHABLE** badge appears when the page has been offline for a while and can't get
+  back to ScoreHub on its own. Check the internet connection on that device, then reload. If
+  every device is affected, [contact support](/support).
+
+## The control panel says VIEWING ONLY
+
+Only one control panel can score a match at a time. If another operator or another browser tab
+already has the match open, yours shows **VIEWING ONLY** and a **Take Control** button. See
+[Sharing control of a match](/running-a-match/sharing-control).
 
 ## The score isn't updating from the console
 
-1. Confirm Bridge is running and its admin UI (`http://localhost:4002`) shows the source as
-   connected.
+1. Confirm Bridge is running, its status shows it has been started, and the **Live Log** is
+   showing data arriving.
 2. Check the serial cable and adapter — for Saturn/Vega, loose or cheap USB-to-serial adapters are
    the most common cause of dropped data. See [Connecting a console](/connecting-the-bridge).
-3. Confirm the bridge token entered in Bridge's admin UI is still valid — tokens are long-lived
-   but can be revoked/rotated from the control panel's Settings tab.
-4. As a fallback while you debug the console connection, you can always score the match by hand
-   from `/control` — Bridge and manual scoring aren't mutually exclusive, either can drive the
-   same match.
+3. Confirm the token in Bridge's **Bridge Secret** field is still valid — tokens are long-lived
+   but can be revoked from **Bridge Devices** on the control panel's Settings tab.
+4. Confirm the token was generated **for this match**. A token generated for a different match,
+   or left on **All matches**, won't feed this match's displays — generate a new one with the
+   match selected and paste it into **Bridge Secret**.
+5. If Bridge shows **RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL**, the venue laptop has lost its
+   connection to ScoreHub. Check its internet connection and the **Relay URL** field.
+6. As a fallback while you debug the console connection, you can always score the match by hand
+   from the control panel — Bridge and manual scoring aren't mutually exclusive, either can drive
+   the same match.
+
+## A display says "This display link is out of date"
+
+The link's access token has been replaced, usually because someone selected **Regenerate display
+link**. Copy a fresh link from the control panel's **Outputs** tab and update the screen or
+Browser Source. See [Displaying your score](/displaying-your-score).
 
 ## A display link isn't showing the right match
 
-Display and control links are match-specific (`?match=<id>` in the URL). Double check the link
-was copied for the current match — a link from a previous match will keep showing that match's
-final state, not an error.
+Display and control links are match-specific. Double check the link was copied for the current
+match, from that match's **Outputs** tab or the dashboard's **Copy display link** button — a link
+from a previous match will keep showing that match's final state, not an error.
+
+## Setting up a match says an upgrade is required
+
+The Free plan allows one live match at a time across your account. End the match that's already
+live, or upgrade — see [The Free plan's one-match limit](/billing/free-plan-limit).
+
+## I can't sign in
+
+Use **Forgot password?** on the sign-in page to get a reset link — see
+[Signing in, passwords and passkeys](/account/signing-in).
 
 ## An invite link says it's invalid or expired
 

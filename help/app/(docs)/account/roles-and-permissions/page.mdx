@@ -6,10 +6,28 @@ Every member of an organisation holds one role, from most to least privileged:
 
 | Role | Can do |
 | --- | --- |
-| **Admin** | Everything — run matches, manage billing, invite/remove members, and change any member's role, including other Admins and Managers. |
-| **Manager** | Run matches and invite/manage members, but limited to Operator and Viewer roles — a Manager can't touch another Admin's or Manager's membership, and doesn't get billing access. |
-| **Operator** | Run matches from the control panel. Can't manage members or billing. |
-| **Viewer** | Read-only — see match state and dashboards, no control panel access. |
+| **Admin** | Everything — create and run matches, manage billing, invite/remove members, and change any member's role, including other Admins and Managers. |
+| **Manager** | Score matches, invite/manage Operators and Viewers, and manage tokens and display links. A Manager can't touch another Admin's or Manager's membership, and doesn't get billing access. |
+| **Operator** | Create, score and end matches from the dashboard and control panel. Can't manage members, tokens or billing. |
+| **Viewer** | Read-only — can see the dashboard's match list, but has no control panel access. |
+
+## What each role can do
+
+| Task | Admin | Manager | Operator | Viewer |
+| --- | --- | --- | --- | --- |
+| Score a match on the control panel | Yes | Yes | Yes | No |
+| Use Graphics Control and the Player Roster | Yes | Yes | Yes | No |
+| Set up a new match, upload fixtures, end a match | Yes | No | Yes | No |
+| Generate or revoke Bridge, Stream Deck and data feed tokens | Yes | Yes | No | No |
+| Regenerate a match's display link | Yes | Yes | No | No |
+| Invite, remove and change the role of members | Yes | Operators and Viewers only | No | No |
+| Change the plan, add-ons, or payment details | Yes | No | No | No |
+
+<Callout>
+  A Manager who needs to set up or end matches today should ask an Admin or Operator to do it, or
+  be given the Admin role. Every organisation must keep at least one Admin — the last Admin can't
+  be demoted.
+</Callout>
 
 ## Who can invite and manage members
 
@@ -20,8 +38,9 @@ other Admins or Managers.
 
 ## Control tokens vs. roles
 
-The role above governs the ScoreHub web app. The control panel and any Stream Deck/webhook
-integrations authenticate separately using short-lived control tokens or long-lived scoped
-tokens issued to your organisation — those aren't tied to an individual member's role, so removing
-someone's membership doesn't automatically revoke a token they generated. Regenerate any shared
-tokens after removing an operator if you're rotating access.
+The role above governs the ScoreHub web app. Bridge laptops, Stream Deck/webhook integrations and
+data feeds authenticate separately, using long-lived tokens issued to your organisation from the
+control panel's **Settings** tab. Those tokens aren't tied to an individual member, so removing
+someone's membership doesn't revoke a token they generated or copied. After removing someone,
+revoke any tokens they had access to and generate new ones, and regenerate the display link for
+any match whose links they held.

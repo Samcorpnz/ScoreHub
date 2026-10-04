@@ -1,0 +1,68 @@
+export const metadata = { title: "Data Feed add-on" };
+
+# Data Feed add-on
+
+**Data Feed** gives third-party graphics software a secure, token-authenticated feed of your live
+match state — score, clock, period, team names, colours and logos — so tools like Singular.live,
+Chyron or Vizrt can drive their own templates from ScoreHub.
+
+| | Monthly | Annual |
+| --- | --- | --- |
+| Data Feed | $39 | $390 |
+
+It's an add-on, not a plan — it bills on its own subscription, on top of whichever plan you're on.
+It requires an active **Pro** or **Venue** plan; it isn't available on Free.
+
+## Do I need it?
+
+- **You want ScoreHub's own displays** — venue screens, the overlay, the scorebug. No. Those are
+  included in every plan. See [Displaying your score](/displaying-your-score).
+- **You want broadcast scenes built into ScoreHub.** That's the
+  [Graphics Operator add-on](/billing/graphics-addon).
+- **You have your own graphics system and want it to read ScoreHub's data.** Yes — this is what
+  Data Feed is for.
+
+## Buying it
+
+On the Account page, an Admin scrolls to the **Add-ons** card, chooses Monthly or Annual next to
+Data Feed, and selects **Add Data Feed**. Checkout works the same way as a plan upgrade, and the
+add-on activates as soon as payment completes.
+
+## Connecting your graphics software
+
+1. On a match's control panel, open the **Settings** tab and find the **Data Feed** card. Admins
+   and Managers see it.
+2. Enter a label, such as "Singular.live", and select **Generate Token**. Copy the token straight
+   away — it's shown once.
+3. In your graphics software, request the feed address shown on the card, sending the token in an
+   `x-data-feed-secret` header.
+
+The feed is a `GET` request that returns the current match state as JSON:
+
+```
+curl -H "x-data-feed-secret: YOUR_TOKEN" \
+  "https://RELAY_URL/api/data-feed/state?matchId=MATCH_ID"
+```
+
+Always include `matchId` so the feed returns the match you mean. You'll find a match's ID in the
+address bar of its control panel, after `matchId=`. Poll once or twice a second for a live
+scoreboard.
+
+The response includes, among other fields:
+
+| Field | Contains |
+| --- | --- |
+| `home`, `visitor` | Each team's `name`, `score`, `faults`, `color` and `logoUrl` |
+| `clockSeconds`, `isRunning`, `countDown` | The match clock |
+| `period`, `periodBreak` | The current period, and whether it's a break |
+| `matchName`, `sport` | Match details |
+| `possession` | `home`, `visitor` or `none` |
+
+To cut off an integration, select **Revoke** next to its token on the Data Feed card.
+
+## Cancelling the add-on
+
+The add-on cancels independently of your plan, from **Cancel add-on** on the Account page. It
+stays active until the end of the current billing period — see
+[Cancelling your plan](/billing/cancelling). Once it lapses, requests with a data feed token are
+refused.

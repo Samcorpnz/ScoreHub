@@ -5,6 +5,21 @@ const CATEGORIES = [
     description: "Create your first match, score it from the control panel, and get your score on screen.",
   },
   {
+    href: "/running-a-match",
+    title: "Running a match",
+    description: "The control panel, keyboard shortcuts, fixtures, sound cues, and Stream Deck.",
+  },
+  {
+    href: "/displaying-your-score",
+    title: "Displays and graphics",
+    description: "Venue screens, OBS and vMix overlays, branding, and Graphics Operator.",
+  },
+  {
+    href: "/connecting-the-bridge",
+    title: "Consoles and data feeds",
+    description: "Connect a scoring console or a ChampionData feed with the Bridge app.",
+  },
+  {
     href: "/sports",
     title: "Sports",
     description: "Setup and scoring guides for every sport ScoreHub supports.",
@@ -12,7 +27,7 @@ const CATEGORIES = [
   {
     href: "/account",
     title: "Account management",
-    description: "Roles, inviting your team, and switching between organisations.",
+    description: "Signing in, roles, inviting your team, and switching between organisations.",
   },
   {
     href: "/billing",
