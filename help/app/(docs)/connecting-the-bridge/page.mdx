@@ -9,31 +9,65 @@ automatically instead.
 ## What Bridge is
 
 Bridge is a small app that runs on a laptop at the venue — the one physically connected to the
-console — and forwards match state to ScoreHub over the internet. It supports two input sources:
+console — and forwards match state to ScoreHub over the internet. It supports three data
+sources:
 
-- **Swiss Timing Saturn/Vega consoles** over a serial (RS422) connection.
-- **ChampionData**, for sports where scoring comes from a data feed rather than a physical
-  console.
+- **Saturn / Vega Serial** — a Swiss Timing Saturn or Vega console over a serial (RS422)
+  connection.
+- **ChampionData — JSON Feed** and **ChampionData — Web Scraper**, for matches where scoring
+  comes from ChampionData rather than a physical console. See
+  [ChampionData and Bridge updates](/connecting-the-bridge/championdata-and-updates).
 
-Bridge has its own admin UI, served locally at `http://localhost:4002` once it's running, where
-you pick the source and configure it.
+The Bridge window is where you pick the source and configure it. The same screen is also served
+locally at `http://localhost:4002` while Bridge is running.
+
+## Before you start
+
+Connecting a console needs the [Data Feed add-on](/billing/data-feed-addon). Without it, the
+**Bridge Devices** card shows an upgrade prompt and Bridge can't connect. An Admin can add it from
+the Account page.
 
 ## Setting it up
 
-1. **Generate a bridge token.** In the control panel, open **Settings** and generate a BRIDGE
-   token for your organisation. This is a long-lived credential — treat it like a password and
-   don't share it outside your venue team.
-2. **Download and install Bridge** on the laptop connected to the console (or running the
+1. **Create the match first**, from the dashboard — either set it up now or schedule it as a
+   fixture.
+2. **Generate a bridge token.** In the control panel, open the **Settings** tab and find
+   **Bridge Devices**. Give the token a label (for example "Venue laptop 1"), leave the selector
+   on **All matches**, and select **Generate Token**. Copy it straight away — it's shown once.
+   Only Admins and Managers see this card. The token is a long-lived credential — treat it like a
+   password and don't share it outside your venue team. One token per laptop is enough; you don't
+   need a new one for each match.
+3. **Copy the relay URL** from the **Connection** card on the same Settings tab, using its **Copy**
+   button.
+4. **Download and install Bridge** on the laptop connected to the console (or running the
    ChampionData feed):
    [Download for Mac](https://downloads.scorehub.co.nz/mac) ·
-   [Download for Windows](https://downloads.scorehub.co.nz/windows). Bridge runs as a desktop app
-   with a system tray icon — it keeps relaying even if you close its window, and can be set to
-   launch automatically at login so it reconnects after a reboot.
-3. **Enter the bridge token** and the ScoreHub relay URL in the app, and choose your source
-   (Saturn/Vega serial port, or ChampionData).
-4. **Start the source.** Bridge will begin forwarding match state as soon as the console sends
-   data. Set `CD_AUTOSTART=true` in its configuration if you want it to start automatically on
-   launch rather than being started from the UI each time.
+   [Download for Windows](https://downloads.scorehub.co.nz/windows).
+5. **Configure Bridge.** Under **Configuration**, paste the relay URL into **Relay URL** and the
+   token into **Bridge Secret**. Select **Refresh** next to **Match** and choose the match this
+   console is scoring. Then choose your **Data Source**, fill in its settings (for a console:
+   **Serial Port** and **Baud Rate**), and select **Save Config**.
+6. **Select Start.** Bridge begins forwarding match state as soon as the console sends data, and
+   the **Live Log** shows what's arriving and what's being sent.
+7. **Check a display.** Open one of the match's display links from the **Outputs** tab and confirm
+   the console's score appears before the match starts.
+
+<Callout>
+  **Choose the match in Bridge.** If **Match** is left on **Organisation default**, the console's
+  score won't appear on the displays of a match you opened from the dashboard. For the next match,
+  select **Stop**, choose the new match, and select **Start** — the same token keeps working.
+</Callout>
+
+If you'd rather lock a laptop to one match, choose that match in the selector when you generate
+the token. Bridge then shows the match as fixed and you'll need a new token for the next match.
+
+If your copy of Bridge has no **Match** selector, update it — see
+[ChampionData and Bridge updates](/connecting-the-bridge/championdata-and-updates) — or generate
+the token with the match selected instead.
+
+Bridge runs as a desktop app with a system tray icon — it keeps relaying even if you close its
+window. Tick **Launch at login** in the tray menu so the app reopens after a reboot; you still
+select **Start** to begin relaying.
 
 <Callout>
   First install on Windows or Mac may show an "Unknown Publisher"/Gatekeeper warning — the
@@ -43,7 +77,7 @@ you pick the source and configure it.
 ## Serial console wiring
 
 Saturn/Vega consoles connect over RS422 at 9600 baud, 8 data bits, no parity, 1 stop bit (8N1).
-Use a laptop with a genuine RS422/RS232 serial port or a known-good USB-to-serial adapter — cheap
+Leave **Baud Rate** on 9600 unless your console has been set to something else. Use a laptop with a genuine RS422/RS232 serial port or a known-good USB-to-serial adapter — cheap
 adapters are the most common cause of dropped or garbled data.
 
 <Callout>
@@ -52,5 +86,10 @@ adapters are the most common cause of dropped or garbled data.
   manually when a console is already running the scoreboard.
 </Callout>
 
-Bridge only sends data one way, into ScoreHub — it doesn't read anything back from the app, so
-there's nothing to keep in sync manually once it's running.
+## If Bridge loses its connection
+
+Bridge sends the console's score and clock into ScoreHub and stays in step with ScoreHub
+automatically, so there's nothing to keep in sync by hand. If it can't reach ScoreHub it shows
+**RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL**: score from the
+[control panel](/running-a-match) until the venue's internet is back, then Bridge reconnects on
+its own. See [Troubleshooting](/support/troubleshooting) for more.

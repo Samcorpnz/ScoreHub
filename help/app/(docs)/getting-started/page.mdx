@@ -9,44 +9,53 @@ and running your first match.
 ## 1. Create your account
 
 Go to [app.scorehub.co.nz/signup](https://app.scorehub.co.nz/signup) and fill in your name, your
-organisation's name, email, and a password (8 characters minimum). Signing up creates both your
-user account and your organisation in one step — there's no separate "create an organisation"
-screen. Check your inbox for a verification email before logging in.
+organisation's name, and your email. We email you a confirmation link; follow it to choose a
+password (8 characters minimum) and finish creating the account. The link expires after 24 hours,
+so sign up again if it has lapsed.
+
+Signing up creates both your user account and your organisation in one step — there's no separate
+"create an organisation" screen.
 
 You start on the **Free** plan automatically — one live match at a time, no credit card required.
 See [Plans & pricing](/billing) if you need more than one concurrent match or custom branding.
 
 ## 2. Create a match
 
-From the [dashboard](https://app.scorehub.co.nz/dashboard), select **New Match**. This opens the
-setup wizard where you:
+From the [dashboard](https://app.scorehub.co.nz/dashboard), select **Set Up a New Match**. This
+opens the setup wizard where you:
 
 1. Choose the sport — see [Sports](/sports) for a guide to each one.
-2. Enter a match name and the home/visitor team names.
-3. Set any sport-specific match options (for example, cricket's T20/ODI/Test format, or squash's
-   best-of-3/best-of-5 format) — these only appear for sports that have them.
-4. For cricket, enter starting batting/bowling squads.
+2. Set any sport-specific match options (for example, cricket's T20/ODI/Test format, or softball's
+   fastpitch/slowpitch format) — these only appear for sports that have them.
+3. Enter a match name and the home and visitor team names. All three are required.
+4. For cricket, select **Next: Squads** and enter each team's squad.
 
-Submitting the wizard provisions the match and takes you straight to the control panel.
+Selecting **Start Match** creates the match and takes you straight to the control panel.
 
-You can also schedule multiple fixtures at once from the dashboard's **Upload fixtures** panel, by
-pasting or uploading a CSV with `sport,competition,home,visitor,scheduledAt` columns.
+On Pro and Venue plans you can also schedule many fixtures at once by uploading a CSV — see
+[The dashboard and fixtures](/running-a-match/dashboard-and-fixtures).
+
+<Callout>
+  On the Free plan you can have one live match at a time. If the wizard says an upgrade is
+  required, see [The Free plan's one-match limit](/billing/free-plan-limit).
+</Callout>
 
 ## 3. Score the match
 
-The control panel at `/control` is where you run the match — score buttons, clock, period
-control, and (for cricket, softball, and indoor cricket) a bespoke ball-by-ball or innings panel.
-It works from a laptop, tablet, or phone; nothing needs to be installed.
+The control panel is where you run the match — score buttons, clock, period control, and (for
+cricket and softball) a dedicated ball-by-ball or innings panel. It works in the browser on a
+laptop or tablet, with nothing to install. See [Using the control panel](/running-a-match) for
+every control and keyboard shortcut.
 
 If you're feeding scores from a physical scoring console instead of tapping buttons by hand, see
 [Connecting a console (Bridge)](/connecting-the-bridge).
 
 ## 4. Put the score on screen
 
-Once a match is live, share a `/display` link with venue screens, or drop a `/display/overlay` or
-`/display/scorebug` URL into your streaming software as a Browser Source. See
-[Displaying your score](/displaying-your-score) for the full list of display variants and when to
-use each one.
+Once a match is live, open the control panel's **Outputs** tab and copy the link for the display
+you want — a venue screen, or an overlay or scorebug to add to your streaming software as a
+Browser Source. See [Displaying your score](/displaying-your-score) for the full list of display
+variants and when to use each one.
 
 ## 5. Bring in your team
 

@@ -2,5 +2,5 @@ projectKey=scorehub
 serverUrl=https://sonar.samcorp.co.nz
 serverVersion=26.8.0.126808
 dashboardUrl=https://sonar.samcorp.co.nz/dashboard?id=scorehub
-ceTaskId=2d7d565e-7913-4889-a7c7-3cd379bda826
-ceTaskUrl=https://sonar.samcorp.co.nz/api/ce/task?id=2d7d565e-7913-4889-a7c7-3cd379bda826
+ceTaskId=a22c7363-8458-4656-bcfc-d3c96eff1e71
+ceTaskUrl=https://sonar.samcorp.co.nz/api/ce/task?id=a22c7363-8458-4656-bcfc-d3c96eff1e71

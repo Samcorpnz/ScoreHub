@@ -1,0 +1,97 @@
+export const metadata = { title: "Using Graphics Operator" };
+
+# Using Graphics Operator
+
+Graphics Operator puts broadcast-style scenes on your stream and lets someone switch them live
+from a second device while the scorer keeps scoring. It's a paid add-on — see
+[Graphics Operator add-on](/billing/graphics-addon) for pricing and how to buy it.
+
+There are three parts:
+
+- **The graphics display** (`/display/graphics`) — one Browser Source in your streaming software
+  that shows whichever scene is live.
+- **Graphics Control** — where the graphics operator switches scenes.
+- **Player Roster** — where you keep player headshots and bios.
+
+Admins, Managers and Operators can use Graphics Control and the Player Roster.
+
+## 1. Add the graphics display to your stream
+
+The graphics display doesn't have its own row on the Outputs tab yet, so build its link from
+another one:
+
+1. On the match's **Outputs** tab, select **Copy URL** on the **Scorebug** display.
+2. Paste it somewhere you can edit it and change `/display/scorebug` to `/display/graphics`. Leave
+   everything after the `?` exactly as it is.
+3. Add the edited link to OBS, vMix or Wirecast as a Browser Source at 1920 × 1080, placed over
+   your camera.
+
+Its background is transparent and it shows nothing until a scene is live. See
+[Venue screens, OBS and vMix](/displaying-your-score/obs-and-venue-screens) for adding sources.
+
+You set this source up once per match. Switching scenes never changes the link.
+
+## 2. Open Graphics Control
+
+On the match's control panel, open the **Outputs** tab and select **Graphics Control**. Open it
+on a separate device from the one scoring — a second laptop or a tablet works well. It doesn't
+take [control](/running-a-match/sharing-control) away from the scorer.
+
+## 3. Switch scenes
+
+Select a scene to put it on air. The live scene is highlighted. Select **Clear** to take
+everything off.
+
+| Scene | What it shows |
+| --- | --- |
+| **Lower Third** | Both team names and scores in a bar, with up to three team statistics when a live data feed is connected. |
+| **Player Stat Cards** | One player's match statistics. One button per player in the live feed. |
+| **Player Headshot + Bio** | A player's photo and bio from your roster. One button per player in the live feed. |
+| **Clear** | A blank output. |
+
+Scenes use your match's [theme](/displaying-your-score/branding) — accent colour, font and
+background tint.
+
+## Where the player list comes from
+
+<Callout>
+  The player scenes need a live data feed. Player buttons appear only while a **ChampionData —
+  JSON Feed** source is running in [Bridge](/connecting-the-bridge/championdata-and-updates) for
+  the match. Without one, Graphics Control shows "No live player feed yet" and only **Lower
+  Third** and **Clear** are available.
+</Callout>
+
+Statistics are mapped for netball, basketball and cricket.
+
+## The Player Roster
+
+The roster holds the photo and bio shown by the **Player Headshot + Bio** scene. It belongs to
+your organisation and is reused across every match. Open it from the **Outputs** tab with
+**Player Roster**. Roster upkeep is best done before match day.
+
+### Adding a player
+
+1. Select **+ Add Player**.
+2. Enter a first and last name. Optionally add a **display name** (shown instead of the full
+   name), and a **bio**.
+3. Save, then select the round photo placeholder on the player's card to upload a headshot — PNG,
+   JPG or WebP, up to 5 MB.
+
+**Edit** and **Remove** are on each player's card.
+
+### Linking roster players to the live feed
+
+A roster entry is matched to a player in the live feed by the feed's ID for that player, not by
+name. While a feed is running, players it contains that aren't linked yet are listed under **Live
+match — unmatched players**. For each one, either:
+
+- choose an existing roster entry under **Link to existing player…** and select **Link**, or
+- select **New player** to create a roster entry already linked to them.
+
+Once linked, a player stays linked for every future match from the same provider. A player who
+isn't linked still works in the Headshot + Bio scene — they show with their initials and no bio.
+
+## If the add-on isn't active
+
+Graphics Control and Player Roster show an **Unlock** screen, and the graphics display shows a
+prompt to upgrade in place of scenes. An Admin can add Graphics Operator from the Account page.

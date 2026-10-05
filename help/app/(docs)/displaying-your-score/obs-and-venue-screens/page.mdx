@@ -1,0 +1,97 @@
+export const metadata = { title: "Venue screens, OBS and vMix" };
+
+# Venue screens, OBS and vMix
+
+Every display is a web page, so anything that can show a web page can show your score — a TV with
+a laptop plugged in, a projector, or a Browser Source in streaming software. This page covers
+getting the right link and setting each display up.
+
+## The Outputs tab
+
+Open the match's control panel and select the **Outputs** tab. Each display has:
+
+- **Copy URL** — copies the link for this match, ready to paste into another device or your
+  streaming software.
+- **Pop Out** — opens the display in its own window on this computer, sized for that display.
+
+Always copy links from here (or **Copy display link** on the dashboard) rather than typing them.
+Each link is specific to one match.
+
+## On a venue screen or projector
+
+1. Connect the screen to a computer, or use a smart TV or stick with a web browser.
+2. Open the **Fullscreen**, **Basic** or **Advanced** link in a browser on that device.
+3. For **Fullscreen**, press `F` to fill the screen.
+
+The Fullscreen display has on-screen controls and keyboard shortcuts:
+
+| Key | Action |
+| --- | --- |
+| `F` | Enter or leave fullscreen |
+| `1` | **Wide** layout — the default |
+| `2` | **Stacked** layout |
+| `3` | **Minimal** layout — score and clock only |
+| `H` | Hide or show the on-screen controls |
+
+Press `H` once the layout is right so the controls don't show to the crowd.
+
+If the same computer is scoring and driving the screen, use **Pop Out**, drag the window onto the
+second screen, and press `F`.
+
+## Through a capture card
+
+To feed a hardware vision mixer, send the **Fullscreen** display out of a computer's HDMI port into
+your capture card (Elgato, AVerMedia, Magewell and similar). Set the output to 1920×1080, press `F`
+and then `H`.
+
+## In OBS, vMix or Wirecast
+
+Add the display as a web page source — a **Browser Source** in OBS, a **Web Browser** input in
+vMix, or the equivalent in Wirecast — and paste the copied URL. The overlay, scorebug and graphics displays have transparent
+backgrounds, so they sit over your camera with no chroma key.
+
+| Display | Suggested source size | Use it for |
+| --- | --- | --- |
+| **Lower-Third Overlay** | 1920 × 120 | A full-width score bar. Position it at the top or bottom of the frame. |
+| **Scorebug** | 480 × 100 | A compact score widget for a corner. |
+| **Fullscreen** | 1920 × 1080 | A full-frame scoreboard for breaks and half time. |
+| **Graphics** | 1920 × 1080 | Scenes from the [Graphics Operator add-on](/displaying-your-score/graphics-operator). Not listed on the Outputs tab — that page explains how to get its link. |
+
+In OBS:
+
+1. **Sources → + → Browser**.
+2. Paste the URL, and set **Width** and **Height** from the table.
+3. Leave custom CSS as it is, and select **OK**.
+4. Drag the source into position over your camera.
+
+### Scorebug position and size
+
+The scorebug takes two optional settings, added to the end of the copied link:
+
+| Setting | Values | Default |
+| --- | --- | --- |
+| `position` | `tr` (top right), `tl` (top left), `br` (bottom right), `bl` (bottom left) | `tr` |
+| `size` | `sm`, `md`, `lg` | `md` |
+
+Add them with `&`, for example `…&position=bl&size=lg`. `position` matters when the source is
+larger than the scorebug itself, such as a full 1920 × 1080 source; with a tight 480 × 100 source
+you place it by dragging the source instead.
+
+## Regenerating a link
+
+**Regenerate display link** at the top of the Outputs tab replaces the access token in every
+display link for this match. Use it if a link has been shared somewhere it shouldn't be.
+
+Every existing link for the match stops working and shows "This display link is out of date".
+Copy the new links and update each screen and Browser Source. Admins and Managers can regenerate
+links.
+
+## When the match ends
+
+After **End Match**, displays stop receiving updates. For the next match, copy its links from its
+own Outputs tab and update your screens and sources — links don't carry over between matches.
+
+<Callout>
+  Display not updating? Check the connection badge and the link — see
+  [Troubleshooting](/support/troubleshooting).
+</Callout>

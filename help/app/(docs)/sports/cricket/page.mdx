@@ -29,8 +29,71 @@ When creating the match ([Getting started](/getting-started)), choose the **Form
 
 ## Running the match
 
-Cricket gets a bespoke control panel on `/control` instead of plain score buttons, tracking
-overs, wickets, and innings ball by ball.
+Cricket has its own Score tab on the control panel. You record each ball, and ScoreHub keeps the
+score, overs, batter and bowler figures, strike and extras for you.
+
+### Before the first ball
+
+Enter both squads in the setup wizard — up to 11 names each. A team needs at least two players
+to bat and the fielding side at least one to bowl. The home team bats first.
+
+On the Score tab, select **Start innings**. The first two players in the batting squad open, and
+the first player in the fielding squad bowls. The batter on strike is marked with `*`.
+
+### Recording a ball
+
+1. If the ball is an extra, choose its type first: **Wide**, **No-ball**, **Bye** or **Leg-bye**.
+   Leave it on **Normal** otherwise.
+2. Select the runs: **•** for a dot ball, or **1**, **2**, **3**, **4** or **6**.
+
+The extra type returns to **Normal** after each ball. **This over** shows the balls recorded so
+far in the current over.
+
+ScoreHub handles the rest:
+
+- Wides and no-balls don't count towards the six balls of the over.
+- Strike changes on odd runs, and at the end of each over.
+- After six legal balls the over completes, the bowler's figures update, and a maiden is counted
+  if no runs came from it.
+- After a no-ball, **Free Hit** shows for the next ball. On a free hit only a run out counts as a
+  dismissal.
+
+### Wickets
+
+1. Select **Wicket**.
+2. Choose how the batter was out: bowled, caught, lbw, run out, stumped, hit wicket, obstructed
+   field or handled ball.
+3. Choose the **next batter** from the list.
+4. Select **Confirm Wicket**.
+
+### Changing the bowler
+
+Under **Bowling**, choose a player from **Change bowler…** and select **Set**. Do this at the end
+of each over — ScoreHub doesn't choose the next bowler for you.
+
+### Changing innings
+
+An innings is complete after 10 wickets, or when the overs run out (20 for T20, 50 for ODI). The
+panel then shows **Innings complete** and a **Start next innings** button. In the second innings
+of a T20 or ODI, the panel shows the target and the runs and balls remaining.
+
+### Test matches
+
+Test matches add:
+
+- **Declare** — ends the batting side's innings.
+- **Follow-on** — when the side batting second finishes 200 or more runs behind, the panel offers
+  **Enforce follow-on** or **Waive**.
+- **Day/session** — set the day (1 to 5) and session (morning, afternoon, evening) shown with the
+  score.
+
+A Test innings has no overs limit; it ends on 10 wickets or a declaration.
+
+### Fixing a mistake
+
+**UNDO** under **Match Controls** reverses the last ball or action. The same section lets you
+change team names and the match name. **Reset Match** restarts the match at a fresh first innings
+and keeps the format and both squads — see [Using the control panel](/running-a-match).
 
 ## On the display
 

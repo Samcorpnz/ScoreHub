@@ -1,0 +1,124 @@
+export const metadata = { title: "Using the control panel" };
+
+# Using the control panel
+
+The control panel is where you run a match. Open it from the
+[dashboard](/running-a-match/dashboard-and-fixtures) with **Open Control** (a live match) or
+**Start** (an upcoming one), or arrive there automatically after
+[setting up a new match](/getting-started).
+
+It has six tabs:
+
+| Tab | What it's for |
+| --- | --- |
+| **Score** | Running the match — clock, score, period, fouls, possession. |
+| **Outputs** | Links for every display, plus Graphics Control and the Player Roster. See [Venue screens, OBS and vMix](/displaying-your-score/obs-and-venue-screens). |
+| **Logos** | Team logos. See [Branding your displays](/displaying-your-score/branding). |
+| **Theme** | Colours, font, text size and competition logo for your displays. |
+| **Audio** | [Sound cues](/running-a-match/sound-cues) that play at set clock times. |
+| **Settings** | Team colours, sport, ending the match, and tokens for Bridge and Stream Deck. |
+
+This page covers the Score tab for most sports. [Cricket](/sports/cricket) and
+[softball](/sports/softball) replace it with their own panels.
+
+## The clock
+
+- **START / STOP** is the large button at the top. It starts and stops the match clock.
+- **Adjust clock** nudges the clock by 1, 10 or 60 seconds in either direction.
+- To set an exact time, type it in the **MM:SS** box and select **Set**.
+- **Count down / Count up** switches the clock's direction. Each sport starts with the right
+  direction for its template, so you'll rarely need this.
+
+## Scoring
+
+Each team has a card with a button for every score value in its sport — for example **+1**, **+2**
+and **+3** for basketball — and a matching minus button to take points back off. Scores can't go
+below zero.
+
+Under the score buttons:
+
+- **Fouls** (basketball) or **Faults** (other sports) adds one to the team's count each time you
+  select it. **Reset** puts it back to zero.
+- **Home ball / Visitor ball** sets which team has possession. Select the active one again to
+  clear it.
+
+## Ending a period
+
+**END** followed by the period name (**END QTR**, **END HALF**, **END SET** and so on) does several
+things at once: stops the clock, moves to the next period, resets the clock to the period length,
+and marks a break so displays show it. For sports scored in sets or games — volleyball, tennis,
+pickleball, badminton, table tennis and squash — it also resets both scores to 0–0.
+
+**REOPEN** goes back one period and clears the break. Use it if you ended a period by mistake.
+It doesn't restore scores that were reset — use **UNDO** straight away for that instead.
+
+## Undo
+
+**UNDO** reverses your last action — a score, a foul, a clock change, ending a period, even a
+match reset. You can step back through your last 50 actions. Updates that came from a scoring
+console through Bridge, and the clock ticking, aren't undoable.
+
+## Keyboard shortcuts
+
+Shortcuts work on the Score tab whenever you aren't typing in a text box. The panel shows the
+same list at the bottom, with the values for the current sport.
+
+| Key | Action |
+| --- | --- |
+| `Space` | Start / stop the clock |
+| `Ctrl+Z` or `⌘Z` | Undo |
+| `1` `2` `3` | Home: add the first, second or third score value |
+| `Q` `W` `E` | Home: subtract the first, second or third score value |
+| `9` `0` `8` | Visitor: add the first, second or third score value |
+| `O` `P` `I` | Visitor: subtract the first, second or third score value |
+| `[` `]` | Previous / next period |
+
+A sport with a single score value, such as football, only uses `1`, `Q`, `9` and `O`. Sports with
+more than three values (lawn bowls, for example) use the buttons for the fourth.
+
+<Callout>
+  `[` and `]` only change the period number. They don't stop the clock, reset it, or reset set
+  scores the way the **END** button does.
+</Callout>
+
+## Changing names during a match
+
+Under **Clock & Match Controls** you can change the home and visitor team names, the match name,
+and the period number. Type the new value and select **Set**. Displays update immediately.
+
+## Timeouts
+
+For sports with timeouts, each team's card on the Score tab has two buttons under the fouls row:
+
+- **Timeouts left** — select it when that team takes a timeout. The count drops by one and
+  displays update.
+- **Restore timeout** — adds one back, up to the sport's allowance. Use it to fix a mis-tap, or to
+  top teams back up at a new half or period if your competition's rules reset timeouts.
+
+A new match starts with the sport's full allowance. Timeouts don't reset on their own between
+periods.
+
+## Reset Match
+
+**Reset Match** starts the same match again from the beginning. It sets scores and fouls back to
+zero, returns to the first period and restores the sport's starting clock. For cricket, softball
+and indoor cricket it also clears the innings, outs and wickets scored so far.
+
+Everything you set up is kept: the sport, match name, match options, team names, colours, logos,
+squads and your display theme. Timeouts are left as they are.
+
+It asks you to confirm first, and it can be undone with **UNDO**.
+
+## Changing sport
+
+On the **Settings** tab, **Sport** changes which sport the match uses, and **Apply Template
+Defaults** then sets the clock, period and possession to that sport's defaults without touching
+scores, names or colours.
+
+## Ending the match
+
+When the match is over, open the **Settings** tab and select **End Match**. The match moves to
+**History** on the dashboard, its displays stop receiving updates, and it can't be scored again.
+On the Free plan, this is also what frees you up to start your next match.
+
+Admins and Operators can end a match.
