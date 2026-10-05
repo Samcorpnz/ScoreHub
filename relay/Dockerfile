@@ -1,4 +1,4 @@
-# Build context is the repo root (see railway.toml), not relay/ — relay
+# Build context is the repo root (see fly.toml), not relay/ — relay
 # depends on the internal @scorehub/db workspace package, which only exists
 # via the root npm workspace install, never the public registry. A
 # relay-only build context can't see packages/db at all, which is why every
