@@ -1,6 +1,6 @@
 {
   "name": "scorehub-bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Venue-side serial bridge — reads Saturn console, pushes to cloud relay",
   "main": "dist/electron/main.js",
   "scripts": {
