@@ -54,6 +54,16 @@ describe("postLoginDestination", () => {
     ).toBe(true);
   });
 
+  it("normalises an in-app destination to a path, even when given as a full URL", () => {
+    expect(postLoginDestination("https://app.scorehub.co.nz/account?tab=billing#plan", APP)).toEqual({
+      url: "/account?tab=billing#plan",
+      external: false,
+    });
+    // Junk that isn't a URL resolves to a harmless in-app path, never off-site.
+    expect(postLoginDestination("not a url", APP)).toEqual({ url: "/not%20a%20url", external: false });
+    expect(postLoginDestination("https:evil.example", APP)).toEqual({ url: "/evil.example", external: false });
+  });
+
   it("refuses every other destination, so callbackUrl can't be used as an open redirect", () => {
     for (const hostile of [
       "https://evil.example/phish",
@@ -63,7 +73,11 @@ describe("postLoginDestination", () => {
       "https://help.uat.scorehub.co.nz/", // UAT's help site is not production's pair
       "http://help.scorehub.co.nz/", // not https
       "javascript:alert(1)",
-      "not a url",
+      "/\t/evil.example", // browsers strip tabs and newlines: really //evil.example
+      "/\n/evil.example",
+      "\t//evil.example",
+      "/\\/evil.example",
+      "https://app.scorehub.co.nz@evil.example/",
     ]) {
       expect(postLoginDestination(hostile, APP)).toEqual({ url: "/dashboard", external: false });
     }

@@ -19,18 +19,21 @@ export function postLoginDestination(
 ): { url: string; external: boolean } {
   const fallback = { url: "/dashboard", external: false };
   if (!callbackUrl) return fallback;
-  // "//host" and "/\host" are protocol-relative URLs, not paths.
-  if (callbackUrl.startsWith("/")) {
-    return /^\/[/\\]/.test(callbackUrl) ? fallback : { url: callbackUrl, external: false };
-  }
   try {
-    const target = new URL(callbackUrl);
+    // Decide from the URL as the browser will actually parse it, never from
+    // the raw string: parsing strips tabs/newlines and treats "\" as "/", so
+    // "/\t/evil.example" is really "//evil.example", another site.
     const app = new URL(appOrigin);
+    const target = new URL(callbackUrl, app);
+    if (target.origin === app.origin) {
+      return { url: `${target.pathname}${target.search}${target.hash}`, external: false };
+    }
     const pairedHelp = app.hostname.startsWith("app.") && target.origin === `https://help.${app.hostname.slice(4)}`;
     const localDev =
       process.env.NODE_ENV !== "production" &&
       ["localhost", "127.0.0.1"].includes(app.hostname) &&
-      ["localhost", "127.0.0.1"].includes(target.hostname);
+      ["localhost", "127.0.0.1"].includes(target.hostname) &&
+      ["http:", "https:"].includes(target.protocol);
     return pairedHelp || localDev ? { url: target.href, external: true } : fallback;
   } catch {
     return fallback;
