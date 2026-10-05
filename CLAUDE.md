@@ -177,6 +177,13 @@ was the case for weeks (every push deployed immediately, no gate). Check
 `gh api repos/Samcorpnz/ScoreHub/environments/production` if this ever needs re-verifying; the
 name is matched case-insensitively. Fly.io's and Vercel's own git-push auto-deploy must also stay
 disabled in their dashboards — otherwise every push deploys immediately, bypassing this gate.
+The production relay's public address is `https://relay.scorehub.co.nz` (a Fly certificate on
+`scorehub-relay` plus DNS-only `A`/`AAAA` records in Cloudflare; `scorehub-relay.fly.dev` still
+answers). It is baked into Bridge installers and the Stream Deck plugin as their default (SA-146),
+so it must keep working even if the relay moves host. The Stream Deck plugin download served by the
+control panel is a committed file, `frontend/public/scorehub.streamDeckPlugin` — rebuild it with
+`cd stream-deck-plugin && npm run package` whenever the plugin changes, or customers keep getting
+the old one.
 `AUTH_SECRET` must be identical between relay and frontend deployments (it's the shared JWT
 signing key for control tokens). Required-reviewer environment protection is free on GitHub for
 public repos (like this one) regardless of plan — only private repos need Team/Enterprise for it.

@@ -5,7 +5,7 @@
 // and wiring breakage that only exists in the real environment (missing env
 // var, wrong DATABASE_URL, proxy/websocket misrouting, a bad build).
 //
-//   node scripts/smoke.mjs --relay https://scorehub-relay.fly.dev \
+//   node scripts/smoke.mjs --relay https://relay.scorehub.co.nz \
 //                          --frontend https://app.scorehub.co.nz [--expect multi|legacy] [--wait 120]
 //
 // Against a multi-tenant relay (the default expectation) it also proves the
