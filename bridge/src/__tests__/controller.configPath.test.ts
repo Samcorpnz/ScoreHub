@@ -61,10 +61,14 @@ describe("controller default relay URL", () => {
   function freshDefaultRelayUrl(saved?: object): string {
     let relayUrl = "";
     jest.isolateModules(() => {
+      // Load the module (and serialport's native binding, which probes the
+      // filesystem to pick a prebuild) against the real fs, and only fake the
+      // saved-config read around constructing the controller.
+      const { BridgeController } = require("../controller");
       jest.spyOn(fs, "existsSync").mockReturnValue(saved !== undefined);
       if (saved) jest.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(saved));
-      const { BridgeController } = require("../controller");
       relayUrl = new BridgeController().getConfig().relayUrl;
+      jest.restoreAllMocks();
     });
     return relayUrl;
   }
