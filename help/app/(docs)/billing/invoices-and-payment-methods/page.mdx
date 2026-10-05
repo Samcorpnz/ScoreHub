@@ -3,17 +3,22 @@ export const metadata = { title: "Invoices & payment methods" };
 # Invoices & payment methods
 
 Payment details, invoices, and receipts are managed through Stripe's billing portal, not inside
-ScoreHub itself. From **Account → Plan & Billing** (Admins only), the **Manage billing** button
-opens your organisation's Stripe customer portal in a new page, where you can:
+ScoreHub itself. From **Account → Plan & Billing**, the **Manage billing** button takes an Admin
+to your account's Stripe customer portal, where you can:
 
 - Download past invoices and receipts.
 - Update or replace your card on file.
 - View your current subscription and renewal date.
 
-Changes made in the portal (like updating a card) take effect immediately and don't require
-anything further on the ScoreHub side.
+Use your browser's back button, or the portal's return link, to come back to ScoreHub. Changes
+made in the portal (like updating a card) take effect immediately and don't require anything
+further on the ScoreHub side.
+
+The plan panel itself also shows the card on file (brand and last four digits) and the email
+address invoices are sent to.
 
 <Callout>
-  Only an Admin sees the Plan & Billing panel and its **Manage billing** button — Managers,
-  Operators, and Viewers don't have access to invoices or payment methods.
+  **Manage billing** only appears for Admins, and only once the account has checked out at least
+  once. Managers, Operators, and Viewers can see which plan the account is on, but don't have
+  access to invoices or payment methods.
 </Callout>

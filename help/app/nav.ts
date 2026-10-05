@@ -40,8 +40,35 @@ export const NAV: NavSection[] = [
     href: "/getting-started",
     links: [
       { title: "Getting started", href: "/getting-started" },
-      { title: "Connecting a console (Bridge)", href: "/connecting-the-bridge" },
+    ],
+  },
+  {
+    title: "Running a match",
+    href: "/running-a-match",
+    links: [
+      { title: "Using the control panel", href: "/running-a-match" },
+      { title: "The dashboard and fixtures", href: "/running-a-match/dashboard-and-fixtures" },
+      { title: "Sharing control of a match", href: "/running-a-match/sharing-control" },
+      { title: "Sound cues", href: "/running-a-match/sound-cues" },
+      { title: "Stream Deck and webhooks", href: "/running-a-match/stream-deck-and-webhooks" },
+    ],
+  },
+  {
+    title: "Displays and graphics",
+    href: "/displaying-your-score",
+    links: [
       { title: "Displaying your score", href: "/displaying-your-score" },
+      { title: "Venue screens, OBS and vMix", href: "/displaying-your-score/obs-and-venue-screens" },
+      { title: "Branding your displays", href: "/displaying-your-score/branding" },
+      { title: "Using Graphics Operator", href: "/displaying-your-score/graphics-operator" },
+    ],
+  },
+  {
+    title: "Consoles and data feeds",
+    href: "/connecting-the-bridge",
+    links: [
+      { title: "Connecting a console (Bridge)", href: "/connecting-the-bridge" },
+      { title: "ChampionData and Bridge updates", href: "/connecting-the-bridge/championdata-and-updates" },
     ],
   },
   {
@@ -54,6 +81,7 @@ export const NAV: NavSection[] = [
     href: "/account",
     links: [
       { title: "Account overview", href: "/account" },
+      { title: "Signing in, passwords and passkeys", href: "/account/signing-in" },
       { title: "Roles & permissions", href: "/account/roles-and-permissions" },
       { title: "Inviting your team", href: "/account/inviting-your-team" },
       { title: "Switching organisations", href: "/account/switching-organisations" },
@@ -65,7 +93,9 @@ export const NAV: NavSection[] = [
     links: [
       { title: "Plans & pricing", href: "/billing" },
       { title: "Upgrading & downgrading", href: "/billing/upgrading-and-downgrading" },
+      { title: "The Free plan's one-match limit", href: "/billing/free-plan-limit" },
       { title: "Graphics Operator add-on", href: "/billing/graphics-addon" },
+      { title: "Data Feed add-on", href: "/billing/data-feed-addon" },
       { title: "Invoices & payment methods", href: "/billing/invoices-and-payment-methods" },
       { title: "Cancelling your plan", href: "/billing/cancelling" },
     ],

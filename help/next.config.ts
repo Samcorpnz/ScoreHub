@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   pageExtensions: ["ts", "tsx", "mdx"],
 };
 
-const withMDX = createMDX({});
+// Plugin given by name, not import: Turbopack can only pass serializable
+// loader options. remark-gfm is what makes Markdown tables render.
+const withMDX = createMDX({ options: { remarkPlugins: ["remark-gfm"] } });
 
 export default withMDX(nextConfig);

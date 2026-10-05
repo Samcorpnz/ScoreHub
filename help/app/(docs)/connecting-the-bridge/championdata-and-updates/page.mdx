@@ -1,0 +1,79 @@
+export const metadata = { title: "ChampionData and Bridge updates" };
+
+# ChampionData and Bridge updates
+
+As well as reading a scoring console, [Bridge](/connecting-the-bridge) can take a match's score
+and statistics from ChampionData. This page covers the two ChampionData sources, reading the Live
+Log, and keeping Bridge up to date.
+
+## Choosing a ChampionData source
+
+In Bridge, under **Configuration**, set **Data Source** to one of:
+
+| Source | Use it when | You'll need |
+| --- | --- | --- |
+| **ChampionData — JSON Feed** | You have ChampionData feed credentials for the match. | The feed URL, username and password. |
+| **ChampionData — Web Scraper** | You don't have feed credentials but the match has a ChampionData match page. | The full address of the match page. |
+
+Prefer the JSON Feed when you have it. It's the only source that supplies the player list for the
+[Graphics Operator](/displaying-your-score/graphics-operator) player scenes.
+
+### JSON Feed settings
+
+- **Feed URL** — the full address of the match's JSON feed.
+- **Username** and **Password** — your ChampionData feed credentials.
+- **Poll Interval (ms)** — how often Bridge fetches the feed. The default is 2000 (every two
+  seconds).
+
+### Web Scraper settings
+
+- **Page URL** — the full ChampionData match page address.
+- **Poll Interval (ms)** — how often Bridge reloads the page. The default is 500.
+
+Select **Save Config**, then **Start**. The relay URL and bridge token are set up the same way as
+for a console — see [Connecting a console (Bridge)](/connecting-the-bridge), including choosing
+the match when you generate the token.
+
+<Callout>
+  ChampionData access is arranged between you and ChampionData. ScoreHub doesn't supply feed
+  credentials.
+</Callout>
+
+## What ChampionData adds
+
+- The score, clock and period for the match, the same as a console would.
+- For netball, a statistics panel on the Advanced display — see [Netball](/sports/netball).
+- With the JSON Feed and the Graphics Operator add-on, player and team statistics for netball,
+  basketball and cricket scenes.
+
+## Reading the Live Log
+
+The **Live Log** at the bottom of the Bridge window shows what Bridge is doing. Filter it with
+**Data** (what's arriving from the source), **Relay** (what's being sent to ScoreHub) and
+**Errors**. **Clear** empties it.
+
+- Nothing under **Data** — the source isn't delivering. Check the feed URL and credentials, or
+  the cable for a console.
+- Data arriving but nothing under **Relay** — check the **Relay URL** and **Bridge Secret**.
+- If the score still isn't on your displays, see [Troubleshooting](/support/troubleshooting).
+
+## Keeping Bridge up to date
+
+Bridge checks for a newer version when it starts and every six hours while it's running. It never
+downloads or installs anything by itself.
+
+When a newer version is available:
+
+- the tray menu shows **Update available — Download**, and
+- the Bridge window shows a banner with a **Download** link.
+
+Both go to the download page. Install the new version over the old one; your configuration is
+kept. To check on demand, use **Check for updates** in the tray menu or the Bridge window.
+
+<Callout>
+  Update between matches, not during one. Installing a new version stops Bridge, and you'll need
+  to select **Start** again afterwards.
+</Callout>
+
+The installers aren't code-signed yet, so macOS and Windows show a warning when you open one. It's
+safe to continue.

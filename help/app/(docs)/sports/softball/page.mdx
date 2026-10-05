@@ -22,8 +22,40 @@ When creating the match ([Getting started](/getting-started)), choose the **Form
 
 ## Running the match
 
-Softball gets a bespoke control panel on `/control` instead of plain score buttons, tracking
-innings and which half of the inning (top or bottom) is in progress.
+Softball has its own Score tab on the control panel, tracking the count, outs, and which half of
+the inning (top or bottom) is in progress. The visitor team bats in the top of each inning and the
+home team in the bottom; the panel shows who's at bat.
+
+### The count
+
+| Button | What it does |
+| --- | --- |
+| **Ball** | Adds a ball. The fourth ball is a walk: the count resets for the next batter. |
+| **Strike** | Adds a strike. The third strike records an out. |
+| **Out** | Records an out and resets the count. The third out ends the half-inning. |
+| **Next Batter** | Resets the count without recording an out — use it after a hit or a walk. |
+| **End Half-Inning** | Moves from top to bottom, or from bottom to the top of the next inning, and clears the count and outs. |
+
+In **slowpitch**, each batter starts on a 1–1 count. In **fastpitch**, the count starts at 0–0.
+
+### Runs
+
+Each team has **+1 run** and **−1 run** buttons. Runs aren't added automatically — select **+1
+run** each time a runner scores.
+
+### Ending the game
+
+The panel shows the current inning out of 7 (fastpitch) or 6 (slowpitch). It doesn't end the game
+for you; extra innings carry on counting. In fastpitch, **Mercy rule eligible** appears from the
+sixth inning when one team leads by 8 or more runs, as a prompt for the umpire's call.
+
+When the game is over, select **End Match** on the Settings tab.
+
+### Fixing a mistake
+
+**UNDO** reverses your last action. Under **Match Controls** you can change team names and the
+match name. **Reset Match** returns to the top of the first inning with no outs, balls or strikes,
+and keeps the format — see [Using the control panel](/running-a-match).
 
 ## On the display
 

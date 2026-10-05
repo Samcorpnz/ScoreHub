@@ -1,0 +1,97 @@
+export const metadata = { title: "The dashboard and fixtures" };
+
+# The dashboard and fixtures
+
+The [dashboard](https://app.scorehub.co.nz/dashboard) lists your organisation's matches and is
+where you start, reopen and share them.
+
+## Finding a match
+
+Matches are split across three tabs:
+
+- **Live** — matches being scored now.
+- **Upcoming** — fixtures that have been scheduled but not started.
+- **History** — matches that have ended.
+
+Narrow the list with the **sport** and **competition** filters, or type part of a team name in
+the search box.
+
+Each live or upcoming match has two buttons:
+
+- **Copy display link** copies that match's fullscreen display link. For other display types, use
+  the control panel's Outputs tab — see [Displaying your score](/displaying-your-score).
+- **Open Control** (live) or **Start** (upcoming) opens the control panel for that match.
+
+Ended matches are listed for reference and can't be reopened.
+
+## Starting an upcoming match
+
+Select **Start** on a fixture in the **Upcoming** tab. The match goes live as soon as its control
+panel opens, with the sport, team names and clock already set from the fixture.
+
+On the Free plan this counts as your one live match — see
+[The Free plan's one-match limit](/billing/free-plan-limit).
+
+## Setting up a single match
+
+**Set Up a New Match** opens the setup wizard for a one-off match that starts straight away. See
+[Getting started](/getting-started).
+
+Admins and Operators can set up matches and upload fixtures.
+
+## Uploading fixtures
+
+On Pro and Venue plans you can schedule a whole round or season at once from a CSV file.
+
+1. Open the **Upcoming** tab and select **Upload Fixtures**.
+2. Choose your CSV file. ScoreHub lists the fixtures it read, and any rows it couldn't use.
+3. Check the list, then select the **Upload … Fixtures** button underneath it to create them.
+
+The fixtures appear in the **Upcoming** tab.
+
+### File format
+
+The first row must be a header row naming the columns. Column order doesn't matter.
+
+| Column | Required | Notes |
+| --- | --- | --- |
+| `sport` | Yes | One of the sport codes below. |
+| `home` | Yes | Home team name, up to 100 characters. |
+| `visitor` | Yes | Visitor team name, up to 100 characters. |
+| `competition` | No | Competition or grade, up to 200 characters. Used by the dashboard's competition filter. |
+| `scheduledAt` | No | Date and time, for example `2026-10-17T18:30`. |
+| `matchName` | No | Shown on displays, up to 200 characters. |
+
+Example:
+
+```
+sport,competition,home,visitor,scheduledAt
+netball,Premier Grade,Northern Stars,Southern Steel,2026-10-17T18:30
+basketball,Division 1,Hawks,Rams,2026-10-17T20:00
+rugby_union,,Marist,Old Boys,2026-10-18T14:30
+```
+
+### Sport codes
+
+Use these exact values in the `sport` column:
+
+`netball`, `basketball`, `rugby_union`, `rugby_league`, `volleyball`, `football`, `handball`,
+`hockey`, `waterpolo`, `tennis`, `touch_rugby`, `futsal`, `pickleball`, `badminton`,
+`table_tennis`, `floorball`, `squash`, `lawn_bowls`, `indoor_cricket`, `softball`, `cricket`,
+`custom`.
+
+### Limits and common errors
+
+- Up to **500 fixtures** per upload. Split larger files.
+- **Commas inside a value aren't supported**, even in quotes. A team called "Smith, Jones & Co"
+  needs the comma removed.
+- A row missing `sport`, `home` or `visitor` is skipped and listed as an error before you upload.
+- If any row has an unknown sport code, an unreadable date or a value that's too long, the whole
+  upload is rejected and nothing is created. Fix the file and upload it again.
+- Sport-specific match options (cricket format, softball format and so on) can't be set from a
+  CSV. Fixtures use each sport's default.
+
+<Callout>
+  Saving from Excel or Google Sheets as **CSV** works. If dates won't upload, format the column as
+  text in `YYYY-MM-DDTHH:MM` form before exporting.
+</Callout>
