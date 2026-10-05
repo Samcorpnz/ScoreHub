@@ -175,8 +175,14 @@ reviewer: the repo owner) is what actually pauses the workflow for approval — 
 key in the YAML alone does nothing if the environment has no protection rules configured, which
 was the case for weeks (every push deployed immediately, no gate). Check
 `gh api repos/Samcorpnz/ScoreHub/environments/production` if this ever needs re-verifying; the
-name is matched case-insensitively. Fly.io's and Vercel's own git-push auto-deploy must also stay
-disabled in their dashboards — otherwise every push deploys immediately, bypassing this gate.
+name is matched case-insensitively. Fly.io's own git-push auto-deploy must also stay disabled in
+its dashboard — otherwise every push deploys immediately, bypassing this gate. Vercel's GitHub
+integration stays connected, because UAT and PR previews depend on it, but `frontend/vercel.json`
+sets `git.deploymentEnabled.main` to `false` so it never deploys `main`; without that file the
+integration ships every push to `main` to production within seconds, ahead of tests and approval
+(which is what was happening until 2026-10-05). To re-verify, check that the GitHub deployments
+list (`gh api repos/Samcorpnz/ScoreHub/deployments`) has no `vercel[bot]` entries with
+environment `Production` for new `main` commits.
 The production relay's public address is `https://relay.scorehub.co.nz` (a Fly certificate on
 `scorehub-relay` plus DNS-only `A`/`AAAA` records in Cloudflare; `scorehub-relay.fly.dev` still
 answers). It is baked into Bridge installers and the Stream Deck plugin as their default (SA-146),
