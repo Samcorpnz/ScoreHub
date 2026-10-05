@@ -376,12 +376,8 @@
       <div class="section-title">Configuration</div>
 
       <div class="field">
-        <label for="relayUrl">Relay URL</label>
-        <input type="text" id="relayUrl" placeholder="http://localhost:4000">
-      </div>
-      <div class="field">
         <label for="bridgeSecret">Bridge Secret</label>
-        <input type="password" id="bridgeSecret" placeholder="changeme">
+        <input type="password" id="bridgeSecret" placeholder="Paste the token from ScoreHub">
       </div>
       <div class="field">
         <label for="matchId">Match</label>
@@ -395,6 +391,16 @@
           Choose the match this console is scoring so its data reaches that match's displays.
         </div>
       </div>
+      <details class="field" id="advancedSection">
+        <summary style="cursor: pointer; font-size: 11px; opacity: 0.7;">Advanced</summary>
+        <div class="field" style="margin-top: 8px;">
+          <label for="relayUrl">Relay URL</label>
+          <input type="text" id="relayUrl" placeholder="https://relay.scorehub.co.nz">
+          <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">
+            Leave as it is unless ScoreHub support, or your own self-hosted setup, tells you otherwise.
+          </div>
+        </div>
+      </details>
 
       <div class="field" style="margin-top: 18px;">
         <label for="sourceType">Data Source</label>
@@ -524,6 +530,9 @@
 
   function applyConfigToForm(c) {
     setVal('relayUrl', c.relayUrl || '');
+    // Show the relay field straight away when it isn't the hosted default,
+    // so a custom relay is never hidden from whoever is troubleshooting.
+    document.getElementById('advancedSection').open = !!c.relayUrl && c.relayUrl !== 'https://relay.scorehub.co.nz';
     setVal('bridgeSecret', c.bridgeSecret || '');
     setMatchOptions(c.matchId ? [{ id: c.matchId, name: 'Selected match' }] : [], c.matchId || '');
     setVal('sourceType', c.source || 'saturn');

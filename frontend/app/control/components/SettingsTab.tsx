@@ -106,7 +106,7 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
     <Card title="Stream Deck / Webhooks">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         Control ScoreHub from a Stream Deck or any HTTP client. Install the plugin, generate a token,
-        and paste both into the Stream Deck property inspector — that&apos;s it.
+        paste it into the Stream Deck property inspector, and choose your match there.
       </p>
 
       {/* Plugin download */}
@@ -315,7 +315,7 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
     <Card title="Bridge Devices">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         Generate a token for each venue laptop running the bridge app. Paste it into the bridge&apos;s
-        connection setup along with the relay URL above, then choose the match in the bridge app. Pin
+        <strong>Bridge Secret</strong> field, then choose the match in the bridge app. Pin
         the token to a match here only if that laptop should never feed any other match.
       </p>
 
@@ -725,7 +725,8 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
       {/* Connection info */}
       <Card title="Connection">
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-          Your relay URL. Paste it into the <strong>Relay URL</strong> field in the Bridge app or the Stream Deck plugin.
+          Your relay URL. The Bridge app and Stream Deck plugin already use ScoreHub&apos;s by default — you only
+          need this for the webhook endpoints, or if support asks you to set it under <strong>Advanced</strong>.
         </p>
         <div className="flex gap-2">
           <code data-testid="relay-url" className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>

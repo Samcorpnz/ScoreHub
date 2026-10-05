@@ -75,11 +75,14 @@
   <div class="section">
     <div class="section-title">Relay Connection</div>
 
-    <label>Relay URL</label>
-    <input type="text" id="relayUrl" placeholder="https://relay.yourdomain.com" autocomplete="off" />
-
     <label>Control Token</label>
     <input type="password" id="token" placeholder="Paste from Settings → Stream Deck tab" autocomplete="off" />
+
+    <details id="advancedSection" style="margin-top: 8px;">
+      <summary style="cursor: pointer; font-size: 11px; color: #999;">Advanced</summary>
+      <label>Relay URL</label>
+      <input type="text" id="relayUrl" placeholder="https://relay.scorehub.co.nz" autocomplete="off" />
+    </details>
 
     <button id="connectBtn">Connect &amp; Save</button>
     <div id="status" class="status idle">Not connected</div>
@@ -124,6 +127,7 @@
   </div>
 
 <script>
+  var HOSTED_RELAY_URL = "https://relay.scorehub.co.nz";
   var ws = null;
   var uuid = null;
   var actionUUID = "";
@@ -151,7 +155,11 @@
 
       if (msg.event === "didReceiveGlobalSettings") {
         globalSettings = msg.payload.settings || {};
-        document.getElementById("relayUrl").value = globalSettings.relayUrl || "";
+        // Hosted ScoreHub is the default; the field only matters for UAT or
+        // a self-hosted relay, so it's shown open only when it's been changed.
+        document.getElementById("relayUrl").value = globalSettings.relayUrl || HOSTED_RELAY_URL;
+        document.getElementById("advancedSection").open =
+          !!globalSettings.relayUrl && globalSettings.relayUrl !== HOSTED_RELAY_URL;
         document.getElementById("token").value = globalSettings.token ? "••••••••" : "";
         if (globalSettings.connected) {
           setStatus("ok", "Connected — " + (globalSettings.orgId || "").slice(0, 12) + "…");
@@ -172,13 +180,13 @@
 
     // Save global settings on Connect click (also verifies credentials live)
     document.getElementById("connectBtn").addEventListener("click", function () {
-      var relayUrl = document.getElementById("relayUrl").value.trim();
+      var relayUrl = document.getElementById("relayUrl").value.trim() || HOSTED_RELAY_URL;
       var rawToken = document.getElementById("token").value.trim();
       // If the field still shows the masked placeholder, reuse the stored token
       var token = rawToken === "••••••••" ? (globalSettings.token || "") : rawToken;
 
-      if (!relayUrl || !token) {
-        setStatus("error", "Relay URL and token are required");
+      if (!token) {
+        setStatus("error", "Paste your control token first");
         return;
       }
       setStatus("idle", "Connecting…");

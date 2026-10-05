@@ -51,3 +51,53 @@ describe("controller config path", () => {
     });
   });
 });
+
+// DEFAULT_CONFIG is also computed at module load. The desktop app (Electron
+// sets BRIDGE_CONFIG_DIR) defaults to ScoreHub's hosted relay so customers
+// don't enter a URL (SA-146); plain dev/Docker runs stay local.
+describe("controller default relay URL", () => {
+  const ORIGINAL = { dir: process.env.BRIDGE_CONFIG_DIR, relay: process.env.RELAY_URL };
+
+  function freshDefaultRelayUrl(saved?: object): string {
+    let relayUrl = "";
+    jest.isolateModules(() => {
+      jest.spyOn(fs, "existsSync").mockReturnValue(saved !== undefined);
+      if (saved) jest.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify(saved));
+      const { BridgeController } = require("../controller");
+      relayUrl = new BridgeController().getConfig().relayUrl;
+    });
+    return relayUrl;
+  }
+
+  afterEach(() => {
+    for (const [key, value] of [["BRIDGE_CONFIG_DIR", ORIGINAL.dir], ["RELAY_URL", ORIGINAL.relay]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    jest.restoreAllMocks();
+  });
+
+  it("is the hosted relay in the desktop app", () => {
+    process.env.BRIDGE_CONFIG_DIR = "/fake/userData";
+    delete process.env.RELAY_URL;
+    expect(freshDefaultRelayUrl()).toBe("https://relay.scorehub.co.nz");
+  });
+
+  it("stays local outside the desktop app", () => {
+    delete process.env.BRIDGE_CONFIG_DIR;
+    delete process.env.RELAY_URL;
+    expect(freshDefaultRelayUrl()).toBe("http://localhost:4000");
+  });
+
+  it("is overridden by RELAY_URL", () => {
+    process.env.BRIDGE_CONFIG_DIR = "/fake/userData";
+    process.env.RELAY_URL = "https://scorehub-relay-uat.fly.dev";
+    expect(freshDefaultRelayUrl()).toBe("https://scorehub-relay-uat.fly.dev");
+  });
+
+  it("never replaces a relay URL the operator already saved", () => {
+    process.env.BRIDGE_CONFIG_DIR = "/fake/userData";
+    delete process.env.RELAY_URL;
+    expect(freshDefaultRelayUrl({ relayUrl: "http://192.168.1.20:4000" })).toBe("http://192.168.1.20:4000");
+  });
+});
