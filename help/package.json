@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "deploy": "next build && wrangler deploy",
+    "docs-bundle": "node scripts/build-docs-bundle.mjs",
+    "build": "npm run docs-bundle && next build",
+    "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {

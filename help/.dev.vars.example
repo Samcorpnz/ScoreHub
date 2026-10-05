@@ -1,0 +1,8 @@
+# Copy to .dev.vars for `wrangler dev`. In production these are Worker
+# secrets: `npx wrangler secret put OPENROUTER_API_KEY` (add `--env uat`
+# for the UAT Worker).
+OPENROUTER_API_KEY=
+# Optional: ship help-assistant logs to Better Stack (same name the relay
+# and frontend use). Without it, logs still go to Workers Logs. The matching
+# BETTER_STACK_INGESTING_URL is a plain var in wrangler.jsonc.
+BETTER_STACK_SOURCE_TOKEN=

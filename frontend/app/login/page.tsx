@@ -3,6 +3,8 @@
 import { useState, useSyncExternalStore, Suspense, SubmitEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { postLoginDestination } from "@/lib/authRedirect";
+import { CantSignIn } from "./CantSignIn";
 
 export default function LoginPage() {
   return (
@@ -35,7 +37,14 @@ function fieldErrors(email: string, password: string) {
 function LoginForm() {
   const router       = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl  = searchParams.get("callbackUrl") ?? "/dashboard";
+
+  // The help centre sends people here and expects them back afterwards, so
+  // an allowed callbackUrl may be on another origin (a full page load).
+  function continueAfterSignIn() {
+    const { url, external } = postLoginDestination(searchParams.get("callbackUrl"), window.location.origin);
+    if (external) window.location.assign(url);
+    else router.push(url);
+  }
 
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -45,6 +54,10 @@ function LoginForm() {
 
   const [passkeyBusy,      setPasskeyBusy]      = useState(false);
   const [passkeyError,     setPasskeyError]     = useState("");
+  // Once a sign-in attempt has failed, offer the signed-out route to support
+  // (it stays visible while they retry). The help centre links here with
+  // ?support=1 for people who say they can't log in.
+  const [signInFailed,     setSignInFailed]     = useState(searchParams.get("support") === "1");
 
   // Feature-detect client-side only: the server snapshot is always false, so
   // hydration matches (window.PublicKeyCredential doesn't exist on the server)
@@ -76,8 +89,9 @@ function LoginForm() {
 
     if (result?.error) {
       setError("Invalid email or password.");
+      setSignInFailed(true);
     } else {
-      router.push(callbackUrl);
+      continueAfterSignIn();
     }
   }
 
@@ -100,8 +114,9 @@ function LoginForm() {
 
       if (result?.error) {
         setPasskeyError("Passkey sign-in failed.");
+        setSignInFailed(true);
       } else {
-        router.push(callbackUrl);
+        continueAfterSignIn();
       }
     } catch {
       // startAuthentication throws (e.g. NotAllowedError) if the user
@@ -234,6 +249,8 @@ function LoginForm() {
             </>
           )}
         </form>
+
+        {signInFailed && <CantSignIn email={email} />}
 
         <p className="text-center text-xs mt-6" style={{ color: "var(--text-dim)" }}>
           Display views are public — only the control panel requires login.
