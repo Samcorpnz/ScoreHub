@@ -27,7 +27,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   const requestedType = body?.type === "CONTROL" || body?.type === "DATA_FEED" ? body.type : "BRIDGE";
   const type: "BRIDGE" | "CONTROL" | "DATA_FEED" = requestedType;
 
-  if (type === "DATA_FEED") {
+  // Console bridging and the third-party feed are both the paid Data Feed
+  // add-on (SA-114) — the relay enforces the same thing at the bridge and
+  // data-feed socket handshakes. Stream Deck (CONTROL) tokens stay ungated.
+  if (type === "DATA_FEED" || type === "BRIDGE") {
     const org = await prisma.org.findUnique({
       where: { id: orgId },
       select: { account: { select: { addOns: true } } },

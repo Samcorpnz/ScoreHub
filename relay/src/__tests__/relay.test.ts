@@ -4,7 +4,7 @@ import { AddressInfo } from "net";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { createServer } from "../server";
+import { createServer, resetMatchState } from "../server";
 import { DEFAULT_MATCH_STATE, MatchState } from "../types";
 
 const BRIDGE_SECRET  = "test-bridge-secret";
@@ -481,6 +481,79 @@ describe("socket — control resetMatch", () => {
       control.disconnect();
       viewer.disconnect();
     }
+  });
+});
+
+describe("resetMatchState (SA-143)", () => {
+  const base: MatchState = {
+    ...DEFAULT_MATCH_STATE,
+    sequenceId: 7,
+    sport: "basketball",
+    matchName: "Grand Final",
+    countDown: true,
+    clockSeconds: 12,
+    isRunning: true,
+    period: "3",
+    periodBreak: true,
+    home:    { ...DEFAULT_MATCH_STATE.home,    name: "Hawks", score: 55, faults: 4, timeouts: 2, players: [{ number: 7, name: "A", onCourt: true, faults: 2, points: 9 }] },
+    visitor: { ...DEFAULT_MATCH_STATE.visitor, name: "Owls",  score: 44, faults: 3 },
+    sportConfig: { format: "t20" },
+  };
+
+  it("keeps sport, match name, countdown direction, match options and rosters", () => {
+    const next = resetMatchState(base, 600);
+    expect(next.sport).toBe("basketball");
+    expect(next.matchName).toBe("Grand Final");
+    expect(next.countDown).toBe(true);
+    expect(next.sportConfig).toEqual({ format: "t20" });
+    expect(next.home.name).toBe("Hawks");
+    expect(next.home.players).toEqual([{ number: 7, name: "A", onCourt: true, faults: 0, points: 0 }]);
+    expect(next.home.timeouts).toBe(2);
+  });
+
+  it("zeroes scores and fouls, returns to period 1 and restores the sport's clock, stopped", () => {
+    const next = resetMatchState(base, 600);
+    expect(next.home.score).toBe(0);
+    expect(next.visitor.score).toBe(0);
+    expect(next.home.faults).toBe(0);
+    expect(next.visitor.faults).toBe(0);
+    expect(next.period).toBe("1");
+    expect(next.periodBreak).toBe(false);
+    expect(next.clockSeconds).toBe(600);
+    expect(next.isRunning).toBe(false);
+    expect(next.sequenceId).toBe(8);
+  });
+
+  it("zeroes indoor cricket wickets but keeps the wicket penalty", () => {
+    const next = resetMatchState({
+      ...base,
+      sport: "indoor_cricket",
+      sportState: { sport: "indoor_cricket", wicketPenalty: 5, homeWickets: 3, visitorWickets: 1, oversPerInnings: 16 },
+    }, 0);
+    expect(next.sportState).toEqual({ sport: "indoor_cricket", wicketPenalty: 5, homeWickets: 0, visitorWickets: 0, oversPerInnings: 16 });
+  });
+
+  it("restarts a cricket match at a fresh first innings, keeping format and squads", () => {
+    const next = resetMatchState({
+      ...base,
+      sport: "cricket",
+      sportState: {
+        sport: "cricket", format: "odi", inningsNumber: 2,
+        innings: [
+          { battingTeam: "home", runs: 180, wickets: 10, oversComplete: 50, ballsThisOver: 0, extras: { wides: 1, noBalls: 0, byes: 0, legByes: 0, penalties: 0 }, batters: [], bowlers: [], currentBatter1Index: 0, currentBatter2Index: 1, currentBowlerIndex: 0, thisOverBalls: [] },
+          { battingTeam: "visitor", runs: 20, wickets: 1, oversComplete: 4, ballsThisOver: 2, extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0 }, batters: [], bowlers: [], currentBatter1Index: 0, currentBatter2Index: 1, currentBowlerIndex: 0, thisOverBalls: ["1", "W"], target: 181 },
+        ],
+        homeSquad: [{ id: 0, name: "Smith" }],
+        visitorSquad: [{ id: 0, name: "Jones" }],
+      },
+    }, 0);
+    const cricket = next.sportState as Extract<MatchState["sportState"], { sport: "cricket" }>;
+    expect(cricket.format).toBe("odi");
+    expect(cricket.inningsNumber).toBe(1);
+    expect(cricket.innings).toHaveLength(1);
+    expect(cricket.innings[0].runs).toBe(0);
+    expect(cricket.homeSquad).toEqual([{ id: 0, name: "Smith" }]);
+    expect(cricket.visitorSquad).toEqual([{ id: 0, name: "Jones" }]);
   });
 });
 

@@ -62,17 +62,26 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
       });
   }, [orgId, matchId]);
 
+  // Mirrors the rotate-display-token route's own role check — Operators
+  // can't rotate the link, so they don't get the button (SA-117).
+  const canRotate = session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER";
   const [rotating, setRotating] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
   const rotateDisplayToken = async () => {
     if (!orgId || !matchId) return;
     if (!confirm("Regenerate the display link? Every link/OBS scene currently using the old one will stop working.")) return;
     setRotating(true);
+    setRotateError(null);
     try {
       const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/rotate-display-token`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         setDisplayToken(data.displayToken);
+      } else {
+        setRotateError("Couldn't regenerate the display link — the existing link still works. Try again.");
       }
+    } catch {
+      setRotateError("Couldn't regenerate the display link — the existing link still works. Try again.");
     } finally {
       setRotating(false);
     }
@@ -98,8 +107,11 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
 
   return (
     <div className="space-y-6">
-      {matchId && (
-        <div className="flex justify-end">
+      {matchId && canRotate && (
+        <div className="flex items-center justify-end gap-3">
+          {rotateError && (
+            <p role="alert" className="text-xs font-semibold" style={{ color: "var(--danger)" }}>{rotateError}</p>
+          )}
           <button
             className="rounded-lg px-3 py-1.5 text-xs font-semibold"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}

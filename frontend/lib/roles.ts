@@ -12,6 +12,12 @@ const ROLE_RANK: Record<Role, number> = {
   VIEWER: 0,
 };
 
+// Creating, bulk-uploading and ending matches — everyone who can score a
+// match (see /api/control-token) can also run its lifecycle.
+export function canRunMatches(actorRole: Role | null | undefined): boolean {
+  return actorRole === "ADMIN" || actorRole === "MANAGER" || actorRole === "OPERATOR";
+}
+
 export function canManageMembers(actorRole: Role | null): boolean {
   return actorRole === "ADMIN" || actorRole === "MANAGER";
 }

@@ -102,6 +102,16 @@ export function createUiServer(
     res.json({ ok: true, config: controller.getConfig() });
   });
 
+  // ── Match picker ────────────────────────────────────────────────────────────
+
+  app.get("/api/matches", async (_req, res) => {
+    try {
+      res.json({ ok: true, ...(await controller.listMatches()) });
+    } catch (err) {
+      res.json({ ok: false, pinnedMatchId: null, matches: [], error: (err as Error).message });
+    }
+  });
+
   // ── Control ─────────────────────────────────────────────────────────────────
 
   app.post("/api/start", async (_req, res) => {

@@ -9,7 +9,9 @@ const {
   useSessionMock,
   useMatchStateMock,
   useControlTokenMock,
+  searchParams,
 } = vi.hoisted(() => ({
+  searchParams: { current: new URLSearchParams() },
   pushMock: vi.fn(),
   useSessionMock: vi.fn(),
   useMatchStateMock: vi.fn(),
@@ -18,6 +20,7 @@ const {
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
+  useSearchParams: () => searchParams.current,
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -45,12 +48,17 @@ function makeMatchStateReturn(overrides: Record<string, unknown> = {}) {
     relayUnreachable: false,
     sendManualUpdate,
     sendReset: vi.fn(),
+    sendUndo: vi.fn(),
+    sendScoreAdjust: vi.fn(),
+    controllerStatus: "granted",
+    takeControl: vi.fn(),
     estimateServerNow: () => Date.now(),
     ...overrides,
   };
 }
 
 beforeEach(() => {
+  searchParams.current = new URLSearchParams();
   useControlTokenMock.mockReturnValue("mobile-secret");
   useSessionMock.mockReturnValue({ data: { user: { name: "Op" } }, status: "authenticated" });
   useMatchStateMock.mockReturnValue(makeMatchStateReturn());
@@ -103,19 +111,65 @@ describe("MobileControl", () => {
     expect(screen.getByText(/STOP/)).toBeInTheDocument();
   });
 
-  it("increments the home score using a sport increment button", () => {
+  it("scores with a delta event, not an absolute score, so rapid taps can't coalesce", () => {
     const sendManualUpdate = vi.fn();
+    const sendScoreAdjust = vi.fn();
     useMatchStateMock.mockReturnValue(makeMatchStateReturn({
       state: makeState({ sport: "netball", home: { ...DEFAULT_MATCH_STATE.home, score: 0 } }),
       sendManualUpdate,
+      sendScoreAdjust,
     }));
     render(<MobileControl />);
-    // netball's increments are [1, 2] — take the first "+1" button (home side)
+    // netball's increments are [1, 2] — first "+1" is home, second is visitor
     const plusOneButtons = screen.getAllByText("+1");
     fireEvent.click(plusOneButtons[0]);
-    expect(sendManualUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      home: expect.objectContaining({ score: 1 }),
-    }));
+    fireEvent.click(plusOneButtons[1]);
+    expect(sendScoreAdjust).toHaveBeenNthCalledWith(1, { side: "home", delta: 1 });
+    expect(sendScoreAdjust).toHaveBeenNthCalledWith(2, { side: "visitor", delta: 1 });
+    expect(sendManualUpdate).not.toHaveBeenCalled();
+  });
+
+  it("scopes the control token and the full-panel link to the match in the URL (SA-144)", () => {
+    searchParams.current = new URLSearchParams("matchId=m-42");
+    render(<MobileControl />);
+    expect(useControlTokenMock).toHaveBeenCalledWith("m-42");
+    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/control?matchId=m-42");
+  });
+
+  it("falls back to the org's default match when no matchId is given", () => {
+    render(<MobileControl />);
+    expect(useControlTokenMock).toHaveBeenCalledWith(undefined);
+    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/control");
+  });
+
+  it("shows IN CONTROL when this panel holds the controller lock", () => {
+    render(<MobileControl />);
+    expect(screen.getByTestId("mobile-controller-status")).toHaveTextContent("IN CONTROL");
+    expect(screen.queryByTestId("take-control")).not.toBeInTheDocument();
+  });
+
+  it("shows VIEWING ONLY with a Take Control button when another panel has control", () => {
+    const takeControl = vi.fn();
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ controllerStatus: "conflict", takeControl }));
+    render(<MobileControl />);
+    expect(screen.getByTestId("mobile-controller-status")).toHaveTextContent("VIEWING ONLY");
+    fireEvent.click(screen.getByTestId("take-control"));
+    expect(takeControl).toHaveBeenCalled();
+  });
+
+  it("sends an undo", () => {
+    const sendUndo = vi.fn();
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ sendUndo }));
+    render(<MobileControl />);
+    fireEvent.click(screen.getByText(/Undo/));
+    expect(sendUndo).toHaveBeenCalled();
+  });
+
+  it("labels periods from the sport template rather than a hard-coded Q", () => {
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ state: makeState({ sport: "volleyball", period: "2" }) }));
+    render(<MobileControl />);
+    expect(screen.getByText("◀ SET 1")).toBeInTheDocument();
+    expect(screen.getByText("SET 3 ▶")).toBeInTheDocument();
   });
 
   it("opens the set-time panel and applies a preset clock value", () => {

@@ -11,6 +11,7 @@ function makeFakeController(overrides: Partial<BridgeController> = {}): BridgeCo
   const config = {
     relayUrl: "http://localhost:4000",
     bridgeSecret: "secret",
+    matchId: "",
     source: "saturn" as const,
     serialPort: "",
     baudRate: 9600,
@@ -33,6 +34,7 @@ function makeFakeController(overrides: Partial<BridgeController> = {}): BridgeCo
     stop: jest.fn(async () => {}),
     restart: jest.fn(async () => {}),
     listSerialPorts: jest.fn(async () => ["/dev/tty.usbserial-1"]),
+    listMatches: jest.fn(async () => ({ pinnedMatchId: null, matches: [{ id: "m-1", name: "Hawks v Owls", sport: "netball", status: "LIVE", scheduledAt: null }] })),
     ...overrides,
   };
 
@@ -190,5 +192,17 @@ describe("bridge ui server", () => {
       req.destroy();
       done();
     });
+  });
+
+  it("GET /api/matches returns the relay's match list for the picker", async () => {
+    const res = await request(baseUrl).get("/api/matches");
+    expect(res.body).toMatchObject({ ok: true, pinnedMatchId: null, matches: [{ id: "m-1", name: "Hawks v Owls" }] });
+  });
+
+  it("GET /api/matches reports the relay's error instead of failing", async () => {
+    (controller.listMatches as jest.Mock).mockRejectedValueOnce(new Error("Connecting a console requires the Data Feed add-on"));
+    const res = await request(baseUrl).get("/api/matches");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: false, matches: [], error: expect.stringMatching(/Data Feed add-on/) });
   });
 });

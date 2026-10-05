@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useMatchState } from "../../hooks/useMatchState";
 import { useControlToken } from "../../hooks/useControlToken";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { MatchState, formatClock } from "../../types";
-import { getTemplate } from "../../sport-templates";
+import { getTemplate, getMatchLength } from "../../sport-templates";
 
 const CLOCK_PRESETS = [5, 8, 10, 12, 15, 20, 25, 30, 40, 45].map(m => ({
   label: `${m}m`,
@@ -16,9 +16,25 @@ const CLOCK_PRESETS = [5, 8, 10, 12, 15, 20, 25, 30, 40, 45].map(m => ({
 }));
 
 export default function MobileControl() {
+  return (
+    <Suspense fallback={null}>
+      <MobileControlInner />
+    </Suspense>
+  );
+}
+
+function MobileControlInner() {
   const router = useRouter();
-  const controlToken = useControlToken();
-  const { state, status, feedStale, relayUnreachable, sendManualUpdate, sendReset, estimateServerNow } = useMatchState({
+  // Same match scoping as the full panel (see control/page.tsx) — without it
+  // the token is unscoped and this page scores the org's default room rather
+  // than the match its displays are showing (SA-144).
+  const matchId = useSearchParams().get("matchId") ?? undefined;
+  const matchQuery = matchId ? `?matchId=${encodeURIComponent(matchId)}` : "";
+  const controlToken = useControlToken(matchId);
+  const {
+    state, status, feedStale, relayUnreachable, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
+    controllerStatus, takeControl, estimateServerNow,
+  } = useMatchState({
     secret: controlToken,
     role: "control",
   });
@@ -26,7 +42,7 @@ export default function MobileControl() {
   useSession({
     required: true,
     onUnauthenticated() {
-      router.push("/login?callbackUrl=/control/mobile");
+      router.push(`/login?callbackUrl=${matchId ? encodeURIComponent(`/control/mobile${matchQuery}`) : "/control/mobile"}`);
     },
   });
 
@@ -59,6 +75,8 @@ export default function MobileControl() {
   const clockRunning = state.isRunning;
   const increments   = getTemplate(state.sport).scoreIncrements;
   const period       = Number.parseInt(state.period || "1", 10);
+  const periodLabel  = getTemplate(state.sport).periodLabel;
+  const inControl    = controllerStatus === "granted";
 
   return (
     <div style={{
@@ -92,11 +110,44 @@ export default function MobileControl() {
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <ConnectionBadge status={status} feedStale={feedStale} relayUnreachable={relayUnreachable} />
-          <a href="/control" style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
+          <a href={`/control${matchQuery}`} style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
             Full panel ↗
           </a>
         </div>
       </div>
+
+      {/* ── Controller status ── */}
+      {controllerStatus !== "connecting" && (
+        <div
+          data-testid="mobile-controller-status"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "6px 16px",
+            background: inControl ? "rgba(0,200,100,0.10)" : "rgba(255,160,0,0.12)",
+            borderBottom: `1px solid ${inControl ? "rgba(0,200,100,0.3)" : "rgba(255,160,0,0.3)"}`,
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: inControl ? "#00c864" : "#ffa000" }}>
+            {inControl ? "● IN CONTROL" : "○ VIEWING ONLY — another panel has control"}
+          </span>
+          {!inControl && (
+            <button
+              data-testid="take-control"
+              onClick={takeControl}
+              style={{
+                padding: "5px 12px", borderRadius: 8, border: "none",
+                background: "#ffa000", color: "#000", fontSize: 11, fontWeight: 800, cursor: "pointer",
+              }}
+            >
+              Take Control
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Teams + Scores ── */}
       <div style={{ display: "flex", gap: 8, padding: "12px 12px 8px", flexShrink: 0 }}>
@@ -106,7 +157,7 @@ export default function MobileControl() {
           color={state.home.color || "var(--home-color)"}
           faults={state.home.faults}
           increments={increments}
-          onScore={d => push({ home: { ...state.home, score: Math.max(0, state.home.score + d) } })}
+          onScore={d => sendScoreAdjust({ side: "home", delta: d })}
           onFault={() => push({ home: { ...state.home, faults: state.home.faults + 1 } })}
         />
         <TeamColumn
@@ -115,7 +166,7 @@ export default function MobileControl() {
           color={state.visitor.color || "var(--visitor-color)"}
           faults={state.visitor.faults}
           increments={increments}
-          onScore={d => push({ visitor: { ...state.visitor, score: Math.max(0, state.visitor.score + d) } })}
+          onScore={d => sendScoreAdjust({ side: "visitor", delta: d })}
           onFault={() => push({ visitor: { ...state.visitor, faults: state.visitor.faults + 1 } })}
         />
       </div>
@@ -142,7 +193,7 @@ export default function MobileControl() {
             fontSize: 11, fontWeight: 700, letterSpacing: 2,
             textTransform: "uppercase", color: "var(--accent)", marginTop: 4,
           }}>
-            {state.sport.replace("_", " ")} · Q{state.period}
+            {state.sport.replace("_", " ")} · {periodLabel} {state.period}
           </div>
         </div>
 
@@ -169,12 +220,15 @@ export default function MobileControl() {
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           <TinyBtn label={showSetTime ? "▲ Time" : "▼ Time"} onClick={() => setShowSetTime(v => !v)} />
           <TinyBtn
-            label={`◀ Q${Math.max(1, period - 1)}`}
+            label={`◀ ${periodLabel} ${Math.max(1, period - 1)}`}
             onClick={() => push({ period: String(Math.max(1, period - 1)) })}
           />
           <TinyBtn
-            label={`Q${period + 1} ▶`}
-            onClick={() => push({ period: String(period + 1) })}
+            label={`${periodLabel} ${period + 1} ▶`}
+            onClick={() => {
+              const max = getMatchLength(state);
+              if (max === undefined || period < max) push({ period: String(period + 1) });
+            }}
           />
         </div>
 
@@ -260,8 +314,26 @@ export default function MobileControl() {
         </div>
       </div>
 
-      {/* ── Reset ── */}
-      <div style={{ padding: "0 12px 20px", marginTop: "auto", flexShrink: 0 }}>
+      {/* ── Undo / Reset ── */}
+      <div style={{ padding: "0 12px 20px", marginTop: "auto", flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        <button
+          onClick={sendUndo}
+          style={{
+            width: "100%",
+            padding: "10px 0",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--bg-elevated)",
+            color: "var(--text-secondary)",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+            letterSpacing: 0.5,
+            textTransform: "uppercase",
+          }}
+        >
+          ↩ Undo
+        </button>
         <button
           onClick={() => { if (confirm("Reset scores to 0? (Names and colours are kept)")) sendReset(); }}
           style={{

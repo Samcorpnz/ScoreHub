@@ -220,6 +220,7 @@ var require_XMLHttpRequest = __commonJS({
         switch (url2.protocol) {
           case "https:":
             ssl = true;
+          // SSL & non-SSL both need host, no break here.
           case "http:":
             host = url2.hostname;
             break;
@@ -5904,12 +5905,12 @@ function unloadHandler() {
     }
   }
 }
-var hasXHR2 = function() {
+var hasXHR2 = (function() {
   const xhr = newRequest({
     xdomain: false
   });
   return xhr && xhr.responseType !== null;
-}();
+})();
 function newRequest(opts) {
   const xdomain = opts.xdomain;
   try {
@@ -8508,27 +8509,35 @@ var RelayClient = class {
   listeners = /* @__PURE__ */ new Set();
   orgId = null;
   matchId;
+  displayToken;
   relayUrl = "";
   token = "";
-  // Called when global settings are saved in the PI. Fetches orgId/matchId
-  // from /api/me, then opens a viewer socket for live state updates.
-  async init(relayUrl, token) {
+  // Called when global settings are saved in the PI. Resolves which match
+  // the keys act on, then opens a viewer socket for live state updates.
+  //
+  // A token pinned to a match always uses that match. Otherwise the match
+  // chosen in the PI's picker is used — without one the keys would act on
+  // the organisation's default match, which isn't the one a match's
+  // displays and control panel are showing.
+  async init(relayUrl, token, selectedMatchId) {
     this.relayUrl = relayUrl.replace(/\/$/, "");
     this.token = token;
-    const res = await fetch(`${this.relayUrl}/api/me`, {
+    const res = await fetch(`${this.relayUrl}/api/matches`, {
       headers: { "x-control-secret": token }
     });
-    if (!res.ok) throw new Error(`/api/me returned ${res.status}`);
-    const { orgId, matchId } = await res.json();
+    if (!res.ok) throw new Error(`/api/matches returned ${res.status}`);
+    const { orgId, pinnedMatchId, matches } = await res.json();
     this.orgId = orgId;
-    this.matchId = matchId ?? void 0;
+    this.matchId = pinnedMatchId ?? selectedMatchId ?? void 0;
+    this.displayToken = matches.find((m) => m.id === this.matchId)?.displayToken ?? void 0;
+    this.state = null;
     this.connect();
   }
   connect() {
     this.socket?.disconnect();
     if (!this.orgId) return;
     this.socket = lookup(this.relayUrl, {
-      auth: { orgId: this.orgId, matchId: this.matchId },
+      auth: { orgId: this.orgId, matchId: this.matchId, token: this.displayToken },
       reconnection: true,
       reconnectionDelay: 1e3,
       reconnectionDelayMax: 5e3
@@ -8688,10 +8697,10 @@ streamDeck.actions.registerAction(new ScoreAction());
 streamDeck.actions.registerAction(new PeriodAction());
 streamDeck.settings.onDidReceiveGlobalSettings(async (ev) => {
   const settings = ev.settings;
-  const { relayUrl, token } = settings;
+  const { relayUrl, token, matchId } = settings;
   if (relayUrl && token) {
     try {
-      await relay.init(relayUrl, token);
+      await relay.init(relayUrl, token, matchId);
       streamDeck.logger.info(`[ScoreHub] connected to ${relayUrl}`);
     } catch (err) {
       streamDeck.logger.error(`[ScoreHub] relay init failed: ${err}`);

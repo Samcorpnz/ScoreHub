@@ -47,8 +47,8 @@ describe("/api/orgs/[orgId]/matches/[matchId]/end", () => {
       expect(res.status).toBe(401);
     });
 
-    it("403s for a role outside ADMIN/OPERATOR", async () => {
-      authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "MANAGER" } });
+    it("403s for a role outside ADMIN/MANAGER/OPERATOR", async () => {
+      authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "VIEWER" } });
       const { POST } = await import("../route");
       const res = await POST(makePostRequest(), { params });
       expect(res.status).toBe(403);

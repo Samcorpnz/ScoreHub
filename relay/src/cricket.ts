@@ -45,6 +45,18 @@ export function getCricketState(current: MatchState): CricketState {
   };
 }
 
+// Reset Match: back to a fresh first innings, keeping the format and both
+// squads the operator entered at setup.
+export function resetCricketState(existing: CricketState): CricketState {
+  return {
+    ...existing,
+    inningsNumber: 1,
+    innings: [freshInnings("home")],
+    ...(existing.dayNumber !== undefined && { dayNumber: 1 }),
+    ...(existing.session !== undefined && { session: "morning" as const }),
+  };
+}
+
 function cloneInnings(inn: CricketInningsState): CricketInningsState {
   return {
     ...inn,

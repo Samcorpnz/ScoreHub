@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { prisma } from "@scorehub/db";
 import { auth } from "@/auth";
+import { canRunMatches } from "@/lib/roles";
 import { getAccountForOrg } from "@/lib/account";
 import { getTemplate, SPORT_TEMPLATES } from "@/app/sport-templates";
 import { DEFAULT_MATCH_STATE } from "@/app/types";
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   if (!session?.user?.activeOrgId || session.user.activeOrgId !== orgId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (session.user.activeRole !== "ADMIN" && session.user.activeRole !== "OPERATOR") {
+  if (!canRunMatches(session.user.activeRole)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -105,8 +106,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
           clockSeconds: template.clockSeconds,
           countDown: template.countDown,
           possession: template.defaultPossession,
-          home: { ...DEFAULT_MATCH_STATE.home, name: home },
-          visitor: { ...DEFAULT_MATCH_STATE.visitor, name: visitor },
+          home: { ...DEFAULT_MATCH_STATE.home, name: home, timeouts: template.timeoutsPerTeam },
+          visitor: { ...DEFAULT_MATCH_STATE.visitor, name: visitor, timeouts: template.timeoutsPerTeam },
         } as object,
       };
     }),

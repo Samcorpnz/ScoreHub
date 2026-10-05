@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
-import { SPORT_TEMPLATES, getTemplate } from "../../sport-templates";
+import { SPORT_TEMPLATES, getTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
 
@@ -222,9 +222,30 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
   );
 }
 
+// Whether the account has the Data Feed add-on, which covers both console
+// bridging and the third-party feed. null while loading.
+function useDataFeedEntitled(): boolean | null {
+  const [entitled, setEntitled] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/billing/status")
+      .then(res => res.ok ? res.json() : { addOns: [] })
+      .then(data => setEntitled((data.addOns ?? []).includes("data-feed")))
+      .catch(err => {
+        console.warn("[SettingsTab] failed to fetch billing status:", err);
+        setEntitled(false);
+      });
+  }, []);
+  return entitled;
+}
+
+// Bridging a console is part of the Data Feed add-on (SA-114) — POST
+// /api/orgs/[orgId]/tokens 403s a BRIDGE request without it and the relay
+// refuses the bridge's connection, so show the upgrade prompt rather than a
+// form that would just fail.
 function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
+  const entitled = useDataFeedEntitled();
   const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
-    [orgId, "tokens", "BRIDGE"],
+    entitled ? [orgId, "tokens", "BRIDGE"] : null,
     () => fetchTokensByType(orgId, "BRIDGE"),
   );
   const [label, setLabel] = useState("");
@@ -235,11 +256,12 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!entitled) return;
     fetch(`/api/orgs/${orgId}/matches?status=LIVE,SCHEDULED`)
       .then(res => res.ok ? res.json() : { matches: [] })
       .then(data => setMatches(data.matches || []))
       .catch(() => setMatches([]));
-  }, [orgId]);
+  }, [orgId, entitled]);
 
   const generateToken = async () => {
     setGenerating(true);
@@ -274,11 +296,27 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
     }
   };
 
+  if (entitled === null) return null;
+
+  if (!entitled) {
+    return (
+      <Card title="Bridge Devices">
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          Score from a physical Saturn/Vega scoreboard console at the venue — requires the Data Feed add-on.
+        </p>
+        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
+          An Admin can add it under <a href="/account" style={{ color: "var(--accent)" }}>Account → Billing</a>.
+        </p>
+      </Card>
+    );
+  }
+
   return (
     <Card title="Bridge Devices">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         Generate a token for each venue laptop running the bridge app. Paste it into the bridge&apos;s
-        connection setup along with the relay URL above.
+        connection setup along with the relay URL above, then choose the match in the bridge app. Pin
+        the token to a match here only if that laptop should never feed any other match.
       </p>
 
       <div className="flex items-center gap-3 mb-4 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
@@ -396,27 +434,17 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
 // Third-party integrations (Singular.live, VIZRT) authenticate with a
 // long-lived DATA_FEED token against GET /api/data-feed/state and the
 // "data-feed" socket role — see relay/src/auth.ts's verifyDataFeedSecret.
-// Gated behind the data-feed add-on, unlike WebhookCard/BridgeTokensCard
-// above (Stream Deck/bridge tokens are ungated by design) — POST /api/orgs/
+// Gated behind the data-feed add-on, like BridgeTokensCard above and unlike
+// WebhookCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
 // [orgId]/tokens 403s a DATA_FEED request for an org without the add-on, so
 // this card checks the same entitlement client-side to show an upgrade
 // prompt instead of a form that would just fail.
 function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
-  const [entitled, setEntitled] = useState<boolean | null>(null);
+  const entitled = useDataFeedEntitled();
   const [label, setLabel] = useState("");
   const [generating, setGenerating] = useState(false);
   const [justCreated, setJustCreated] = useState<string | null>(null);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/billing/status")
-      .then(res => res.ok ? res.json() : { addOns: [] })
-      .then(data => setEntitled((data.addOns ?? []).includes("data-feed")))
-      .catch(err => {
-        console.warn("[SettingsTab] failed to fetch billing status:", err);
-        setEntitled(false);
-      });
-  }, []);
 
   const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
     entitled ? [orgId, "tokens", "DATA_FEED"] : null,
@@ -459,8 +487,8 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
     return (
       <Card title="Data Feed">
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          Bridge a physical scoreboard console, or pipe live match state into a third-party graphics
-          engine (Singular.live, Chyron, VIZRT) — requires the Data Feed add-on.
+          Pipe live match state into a third-party graphics engine (Singular.live, Chyron, VIZRT) —
+          requires the Data Feed add-on.
         </p>
         <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
           Upgrade at <code>/account/billing</code>.
@@ -650,7 +678,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
           Applies match structure without resetting scores, team names, or colours.
         </p>
         <div className="space-y-1.5 mb-4">
-          <TemplateRow label="Structure" value={template.structure} />
+          <TemplateRow label="Structure" value={getStructureLabel(state)} />
           <TemplateRow label="Clock" value={templateClockLabel(template.clockSeconds, template.countDown)} />
           <TemplateRow label="Timeouts" value={template.timeoutsPerTeam === 0 ? "None" : `${template.timeoutsPerTeam} per team`} />
           <TemplateRow label="Possession" value={template.defaultPossession === "none" ? "Off" : "On"} />
@@ -696,13 +724,21 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
 
       {/* Connection info */}
       <Card title="Connection">
-        <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>Relay server this frontend is connected to.</p>
-        <code className="text-xs block p-2 rounded" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
-          {RELAY_URL}
-        </code>
-        <p className="text-xs mt-3" style={{ color: "var(--text-dim)" }}>
-          Change via <code>NEXT_PUBLIC_RELAY_URL</code> in <code>.env.local</code> (frontend) or environment variable on Vercel.
+        <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+          Your relay URL. Paste it into the <strong>Relay URL</strong> field in the Bridge app or the Stream Deck plugin.
         </p>
+        <div className="flex gap-2">
+          <code data-testid="relay-url" className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
+            {RELAY_URL}
+          </code>
+          <button
+            className="rounded-lg px-3 text-xs font-semibold shrink-0"
+            style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
+            onClick={() => navigator.clipboard.writeText(RELAY_URL)}
+          >
+            Copy
+          </button>
+        </div>
       </Card>
 
       {(session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER") && orgId && (

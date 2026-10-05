@@ -144,7 +144,10 @@ hand:
 
 Catalog: `ScoreHub Pro` ($89/mo, $890/yr), `ScoreHub Venue` ($349/mo, $3,490/yr), and the
 `ScoreHub Graphics` add-on ($29/mo, $290/yr — requires an active Pro or Venue plan; see
-`requireAddOn("graphics-operator")` in `relay/src/entitlements.ts`). All prices are NZD, and the
+`requireAddOn("graphics-operator")` in `relay/src/entitlements.ts`), and the `ScoreHub Data Feed`
+add-on ($39/mo, $390/yr; `STRIPE_PRICE_ID_DATA_FEED`/`_ANNUAL`) — it gates both the third-party
+data feed and console bridging: BRIDGE token creation and the relay's `bridge` socket handshake
+both require `data-feed` in `Account.addOns` (see `relay/src/matchPicker.ts`). All prices are NZD, and the
 annual price is always 10x the monthly price (2 months free). `frontend/lib/plans.ts` maps
 plan/add-on names to `STRIPE_PRICE_ID_*` env vars in both directions — adding a price in Stripe
 without adding its env var (in `.env.example`, `.env.local`, and both `.env.vercel.*` files) means

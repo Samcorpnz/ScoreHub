@@ -19,6 +19,10 @@ export type SourceType = "saturn" | "cd-json" | "cd-scrape";
 export interface BridgeConfig {
   relayUrl: string;
   bridgeSecret: string;
+  // The match this bridge feeds, chosen in the UI's match picker. Empty means
+  // "whatever the token says" — a token pinned to a match in the control
+  // panel, or otherwise the organisation's default match.
+  matchId: string;
   source: SourceType;
   // Saturn
   serialPort: string;
@@ -31,6 +35,19 @@ export interface BridgeConfig {
   // CD Scrape
   cdScrapeUrl: string;
   cdScrapePollMs: number;
+}
+
+export interface RelayMatchOption {
+  id: string;
+  name: string;
+  sport: string | null;
+  status: string;
+  scheduledAt: string | null;
+}
+
+export interface RelayMatchList {
+  pinnedMatchId: string | null;
+  matches: RelayMatchOption[];
 }
 
 export type BridgeStatus = "stopped" | "connecting" | "running" | "error";
@@ -48,6 +65,7 @@ const RELAY_HEARTBEAT_CHECK_MS = 5_000;
 const DEFAULT_CONFIG: BridgeConfig = {
   relayUrl: process.env.RELAY_URL ?? "http://localhost:4000",
   bridgeSecret: process.env.BRIDGE_SECRET ?? "changeme",
+  matchId: process.env.MATCH_ID ?? "",
   source: (process.env.CD_SOURCE as SourceType) ?? "saturn",
   serialPort: process.env.SERIAL_PORT ?? "",
   baudRate: Number.parseInt(process.env.BAUD_RATE ?? "9600", 10),
@@ -58,6 +76,41 @@ const DEFAULT_CONFIG: BridgeConfig = {
   cdScrapeUrl: process.env.CD_SCRAPE_URL ?? "",
   cdScrapePollMs: Number.parseInt(process.env.CD_POLL_MS ?? "500", 10),
 };
+
+const RELAY_MATCH_LIST_TIMEOUT_MS = 5_000;
+const RELAY_MATCH_LIST_MAX_BYTES = 256 * 1024;
+// Start of BRIDGE_ADDON_REQUIRED_MESSAGE in relay/src/matchPicker.ts
+const RELAY_ADDON_REQUIRED_PREFIX = "Connecting a console requires the Data Feed add-on";
+
+// Reads at most maxBytes of a response before parsing — the size limit has to
+// apply while reading, not to the parsed result, or an endpoint that streams
+// forever (or returns something huge) is buffered in full first.
+async function readJsonCapped(res: Response, maxBytes: number): Promise<Record<string, unknown> | null> {
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error("response too large");
+    }
+    chunks.push(value);
+  }
+  try {
+    const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function capText(value: unknown, max: number): string | null {
+  return typeof value === "string" && value.length > 0 ? value.slice(0, max) : null;
+}
 
 export class BridgeController {
   private config: BridgeConfig;
@@ -139,6 +192,70 @@ export class BridgeController {
     await this.start();
   }
 
+  // Asks the relay which matches this bridge token can feed, for the UI's
+  // match picker. Throws with the relay's own message (e.g. the Data Feed
+  // add-on prompt) so the UI can show it as-is.
+  //
+  // relayUrl is operator-supplied and legitimately points at localhost or a
+  // LAN address in dev/self-hosted setups, so it can't be host-restricted the
+  // way cdScrapeUrl is. Instead this request is kept from being a useful
+  // probe of whatever that URL points at: http(s) only, no redirects, a short
+  // timeout, and only the expected, length-capped fields are passed on —
+  // never the raw response body.
+  async listMatches(): Promise<RelayMatchList> {
+    const { relayUrl, bridgeSecret } = this.config;
+    let url: URL;
+    try {
+      url = new URL("/api/matches", relayUrl);
+    } catch {
+      throw new Error("Relay URL isn't a valid URL");
+    }
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      throw new Error("Relay URL must be a plain http or https address");
+    }
+
+    // One message for every failure that isn't recognisably the relay talking,
+    // so this can't be used to tell apart what else answers at that address.
+    const notARelay = new Error("Couldn't get the match list — check the Relay URL and Bridge Secret");
+    let status: number;
+    let body: Record<string, unknown> | null;
+    try {
+      const res = await fetch(url, {
+        headers: { "x-bridge-secret": bridgeSecret },
+        redirect: "error",
+        signal: AbortSignal.timeout(RELAY_MATCH_LIST_TIMEOUT_MS),
+      });
+      status = res.status;
+      body = await readJsonCapped(res, RELAY_MATCH_LIST_MAX_BYTES);
+    } catch {
+      throw notARelay;
+    }
+    if (status !== 200) {
+      // Only the relay's own two refusals are surfaced, matched exactly.
+      const relayError = typeof body?.error === "string" ? body.error : "";
+      if (status === 401 && relayError === "unauthorized") throw new Error("Bridge Secret not recognised");
+      if (status === 403 && relayError.startsWith(RELAY_ADDON_REQUIRED_PREFIX)) throw new Error(capText(relayError, 200)!);
+      throw notARelay;
+    }
+    if (!body || !Array.isArray(body.matches)) throw notARelay;
+    const rows = (body.matches as unknown[]).slice(0, 100);
+    return {
+      pinnedMatchId: capText(body.pinnedMatchId, 64),
+      matches: rows.flatMap((row: unknown) => {
+        const m = (row ?? {}) as Record<string, unknown>;
+        const id = capText(m.id, 64);
+        if (!id) return [];
+        return [{
+          id,
+          name: capText(m.name, 200) ?? "Match",
+          sport: capText(m.sport, 40),
+          status: capText(m.status, 20) ?? "",
+          scheduledAt: capText(m.scheduledAt, 40),
+        }];
+      }),
+    };
+  }
+
   async listSerialPorts(): Promise<string[]> {
     const ports = await SerialPort.list();
     return ports.map(p => p.path);
@@ -147,10 +264,10 @@ export class BridgeController {
   // ─── Relay connection ───────────────────────────────────────────────────────
 
   private connectRelay(): void {
-    const { relayUrl, bridgeSecret } = this.config;
+    const { relayUrl, bridgeSecret, matchId } = this.config;
 
     this.socket = io(relayUrl, {
-      auth: { secret: bridgeSecret, role: "bridge" },
+      auth: { secret: bridgeSecret, role: "bridge", ...(matchId ? { matchId } : {}) },
       reconnection: true,
       reconnectionDelay: 500,
       reconnectionDelayMax: 2000,
@@ -161,6 +278,18 @@ export class BridgeController {
       this.disconnectedSince = null;
       this.alertedRelayOutage = false;
       this.socket!.emit("stateUpdate", this.state);
+    });
+
+    // The relay refuses a bridge handshake with a reason worth showing the
+    // operator (no Data Feed add-on, selected match ended) — socket.io keeps
+    // retrying, so log each distinct reason once rather than every attempt.
+    let lastConnectError = "";
+    this.socket.on("connect_error", err => {
+      this.disconnectedSince ??= Date.now();
+      if (err.message === lastConnectError) return;
+      lastConnectError = err.message;
+      this.lastError = err.message;
+      log.error(`Relay refused the connection: ${err.message}`);
     });
 
     this.socket.on("disconnect", reason => {

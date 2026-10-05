@@ -120,7 +120,7 @@ function ControlPanelInner() {
             Account
           </a>
           <a
-            href="/control/mobile"
+            href={matchId ? `/control/mobile?matchId=${encodeURIComponent(matchId)}` : "/control/mobile"}
             className="rounded-lg px-3 py-1.5 text-xs font-bold"
             style={{
               background: "var(--bg-elevated)",

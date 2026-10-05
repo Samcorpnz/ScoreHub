@@ -61,7 +61,7 @@ const ADD_ONS: AddOnConfig[] = [
     annualPrice: "$290",
     tagline: "Broadcast-style scene graphics for /display, driven from the control panel",
     valueProps: [
-      "Sponsor bugs, lower-thirds, and scoreboard overlays without extra hardware",
+      "Lower thirds, player stat cards, and headshot bios without extra hardware",
       "Switch scenes live from the same control panel your operator already uses",
     ],
     subscriptionKey: "graphicsSubscription",

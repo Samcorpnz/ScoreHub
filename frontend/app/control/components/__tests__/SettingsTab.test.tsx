@@ -106,11 +106,20 @@ describe("SettingsTab", () => {
 
   it("renders the webhook/bridge admin cards for a MANAGER role with an org", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [] }) }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.getByText("Stream Deck / Webhooks")).toBeInTheDocument();
-    expect(screen.getByText("Bridge Devices")).toBeInTheDocument();
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(await screen.findByText("Bridge Devices")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)")).toBeInTheDocument();
+  });
+
+  it("shows an upgrade prompt instead of the Bridge Devices form when the org lacks the Data Feed add-on (SA-114)", async () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: [] }) }));
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
+    expect(await screen.findByText(/physical Saturn\/Vega scoreboard console/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Label (e.g. Venue laptop 1)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Mac" })).not.toBeInTheDocument();
   });
 
   it("shows an upgrade prompt for the Data Feed card when the org lacks the add-on", async () => {
@@ -121,7 +130,7 @@ describe("SettingsTab", () => {
     }));
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(await screen.findByText("Data Feed")).toBeInTheDocument();
-    expect(await screen.findByText(/requires the Data Feed add-on/)).toBeInTheDocument();
+    expect(await screen.findByText(/third-party graphics engine/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Label (e.g. Singular.live)")).not.toBeInTheDocument();
   });
 
@@ -154,10 +163,23 @@ describe("SettingsTab", () => {
 
   it("links the Bridge Devices card's download buttons to downloads.scorehub.co.nz", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [] }) }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    expect(await screen.findByRole("link", { name: "Mac" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Mac" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/mac");
     expect(screen.getByRole("link", { name: "Windows" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/windows");
+  });
+
+  it("shows the relay URL with a Copy button and no developer instructions (SA-116)", () => {
+    const writeText = vi.fn();
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
+    const card = screen.getByText("Connection").closest("div")!.parentElement!;
+    const relayUrl = screen.getByTestId("relay-url").textContent!;
+    expect(relayUrl).toMatch(/^https?:\/\//);
+    fireEvent.click(within(card).getByText("Copy"));
+    expect(writeText).toHaveBeenCalledWith(relayUrl);
+    expect(screen.queryByText(/NEXT_PUBLIC_RELAY_URL/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Vercel/)).not.toBeInTheDocument();
   });
 });

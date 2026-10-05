@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { SPORT_TEMPLATES, getTemplate } from "../sport-templates";
+import { SPORT_TEMPLATES, getTemplate, getMatchLength, getStructureLabel } from "../sport-templates";
 import type { SportType } from "../types";
 
 // Every value in the SportType union.
@@ -204,5 +204,33 @@ describe("getTemplate fallback", () => {
     const result = getTemplate("badminton");
     expect(result.sport).toBe("badminton");
     expect(result.periods).toBe(3);
+  });
+});
+
+describe("best-of match length (SA-118)", () => {
+  it("offers a best-of-3 / best-of-5 choice for squash and tennis", () => {
+    for (const sport of ["squash", "tennis"] as const) {
+      const field = getTemplate(sport).matchConfig?.find(f => f.key === "format");
+      expect(field?.options.map(o => o.value).sort()).toEqual(["bo3", "bo5"]);
+    }
+  });
+
+  it("returns the chosen length", () => {
+    expect(getMatchLength({ sport: "squash", sportConfig: { format: "bo3" } })).toBe(3);
+    expect(getMatchLength({ sport: "squash", sportConfig: { format: "bo5" } })).toBe(5);
+    expect(getMatchLength({ sport: "tennis", sportConfig: { format: "bo5" } })).toBe(5);
+  });
+
+  it("is uncapped when no format was recorded or the sport isn't best-of", () => {
+    expect(getMatchLength({ sport: "squash" })).toBeUndefined();
+    expect(getMatchLength({ sport: "netball", sportConfig: { format: "bo3" } })).toBeUndefined();
+    // cricket's "format" is t20/odi/test, not a match length
+    expect(getMatchLength({ sport: "cricket", sportConfig: { format: "t20" } })).toBeUndefined();
+  });
+
+  it("describes the structure with the chosen length", () => {
+    expect(getStructureLabel({ sport: "squash", sportConfig: { format: "bo3" } })).toBe("Best of 3 games to 11");
+    expect(getStructureLabel({ sport: "tennis", sportConfig: { format: "bo5" } })).toBe("Best of 5 sets");
+    expect(getStructureLabel({ sport: "tennis" })).toBe("Best of 3 or 5 sets");
   });
 });
