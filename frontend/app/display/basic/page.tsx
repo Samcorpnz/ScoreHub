@@ -8,6 +8,7 @@ import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { getPeriodLabel, getTemplate } from "../../sport-templates";
 import { formatScore } from "../../types";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
+import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 export default function BasicDisplay() {
   const { state, status, relayUnreachable, unauthorized } = useMatchState();
@@ -25,6 +26,7 @@ export default function BasicDisplay() {
       <div className="fixed top-4 right-4 z-10">
         <ConnectionBadge status={status} relayUnreachable={relayUnreachable} />
       </div>
+      <PoweredByWatermark />
 
       {/* Match name */}
       {state.matchName && (

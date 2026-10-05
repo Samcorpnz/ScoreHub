@@ -86,8 +86,8 @@ test.describe("logos & sounds", () => {
   });
 
   test.describe("plan gating", () => {
-    test("logo upload on Free plan surfaces an error instead of failing silently", async ({ page }) => {
-      await createMatch(page, { sport: "netball", matchName: "E2E Logo Gating", homeName: "Home FC", visitorName: "Visitor FC" });
+    test("Free plan gets an upgrade prompt for logos/theme and a watermark on displays", async ({ page, context }) => {
+      const { matchId } = await createMatch(page, { sport: "netball", matchName: "E2E Logo Gating", homeName: "Home FC", visitorName: "Visitor FC" });
       await waitForLive(page);
       const orgId = await getOrgId(page);
 
@@ -97,11 +97,18 @@ test.describe("logos & sounds", () => {
       await page.reload();
       await expect(page.getByTestId("connection-status")).toHaveText("LIVE", { timeout: 15_000 });
 
+      // SA-32: the tabs' controls are replaced by an upgrade prompt.
       await page.getByRole("tab", { name: "logos" }).click();
-      await page.getByTestId("logo-home-input").setInputFiles(TEST_LOGO);
-      await expect(page.getByTestId("logo-home-error")).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByTestId("logo-home-error")).toContainText(/pro|venue|plan/i);
-      await expect(page.getByTestId("logo-home-preview")).toHaveCount(0);
+      await expect(page.getByTestId("branding-upgrade-prompt")).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId("logo-home-input")).toHaveCount(0);
+      await page.getByRole("tab", { name: "theme" }).click();
+      await expect(page.getByTestId("branding-upgrade-prompt")).toBeVisible();
+
+      // SA-31: Free-tier displays carry the watermark.
+      const displayPage = await context.newPage();
+      await openDisplay(displayPage, { kind: "basic", org: orgId, matchId });
+      await expect(displayPage.getByTestId("powered-by-watermark")).toBeVisible({ timeout: 10_000 });
+      await displayPage.close();
 
       await endMatch(page);
     });

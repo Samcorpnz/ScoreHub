@@ -15,7 +15,7 @@ const PLANS = [
     monthlyPrice: "$0",
     annualPrice: "$0",
     tagline: "Get started with one live match",
-    features: ["1 live match at a time", "No custom branding"],
+    features: ["1 live match at a time", "No custom branding", "“Powered by ScoreHub” mark on displays"],
   },
   {
     id: "pro" as const,
@@ -27,6 +27,7 @@ const PLANS = [
       "Concurrent live matches across your account",
       "Custom team logos",
       "Custom competition logo",
+      "Custom display theme, no ScoreHub mark",
       "Custom sounds",
     ],
   },

@@ -7,6 +7,8 @@ import { useMatchState } from "../hooks/useMatchState";
 import { useControlToken } from "../hooks/useControlToken";
 import { ConnectionBadge } from "../components/ConnectionBadge";
 import { PlanBadge } from "../components/PlanBadge";
+import { Card } from "../components/primitives";
+import { useBillingPlan } from "../hooks/useBillingPlan";
 import { OrgSwitcher } from "../components/OrgSwitcher";
 import { MatchState } from "../types";
 import { useSoundCues, useSoundPlayback } from "../hooks/useSoundCues";
@@ -46,6 +48,10 @@ function ControlPanelInner() {
     },
   });
   const [tab, setTab] = useState<Tab>("score");
+  // Logos and theming are Pro features (SA-32) — the relay drops them from a
+  // Free-tier org's updates, so show the upgrade prompt rather than controls
+  // that would silently do nothing.
+  const brandingLocked = useBillingPlan() === "free";
 
   // Attach a latency-compensated click-instant timestamp whenever a patch
   // toggles isRunning (Start/Stop), so the relay's clock anchor reflects the
@@ -219,8 +225,12 @@ function ControlPanelInner() {
           />
         )}
         {tab === "outputs"  && <OutputsTab matchId={matchId} />}
-        {tab === "logos"    && <LogosTab    state={state} push={push} controlToken={controlToken} />}
-        {tab === "theme"    && <ThemeTab    state={state} push={push} controlToken={controlToken} />}
+        {tab === "logos"    && (brandingLocked
+          ? <BrandingUpgradePrompt feature="Team logos" />
+          : <LogosTab state={state} push={push} controlToken={controlToken} />)}
+        {tab === "theme"    && (brandingLocked
+          ? <BrandingUpgradePrompt feature="Display theming" />
+          : <ThemeTab state={state} push={push} controlToken={controlToken} />)}
         {tab === "audio"    && <AudioTab    cues={cues} addCue={addCue} removeCue={removeCue} controlToken={controlToken} />}
         {tab === "settings" && (
           <SettingsTab
@@ -231,6 +241,22 @@ function ControlPanelInner() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function BrandingUpgradePrompt({ feature }: { readonly feature: string }) {
+  return (
+    <div data-testid="branding-upgrade-prompt">
+      <Card title={feature}>
+        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          Team and competition logos, custom colours, fonts and text scale are part of the Pro and Venue plans.
+          Upgrading also removes the “Powered by ScoreHub” mark from your displays.
+        </p>
+        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
+          An Admin can upgrade under <a href="/account/billing" style={{ color: "var(--accent)" }}>Account → Billing</a>.
+        </p>
+      </Card>
     </div>
   );
 }

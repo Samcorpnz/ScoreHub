@@ -19,6 +19,7 @@ import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodLabel } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
+import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:4000";
 
@@ -151,6 +152,7 @@ function Scorebug() {
             side="visitor"
           />
         </div>
+        <PoweredByWatermark inline />
       </div>
     </div>
   );

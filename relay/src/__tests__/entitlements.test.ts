@@ -103,6 +103,78 @@ async function controlToken(orgId: string): Promise<string> {
     .sign(new TextEncoder().encode(AUTH_SECRET));
 }
 
+describe("branding in MatchState patches (SA-32)", () => {
+  const theme = { primaryColor: "#ff0000", backgroundColor: "#000000", font: "Anton", textScale: 1.5, competitionLogoUrl: "" };
+
+  it("drops theme and logo changes from a free-tier patch but applies the rest", async () => {
+    seed("org-free", "account-free", "free");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-free"))
+      .send({ matchName: "Final", displayTheme: theme, home: { score: 3, logoUrl: "https://example.com/logo.png" } });
+    expect(res.status).toBe(200);
+    expect(res.body.matchName).toBe("Final");
+    expect(res.body.home.score).toBe(3);
+    expect(res.body.home.logoUrl).toBe("");
+    expect(res.body.displayTheme.primaryColor).not.toBe("#ff0000");
+    expect(res.body.displayTheme.font).toBe("");
+  });
+
+  it("applies theme and logo changes for a pro-tier org", async () => {
+    seed("org-pro", "account-pro", "pro");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-pro"))
+      .send({ displayTheme: theme, home: { logoUrl: "https://example.com/logo.png" } });
+    expect(res.status).toBe(200);
+    expect(res.body.displayTheme).toEqual(theme);
+    expect(res.body.home.logoUrl).toBe("https://example.com/logo.png");
+  });
+
+  it("doesn't look up the plan for a patch that only echoes current branding", async () => {
+    seed("org-free", "account-free", "free");
+    const token = await controlToken("org-free");
+    const first = await request(app).post("/manual").set("x-control-secret", token).send({ matchName: "Warm-up" });
+    const findOrg = (db as unknown as { prisma: { org: { findUnique: jest.Mock } } }).prisma.org.findUnique;
+    findOrg.mockClear();
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", token)
+      .send({ home: { ...first.body.home, score: 7 }, displayTheme: first.body.displayTheme });
+    expect(res.status).toBe(200);
+    expect(res.body.home.score).toBe(7);
+    expect(findOrg).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/display/entitlement (SA-31)", () => {
+  it("asks for the watermark on a free-tier org", async () => {
+    seed("org-free", "account-free", "free");
+    const res = await request(app).get("/api/display/entitlement?org=org-free");
+    expect(res.body).toEqual({ watermark: true });
+  });
+
+  it("drops the watermark for pro and venue orgs", async () => {
+    seed("org-pro", "account-pro", "pro");
+    seed("org-venue", "account-venue", "venue");
+    expect((await request(app).get("/api/display/entitlement?org=org-pro")).body).toEqual({ watermark: false });
+    expect((await request(app).get("/api/display/entitlement?org=org-venue")).body).toEqual({ watermark: false });
+  });
+
+  it("uses the match's own org, not a paid org named in ?org=", async () => {
+    // A fresh org id: the relay caches match state per room across tests, so a
+    // reused one would never hit the (reset) mock DB to create its match row.
+    seed("org-free-display", "account-free", "free");
+    seed("org-pro", "account-pro", "pro");
+    const state = await request(app).post("/manual").set("x-control-secret", await controlToken("org-free-display")).send({ matchName: "Mine" });
+    expect(state.status).toBe(200);
+    const match = await (db as unknown as { prisma: { match: { findFirst: (q: unknown) => Promise<{ id: string }> } } })
+      .prisma.match.findFirst({ where: { orgId: "org-free-display", status: "LIVE" } });
+    const res = await request(app).get(`/api/display/entitlement?org=org-pro&matchId=${match.id}`);
+    expect(res.body).toEqual({ watermark: true });
+  });
+});
+
 describe("requirePlan — branding routes", () => {
   it("blocks a free-tier org from uploading a competition logo", async () => {
     seed("org-free", "account-free", "free");

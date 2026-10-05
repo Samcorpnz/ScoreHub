@@ -18,6 +18,7 @@ import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { TeamState, Possession, formatClockDisplay, formatScore } from "../../types";
 import { getPeriodLabel, getTemplate } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
+import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 const RELAY_URL = process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:4000";
 
@@ -101,6 +102,8 @@ export default function FullscreenDisplay() {
           H = toggle HUD · 1/2/3 = layout · F = fullscreen
         </div>
       </div>
+
+      <PoweredByWatermark />
 
       {/* Display content */}
       {layout === "wide"    && <WideLayout    state={state} relayUrl={RELAY_URL} />}

@@ -176,6 +176,29 @@ describe("ControlPanel", () => {
     expect(screen.getByTestId("theme-tab")).toBeInTheDocument();
   });
 
+  it("shows an upgrade prompt instead of the logos and theme tabs on the Free plan", async () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeRole: "ADMIN" } }, status: "authenticated" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ plan: "free" }) }));
+    render(<ControlPanel />);
+    fireEvent.click(screen.getByRole("tab", { name: "theme" }));
+    expect(await screen.findByTestId("branding-upgrade-prompt")).toBeInTheDocument();
+    expect(screen.queryByTestId("theme-tab")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "logos" }));
+    expect(screen.getByTestId("branding-upgrade-prompt")).toBeInTheDocument();
+    expect(screen.queryByTestId("logos-tab")).not.toBeInTheDocument();
+  });
+
+  it("keeps the logos and theme tabs on the Pro plan", async () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeRole: "ADMIN" } }, status: "authenticated" });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ plan: "pro" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ControlPanel />);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/billing/status"));
+    fireEvent.click(screen.getByRole("tab", { name: "theme" }));
+    expect(screen.getByTestId("theme-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("branding-upgrade-prompt")).not.toBeInTheDocument();
+  });
+
   it("navigates to /dashboard when SettingsTab reports the match ended", () => {
     useSessionMock.mockReturnValue({
       data: { user: { activeRole: "ADMIN", name: "Ada Admin" } },
