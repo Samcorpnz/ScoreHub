@@ -34,3 +34,8 @@ npm-debug.log*
 # Vercel
 .vercel
 .env*
+
+# Help centre: generated article bundle and local Worker secrets
+help/src/docs-bundle.json
+help/.dev.vars
+help/.wrangler/

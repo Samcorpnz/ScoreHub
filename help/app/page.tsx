@@ -1,3 +1,5 @@
+import { AskHero } from "./components/AskTrigger";
+
 const CATEGORIES = [
   {
     href: "/getting-started",
@@ -50,6 +52,7 @@ export default function HelpHome() {
           Setup guides for every sport, plus everything on running matches, managing your
           organisation, and billing.
         </p>
+        <AskHero />
       </div>
       <div className="category-grid">
         {CATEGORIES.map(c => (

@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore, Suspense, SubmitEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CantSignIn } from "./CantSignIn";
 
 export default function LoginPage() {
   return (
@@ -45,6 +46,10 @@ function LoginForm() {
 
   const [passkeyBusy,      setPasskeyBusy]      = useState(false);
   const [passkeyError,     setPasskeyError]     = useState("");
+  // Once a sign-in attempt has failed, offer the signed-out route to support
+  // (it stays visible while they retry). The help centre links here with
+  // ?support=1 for people who say they can't log in.
+  const [signInFailed,     setSignInFailed]     = useState(searchParams.get("support") === "1");
 
   // Feature-detect client-side only: the server snapshot is always false, so
   // hydration matches (window.PublicKeyCredential doesn't exist on the server)
@@ -76,6 +81,7 @@ function LoginForm() {
 
     if (result?.error) {
       setError("Invalid email or password.");
+      setSignInFailed(true);
     } else {
       router.push(callbackUrl);
     }
@@ -100,6 +106,7 @@ function LoginForm() {
 
       if (result?.error) {
         setPasskeyError("Passkey sign-in failed.");
+        setSignInFailed(true);
       } else {
         router.push(callbackUrl);
       }
@@ -234,6 +241,8 @@ function LoginForm() {
             </>
           )}
         </form>
+
+        {signInFailed && <CantSignIn email={email} />}
 
         <p className="text-center text-xs mt-6" style={{ color: "var(--text-dim)" }}>
           Display views are public — only the control panel requires login.

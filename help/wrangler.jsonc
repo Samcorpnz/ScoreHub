@@ -6,8 +6,24 @@
   "assets": {
     "directory": "./out",
     "not_found_handling": "404-page",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
   },
+  // Help assistant (/api/ask). Secrets are set with `wrangler secret put`:
+  // OPENROUTER_API_KEY (without it the route answers 503 and the UI offers
+  // the support form instead), and optionally BETTER_STACK_SOURCE_TOKEN to
+  // ship question/answer logs to the Better Stack source named below.
+  // Support requests are filed by the app (frontend/app/api/support/case).
+  "vars": {
+    "OPENROUTER_MODEL": "google/gemini-3.1-flash-lite",
+    // Better Stack source "ScoringApp Help (Cloudflare) - Production"
+    "BETTER_STACK_INGESTING_URL": "https://s2784781.us-west-2a.betterstackdata.com"
+  },
+  // Per-visitor (keyed by IP) and all-visitors ceilings on questions.
+  "ratelimits": [
+    { "name": "ASK_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "ASK_GLOBAL_LIMITER", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } }
+  ],
   "routes": [
     { "pattern": "help.scorehub.co.nz", "custom_domain": true }
   ],
@@ -18,6 +34,16 @@
     "uat": {
       "name": "scorehub-help-uat",
       "workers_dev": true,
+      // vars and ratelimits are not inherited by named environments.
+      "vars": {
+        "OPENROUTER_MODEL": "google/gemini-3.1-flash-lite",
+        // Better Stack source "ScoringApp Help (Cloudflare)"
+        "BETTER_STACK_INGESTING_URL": "https://s2784780.us-west-2a.betterstackdata.com"
+      },
+      "ratelimits": [
+        { "name": "ASK_LIMITER", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } },
+        { "name": "ASK_GLOBAL_LIMITER", "namespace_id": "2002", "simple": { "limit": 120, "period": 60 } }
+      ],
       "routes": [
         { "pattern": "help.uat.scorehub.co.nz", "custom_domain": true }
       ]

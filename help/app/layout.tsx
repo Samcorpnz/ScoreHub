@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AskAssistant } from "./components/AskAssistant";
 import { oswald } from "./fonts";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
           </nav>
         </header>
         <main id="main-content">{children}</main>
+        <AskAssistant />
         <footer className="site-footer">
           <a href="/">Help centre home</a>
           <span aria-hidden="true"> · </span>

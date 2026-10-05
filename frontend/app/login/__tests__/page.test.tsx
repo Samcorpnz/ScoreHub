@@ -100,4 +100,46 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
     expect(signInMock).not.toHaveBeenCalled();
   });
+
+  it("hides the contact-support route until a sign-in attempt fails", () => {
+    searchParamsMock.mockReturnValue(paramsWithCallback(null));
+    render(<LoginPage />);
+    expect(screen.queryByText(/Still can't sign in/)).not.toBeInTheDocument();
+  });
+
+  it("offers a support form after a failed sign-in and files it as a login request", async () => {
+    searchParamsMock.mockReturnValue(paramsWithCallback(null));
+    signInMock.mockResolvedValue({ error: "CredentialsSignin" });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ key: "SUP-3" })));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<LoginPage />);
+
+    fireEvent.change(container.querySelector('input[type="email"]')!, { target: { value: "sam@example.com" } });
+    fireEvent.change(container.querySelector('input[type="password"]')!, { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Contact support" }));
+    // The form starts from the email they just tried to sign in with.
+    expect(screen.getByLabelText("Your account email")).toHaveValue("sam@example.com");
+    fireEvent.change(screen.getByLabelText("What happens when you try to sign in?"), {
+      target: { value: "Password reset email never arrives" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send to support" }));
+
+    await waitFor(() => expect(screen.getByText(/Request sent \(SUP-3\)/)).toBeInTheDocument());
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/support/case");
+    expect(JSON.parse(init.body)).toMatchObject({
+      category: "login",
+      email: "sam@example.com",
+      details: "Password reset email never arrives",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the support route straight away when linked with ?support=1", () => {
+    searchParamsMock.mockReturnValue({ get: (key: string) => (key === "support" ? "1" : null) });
+    render(<LoginPage />);
+    expect(screen.getByText(/Still can't sign in/)).toBeInTheDocument();
+  });
 });
