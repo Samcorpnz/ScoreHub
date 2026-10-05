@@ -128,6 +128,8 @@
   var uuid = null;
   var actionUUID = "";
   var globalSettings = {};
+  // Set while a Connect click is waiting on the plugin's reply
+  var pendingConnect = null;
   var actionSettings = {};
 
   function connectElgatoStreamDeckSocket(port, inUUID, registerEvent, inInfo) {
@@ -159,6 +161,12 @@
         }
       }
 
+      // The plugin's reply to requestMatches() — the plugin, not this page,
+      // talks to the relay.
+      if (msg.event === "sendToPropertyInspector" && msg.payload && msg.payload.type === "matches") {
+        onMatches(msg.payload);
+      }
+
       if (msg.event === "didReceiveSettings") {
         actionSettings = msg.payload.settings || {};
         var teamEl = document.getElementById("team");
@@ -183,26 +191,15 @@
       }
       setStatus("idle", "Connecting…");
 
-      fetchMatches(relayUrl, token)
-        .then(function (data) {
-          // Keep the previously chosen match if it's still on offer.
-          var previous = globalSettings.matchId || "";
-          var stillThere = data.matches.some(function (m) { return m.id === previous; });
-          globalSettings = {
-            relayUrl: relayUrl,
-            token: token,
-            orgId: data.orgId,
-            matchId: stillThere ? previous : null,
-            pinnedMatchId: data.pinnedMatchId || null,
-            connected: true,
-          };
-          send({ event: "setGlobalSettings", context: uuid, payload: globalSettings });
-          setStatus("ok", "Connected — " + data.orgId.slice(0, 12) + "…");
-          renderMatches(data);
-        })
-        .catch(function (err) {
-          setStatus("error", "Failed: " + err.message);
-        });
+      var attempt = { relayUrl: relayUrl, token: token };
+      pendingConnect = attempt;
+      requestMatches(relayUrl, token);
+      // The plugin always replies; this only covers it not running at all.
+      setTimeout(function () {
+        if (pendingConnect !== attempt) return;
+        pendingConnect = null;
+        setStatus("error", "No response from the ScoreHub plugin — restart Stream Deck and try again");
+      }, 10000);
     });
 
     // Choosing a match re-points every ScoreHub key at it
@@ -231,18 +228,38 @@
     }
   }
 
-  function fetchMatches(relayUrl, token) {
-    return fetch(relayUrl.replace(/\/$/, "") + "/api/matches", {
-      headers: { "x-control-secret": token },
-    }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    });
+  function requestMatches(relayUrl, token) {
+    send({ event: "sendToPlugin", action: actionUUID, context: uuid, payload: { type: "listMatches", relayUrl: relayUrl, token: token } });
   }
 
   function loadMatches() {
     if (!globalSettings.relayUrl || !globalSettings.token) return;
-    fetchMatches(globalSettings.relayUrl, globalSettings.token).then(renderMatches).catch(function () {});
+    requestMatches(globalSettings.relayUrl, globalSettings.token);
+  }
+
+  function onMatches(data) {
+    var connecting = pendingConnect;
+    pendingConnect = null;
+    if (!data.ok) {
+      if (connecting) setStatus("error", "Failed: " + data.error);
+      return;
+    }
+    if (connecting) {
+      // Keep the previously chosen match if it's still on offer.
+      var previous = globalSettings.matchId || "";
+      var stillThere = data.matches.some(function (m) { return m.id === previous; });
+      globalSettings = {
+        relayUrl: connecting.relayUrl,
+        token: connecting.token,
+        orgId: data.orgId,
+        matchId: stillThere ? previous : null,
+        pinnedMatchId: data.pinnedMatchId || null,
+        connected: true,
+      };
+      send({ event: "setGlobalSettings", context: uuid, payload: globalSettings });
+      setStatus("ok", "Connected — " + data.orgId.slice(0, 12) + "…");
+    }
+    renderMatches(data);
   }
 
   // A token pinned to a match in the control panel has nothing to choose;

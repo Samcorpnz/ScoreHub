@@ -8503,6 +8503,31 @@ Object.assign(lookup, {
 });
 
 // src/relay.ts
+var MATCH_LIST_TIMEOUT_MS = 5e3;
+function relayOrigin(relayUrl) {
+  let url2;
+  try {
+    url2 = new URL(relayUrl);
+  } catch {
+    throw new Error("Relay URL isn't a valid URL");
+  }
+  if (url2.protocol !== "http:" && url2.protocol !== "https:" || url2.username || url2.password) {
+    throw new Error("Relay URL must be a plain http or https address");
+  }
+  return url2.origin;
+}
+async function fetchMatchList(relayUrl, token) {
+  const res = await fetch(`${relayOrigin(relayUrl)}/api/matches`, {
+    headers: { "x-control-secret": token },
+    redirect: "error",
+    signal: AbortSignal.timeout(MATCH_LIST_TIMEOUT_MS)
+  });
+  if (res.status === 401) throw new Error("Control token not recognised");
+  if (!res.ok) throw new Error(`Relay returned ${res.status}`);
+  const body = await res.json();
+  if (typeof body.orgId !== "string" || !Array.isArray(body.matches)) throw new Error("Unexpected response from the relay");
+  return { orgId: body.orgId, pinnedMatchId: body.pinnedMatchId ?? null, matches: body.matches };
+}
 var RelayClient = class {
   socket = null;
   state = null;
@@ -8520,18 +8545,25 @@ var RelayClient = class {
   // the organisation's default match, which isn't the one a match's
   // displays and control panel are showing.
   async init(relayUrl, token, selectedMatchId) {
-    this.relayUrl = relayUrl.replace(/\/$/, "");
+    this.relayUrl = relayOrigin(relayUrl);
     this.token = token;
-    const res = await fetch(`${this.relayUrl}/api/matches`, {
-      headers: { "x-control-secret": token }
-    });
-    if (!res.ok) throw new Error(`/api/matches returned ${res.status}`);
-    const { orgId, pinnedMatchId, matches } = await res.json();
+    const { orgId, pinnedMatchId, matches } = await fetchMatchList(this.relayUrl, token);
     this.orgId = orgId;
     this.matchId = pinnedMatchId ?? selectedMatchId ?? void 0;
     this.displayToken = matches.find((m) => m.id === this.matchId)?.displayToken ?? void 0;
     this.state = null;
     this.connect();
+  }
+  // For the property inspector's match picker. The inspector asks the plugin
+  // rather than calling the relay itself, so the user-entered URL is only
+  // ever requested from here, and the inspector never sees display tokens.
+  async listMatches(relayUrl, token) {
+    const { orgId, pinnedMatchId, matches } = await fetchMatchList(relayUrl, token);
+    return {
+      orgId,
+      pinnedMatchId,
+      matches: matches.slice(0, 100).map((m) => ({ id: String(m.id), name: String(m.name), status: String(m.status) }))
+    };
   }
   connect() {
     this.socket?.disconnect();
@@ -8705,6 +8737,16 @@ streamDeck.settings.onDidReceiveGlobalSettings(async (ev) => {
     } catch (err) {
       streamDeck.logger.error(`[ScoreHub] relay init failed: ${err}`);
     }
+  }
+});
+streamDeck.ui.onSendToPlugin(async (ev) => {
+  const payload = ev.payload;
+  if (payload?.type !== "listMatches") return;
+  try {
+    const list = await relay.listMatches(payload.relayUrl || relay.relayUrl, payload.token || relay.token);
+    await streamDeck.ui.sendToPropertyInspector({ type: "matches", ok: true, ...list });
+  } catch (err) {
+    await streamDeck.ui.sendToPropertyInspector({ type: "matches", ok: false, error: err instanceof Error ? err.message : "Failed" });
   }
 });
 await streamDeck.connect();
