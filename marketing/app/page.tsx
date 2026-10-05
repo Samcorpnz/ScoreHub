@@ -107,6 +107,8 @@ const comparisonRows = [
   { label: "Browser control panel", free: true, pro: true, venue: true },
   { label: "Venue & broadcast displays", free: true, pro: true, venue: true },
   { label: "Custom team & competition logos", free: false, pro: true, venue: true },
+  { label: "Custom display theme (colours, font, text size)", free: false, pro: true, venue: true },
+  { label: "Displays without the “Powered by ScoreHub” mark", free: false, pro: true, venue: true },
   { label: "Custom sound cues", free: false, pro: true, venue: true },
   { label: "Org structure", free: "Single org", pro: "Single org", venue: "Multi-org (NSOs, tournaments)" },
   { label: "Graphics add-on eligible", free: false, pro: true, venue: true },

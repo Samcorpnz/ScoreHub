@@ -11,6 +11,7 @@ import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodLabel, getTemplate } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
+import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 export default function OverlayDisplay() {
   const { state, unauthorized } = useMatchState();
@@ -129,6 +130,7 @@ export default function OverlayDisplay() {
 
       {DisplayStats && <DisplayStats state={state} variant="compact" />}
       </div>
+      <PoweredByWatermark />
     </div>
   );
 }

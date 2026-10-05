@@ -51,6 +51,19 @@ export async function orgHasAddOn(orgId: string, name: string): Promise<boolean>
   return account?.addOns.includes(name) ?? false;
 }
 
+// Plans that unlock display branding (logos, theme) and drop the Free-tier
+// "Powered by ScoreHub" watermark (SA-31/SA-32).
+export const BRANDING_PLANS = ["pro", "venue"];
+
+// Plan counterpart to orgHasAddOn, for call sites that can't run requirePlan
+// as Express middleware (socket handlers, public display endpoints).
+// Unrestricted in legacy single-tenant mode, same as requirePlan.
+export async function orgHasPlan(orgId: string, allowed: string[]): Promise<boolean> {
+  if (!process.env.DATABASE_URL) return true;
+  const account = await getOrgAccount(orgId);
+  return account !== null && allowed.includes(account.plan);
+}
+
 function upgradeMessage(allowed: string[]): string {
   const names = allowed.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" or ");
   return `This feature requires the ${names} plan — upgrade at /account/billing`;

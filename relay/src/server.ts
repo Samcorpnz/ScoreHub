@@ -13,7 +13,7 @@ import { getMatchStore, allActiveStores, evictMatchStore, createLiveMatch, Match
 import { prisma } from "@scorehub/db";
 import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
 import { getRedisClients, acquireTickLock, closeRedis, publishStateUpdate, subscribeStateUpdates } from "./redis";
-import { requirePlan, requireAddOn, ConcurrentMatchLimitError, orgHasAddOn } from "./entitlements";
+import { requirePlan, requireAddOn, ConcurrentMatchLimitError, orgHasAddOn, orgHasPlan, BRANDING_PLANS } from "./entitlements";
 import { r2Enabled, putObject, deleteByPrefix } from "./storage";
 import { safeSegment, validateImageUpload, UploadValidationError } from "./uploads";
 import {
@@ -355,6 +355,41 @@ export function createServer(options: ServerOptions = {}) {
     };
     setState(orgId, next, matchId);
     return next;
+  }
+
+  // Branding (theme colours/font/text scale, team and competition logos) is
+  // a Pro feature (SA-32). The upload routes are gated by requirePlan, but
+  // the values themselves travel in ordinary MatchState patches, so without
+  // this a Free-tier client could set a theme or point logoUrl at any image
+  // through /manual or the manualUpdate socket event. Drops the branding
+  // fields from such a patch and lets the rest (scores, clock, …) through.
+  //
+  // The control panel echoes the current logoUrl back inside every team
+  // patch, so the plan lookup only happens when a branding value would
+  // actually change — not on every score click.
+  async function withoutUnentitledBranding(
+    orgId: string,
+    patch: Partial<MatchState>,
+    matchId?: string,
+  ): Promise<Partial<MatchState>> {
+    if (!process.env.DATABASE_URL) return patch;
+    const sides = ["home", "visitor"] as const;
+    if (patch.displayTheme === undefined && sides.every(side => patch[side]?.logoUrl === undefined)) return patch;
+
+    const current = await getState(orgId, matchId);
+    const theme = patch.displayTheme as Partial<MatchState["displayTheme"]> | undefined;
+    const themeChanged = theme !== undefined
+      && (Object.keys(theme) as (keyof MatchState["displayTheme"])[]).some(key => theme[key] !== current.displayTheme?.[key]);
+    const logoChanged = (side: "home" | "visitor") =>
+      patch[side]?.logoUrl !== undefined && patch[side]?.logoUrl !== current[side].logoUrl;
+    if (!themeChanged && !sides.some(logoChanged)) return patch;
+    if (await orgHasPlan(orgId, BRANDING_PLANS)) return patch;
+
+    const { displayTheme: _displayTheme, ...rest } = patch;
+    for (const side of sides) {
+      if (rest[side]) rest[side] = { ...rest[side], logoUrl: current[side].logoUrl };
+    }
+    return rest;
   }
 
   // Tick the clock every second for every loaded org that's running and
@@ -847,6 +882,30 @@ export function createServer(options: ServerOptions = {}) {
     res.json({ entitled: await orgHasAddOn(orgId, "graphics-operator") });
   });
 
+  // Public (no secret) — the /display/* pages have no session, so this is how
+  // they learn whether to render the Free-tier "Powered by ScoreHub"
+  // watermark (SA-31). Only exposes a boolean, like /api/graphics/entitlement
+  // above. When a matchId is given the org comes from the match row rather
+  // than the ?org= param, so a display link can't shed the watermark by
+  // naming some other (paid) org alongside its own match.
+  app.get("/api/display/entitlement", async (req, res) => {
+    let orgId = typeof req.query.org === "string" ? req.query.org : undefined;
+    const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
+    if (!process.env.DATABASE_URL) {
+      res.json({ watermark: false });
+      return;
+    }
+    if (matchId) {
+      const row = await prisma.match.findUnique({ where: { id: matchId }, select: { orgId: true } });
+      if (row) orgId = row.orgId;
+    }
+    if (!orgId) {
+      res.json({ watermark: false });
+      return;
+    }
+    res.json({ watermark: !(await orgHasPlan(orgId, BRANDING_PLANS)) });
+  });
+
   // Public (no secret), same trust level as /api/graphics/entitlement above —
   // /display/graphics has no session and needs to resolve a live feed
   // player's id (provider externalId) to a roster photo/bio.
@@ -894,7 +953,8 @@ export function createServer(options: ServerOptions = {}) {
       return;
     }
     try {
-      const next = await applyManualUpdate(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const patch = await withoutUnentitledBranding(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const next = await applyManualUpdate(result.orgId, patch, result.matchId);
       res.json(next);
     } catch (err) {
       respondToStateError(res, err);
@@ -1305,8 +1365,9 @@ export function createServer(options: ServerOptions = {}) {
           ack?.();
           return;
         }
-        const { clientEventMs, ...patch } = parsed.data;
-        await applyManualUpdate(orgId, patch as Partial<MatchState>, matchId, clientEventMs);
+        const { clientEventMs, ...rawFields } = parsed.data;
+        const patch = await withoutUnentitledBranding(orgId, rawFields as Partial<MatchState>, matchId);
+        await applyManualUpdate(orgId, patch, matchId, clientEventMs);
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", patch);
         ack?.();

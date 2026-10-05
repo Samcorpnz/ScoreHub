@@ -8,6 +8,7 @@ import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { TeamState, Possession, formatScore } from "../../types";
 import { getPeriodLabel, getTemplate } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
+import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 export default function AdvancedDisplay() {
   const { state, status, relayUnreachable, unauthorized } = useMatchState();
@@ -24,6 +25,7 @@ export default function AdvancedDisplay() {
       <div className="fixed top-4 right-4 z-10">
         <ConnectionBadge status={status} relayUnreachable={relayUnreachable} />
       </div>
+      <PoweredByWatermark />
 
       <div
         className="w-full max-w-6xl rounded-2xl overflow-hidden"
