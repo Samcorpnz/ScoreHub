@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { clientIp, isRateLimited } from "@/lib/rateLimit";
 import { logger } from "@/lib/logger";
 import { allowedSupportOrigin, supportCorsHeaders } from "@/lib/supportCors";
+import { verifyTurnstileToken } from "@/lib/turnstile";
 import {
   fileSupportRequest,
   isSupportCategory,
@@ -81,6 +82,11 @@ export async function POST(req: NextRequest) {
     if (!EMAIL_RE.test(email)) return respond({ error: "invalid_request" }, 400);
     if (isRateLimited(`support-anon:${clientIp(req)}`, 3, TEN_MINUTES)) {
       return respond({ error: "rate_limited" }, 429);
+    }
+    // Same bot check as the other signed-out endpoints (signup,
+    // forgot-password): this one creates a JSM request per call.
+    if (!(await verifyTurnstileToken(str(body?.turnstileToken, 4096), clientIp(req)))) {
+      return respond({ error: "captcha verification failed" }, 400);
     }
     requester = { name: str(body?.name, 120), email, verified: false };
   }

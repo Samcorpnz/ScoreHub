@@ -45,6 +45,10 @@ const CATEGORIES = [
   { value: "account", label: "Account" },
 ];
 
+// Carries the conversation across the full-page login redirect (the fallback
+// when the pop-up login window is blocked).
+const RESUME_KEY = "scorehub:ask:resume";
+
 const SUGGESTIONS = [
   "How do I get my score onto a venue screen?",
   "What does the Free plan include?",
@@ -126,15 +130,32 @@ export function AskAssistant() {
     [update],
   );
 
-  // A question submitted from the home page before hydration arrives as
-  // ?ask=…; answer it, then tidy the URL so a refresh doesn't ask again.
+  // Two ways a page load can start with the panel open. ?ask=… is a question
+  // submitted from the home page before hydration: answer it. ?contact=1 is
+  // the return from the login redirect: reopen the support form with the
+  // conversation that was in progress. Either way, tidy the URL afterwards so
+  // a refresh doesn't repeat it.
   useEffect(() => {
-    const question = new URLSearchParams(window.location.search).get("ask");
-    if (!question) return;
+    const params = new URLSearchParams(window.location.search);
+    const question = params.get("ask");
+    const resuming = params.get("contact") === "1";
+    if (!question && !resuming) return;
     window.history.replaceState(null, "", window.location.pathname);
     setOpen(true);
-    void ask(question);
-  }, [ask]);
+    if (question) return void ask(question);
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? "null") as {
+        turns?: Turn[];
+        conversationId?: string;
+      } | null;
+      sessionStorage.removeItem(RESUME_KEY);
+      if (Array.isArray(saved?.turns)) update(saved.turns);
+      conversationRef.current = saved?.conversationId ?? "";
+    } catch {
+      // No saved conversation is fine; the form just starts empty.
+    }
+    setView("case");
+  }, [ask, update]);
 
   useEffect(() => {
     function onAsk(event: Event) {
@@ -175,6 +196,35 @@ export function AskAssistant() {
     window.addEventListener("focus", checkAccount);
     return () => window.removeEventListener("focus", checkAccount);
   }, [open, view, checkAccount]);
+
+  // Log in without losing the page: a small window on the app's login that
+  // closes itself when done (/login/complete), after which we re-check who's
+  // signed in. If the browser blocks pop-ups, fall back to a full redirect
+  // to the login page and back, stashing the conversation for the return.
+  function logIn(event: React.MouseEvent<HTMLAnchorElement>) {
+    const popup = window.open(
+      `${appUrl()}/login?callbackUrl=${encodeURIComponent("/login/complete")}`,
+      "scorehub-login",
+      "popup,width=460,height=720",
+    );
+    if (!popup) {
+      try {
+        sessionStorage.setItem(
+          RESUME_KEY,
+          JSON.stringify({ turns: turnsRef.current, conversationId: conversationRef.current }),
+        );
+      } catch {
+        // Storage can be unavailable (private mode); the redirect still works.
+      }
+      return; // let the link navigate
+    }
+    event.preventDefault();
+    const watch = window.setInterval(() => {
+      if (!popup.closed) return;
+      window.clearInterval(watch);
+      void checkAccount();
+    }, 500);
+  }
 
   // Records what happened after an answer, for measuring deflection.
   const report = useCallback((type: "resolved" | "unresolved" | "case_filed", key?: string | null) => {
@@ -357,11 +407,17 @@ export function AskAssistant() {
               Log in to send a support request. That way it reaches us with your organisation and plan
               attached, and we know it's really you.
             </p>
-            <a className="ask-primary" href={`${appUrl()}/login`} target="_blank" rel="noopener">
+            <a
+              className="ask-primary"
+              href={`${appUrl()}/login?callbackUrl=${encodeURIComponent(
+                `${window.location.origin}${window.location.pathname}?contact=1`,
+              )}`}
+              onClick={logIn}
+            >
               Log in to contact support
             </a>
             <p className="ask-note">
-              Come back to this tab once you're logged in. <a href={`${appUrl()}/login?support=1`}>Can't log in?</a>
+              You'll come straight back here. <a href={`${appUrl()}/login?support=1`}>Can't log in?</a>
             </p>
             <button type="button" className="ask-skip" onClick={() => setView("chat")}>
               Back to the assistant

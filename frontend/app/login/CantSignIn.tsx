@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, SubmitEvent } from "react";
+import { useCallback, useState, SubmitEvent } from "react";
+import { TurnstileWidget } from "@/app/components/TurnstileWidget";
 
 const SUPPORT_EMAIL = "hello@scorehub.co.nz";
+const TURNSTILE_REQUIRED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
 const inputStyle = {
   background: "var(--bg-elevated)",
@@ -18,6 +20,8 @@ export function CantSignIn({ email: initialEmail }: { readonly email: string }) 
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<"idle" | "sending" | "failed">("idle");
   const [sentKey, setSentKey] = useState<string | null | undefined>(undefined);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const onTurnstileToken = useCallback((token: string) => setTurnstileToken(token), []);
 
   async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,6 +33,7 @@ export function CantSignIn({ email: initialEmail }: { readonly email: string }) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...Object.fromEntries(form),
+          turnstileToken,
           category: "login",
           summary: "Can't sign in to ScoreHub",
           page: "/login",
@@ -110,6 +115,7 @@ export function CantSignIn({ email: initialEmail }: { readonly email: string }) 
         aria-hidden="true"
         style={{ position: "absolute", left: -9999 }}
       />
+      <TurnstileWidget onToken={onTurnstileToken} />
       {status === "failed" && (
         <p className="text-xs font-semibold" role="alert" style={{ color: "var(--danger)" }}>
           We couldn&apos;t send that. Email <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> instead.
@@ -117,7 +123,7 @@ export function CantSignIn({ email: initialEmail }: { readonly email: string }) 
       )}
       <button
         type="submit"
-        disabled={status === "sending"}
+        disabled={status === "sending" || (TURNSTILE_REQUIRED && !turnstileToken)}
         className="w-full rounded-xl py-3 text-sm font-black tracking-widest uppercase"
         style={{
           background: "var(--accent-dim)",

@@ -101,6 +101,18 @@ describe("LoginPage", () => {
     expect(signInMock).not.toHaveBeenCalled();
   });
 
+  it("does not follow a callbackUrl pointing at another site", async () => {
+    searchParamsMock.mockReturnValue(paramsWithCallback("https://evil.example/phish"));
+    signInMock.mockResolvedValue({ error: null });
+    const { container } = render(<LoginPage />);
+
+    fireEvent.change(container.querySelector('input[type="email"]')!, { target: { value: "sam@example.com" } });
+    fireEvent.change(container.querySelector('input[type="password"]')!, { target: { value: "correct-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+  });
+
   it("hides the contact-support route until a sign-in attempt fails", () => {
     searchParamsMock.mockReturnValue(paramsWithCallback(null));
     render(<LoginPage />);

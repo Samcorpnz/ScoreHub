@@ -124,6 +124,27 @@ describe("POST /api/support/case", () => {
     expect(sent.requestFieldValues.description).toContain("Email NOT verified");
   });
 
+  it("400s a signed-out login request that fails the Turnstile check, without filing anything", async () => {
+    vi.stubEnv("TURNSTILE_SECRET", "test-secret");
+    authMock.mockResolvedValue(null);
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).includes("turnstile") ? jsonResponse({ success: false }) : jsonResponse({ issueKey: "SUP-9" }, 201),
+    );
+    const { POST } = await import("../route");
+    const res = await POST(makeRequest({ category: "login", summary: "x", email: "a@b.test", turnstileToken: "bad" }));
+    expect(res.status).toBe(400);
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes("turnstile"))).toBe(true);
+  });
+
+  it("does not ask signed-in users for a Turnstile token", async () => {
+    vi.stubEnv("TURNSTILE_SECRET", "test-secret");
+    authMock.mockResolvedValue(SIGNED_IN);
+    const { POST } = await import("../route");
+    const res = await POST(makeRequest({ category: "setup", summary: "Help" }));
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("turnstile"))).toBe(false);
+  });
+
   it("400s a signed-out login request without a valid email", async () => {
     authMock.mockResolvedValue(null);
     const { POST } = await import("../route");
