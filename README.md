@@ -86,11 +86,11 @@ port and monitoring connection status — see `bridge/src/ui`. For manual setup:
 4. Set `SERIAL_PORT` to your COM port (Windows: `COM3`, Mac/Linux: `/dev/tty.usbserial-XXXX`)
 
 ### Human-gated production deploys (SA-12)
-`.github/workflows/deploy.yml` runs the full test suite, then deploys relay (Fly.io) and frontend (Vercel) — but only after a manual approval, via a `production` GitHub Environment with required reviewers. This is the only deploy path that should be live; Fly.io's and Vercel's own GitHub-push auto-deploy must be turned off in their dashboards, or every push deploys immediately regardless of this gate. One-time setup (repo admin, in GitHub/Fly.io/Vercel dashboards — not done as part of this change):
+`.github/workflows/deploy.yml` runs the full test suite, then deploys relay (Fly.io) and frontend (Vercel) — but only after a manual approval, via a `production` GitHub Environment with required reviewers. This is the only production deploy path that should be live; if Vercel's GitHub integration is allowed to deploy `main`, every push ships immediately regardless of this gate. One-time setup (repo admin, in GitHub/Fly.io/Vercel dashboards — not done as part of this change):
 1. Repo Settings → Environments → create `production`, add required reviewers.
 2. Add repo secrets: `FLY_API_TOKEN`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
 3. Fly.io only deploys via this CI workflow — there's no separate "deploy on push" dashboard toggle to disable.
-4. In Vercel's project settings, disable the Git integration's auto-deploy (or set the production branch to something other than `main` so pushes don't auto-trigger).
+4. Vercel's Git integration stays connected (UAT and PR previews rely on it), but `frontend/vercel.json` sets `git.deploymentEnabled.main` to `false` so it never deploys `main` — don't remove that setting.
 
 ---
 
