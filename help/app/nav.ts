@@ -49,6 +49,7 @@ export const NAV: NavSection[] = [
       { title: "Using the control panel", href: "/running-a-match" },
       { title: "The dashboard and fixtures", href: "/running-a-match/dashboard-and-fixtures" },
       { title: "Sharing control of a match", href: "/running-a-match/sharing-control" },
+      { title: "Scoring from a phone", href: "/running-a-match/scoring-from-a-phone" },
       { title: "Sound cues", href: "/running-a-match/sound-cues" },
       { title: "Stream Deck and webhooks", href: "/running-a-match/stream-deck-and-webhooks" },
     ],

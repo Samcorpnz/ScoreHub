@@ -72,7 +72,7 @@ jobs:
       group: smoke-prod
       cancel-in-progress: false
     env:
-      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL || 'https://scorehub-relay.fly.dev' }}
+      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL || 'https://relay.scorehub.co.nz' }}
       SMOKE_FRONTEND_URL: ${{ vars.SMOKE_FRONTEND_URL || 'https://app.scorehub.co.nz' }}
       SMOKE_AUTH_MODE: ${{ vars.SMOKE_AUTH_MODE || 'optional' }}
       SMOKE_ORG_ID: ${{ vars.SMOKE_ORG_ID }}

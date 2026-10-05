@@ -1,7 +1,7 @@
 variable "relay_health_url" {
   description = "Relay's shallow liveness endpoint (SA-29) — same one Fly's own healthcheck polls."
   type        = string
-  default     = "https://scorehub-relay.fly.dev/health"
+  default     = "https://relay.scorehub.co.nz/health"
 }
 
 variable "frontend_health_url" {

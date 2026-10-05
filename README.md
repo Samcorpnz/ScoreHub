@@ -68,7 +68,9 @@ Then open http://localhost:3000
 2. Deploy from repo root: `fly deploy` (uses `fly.toml`, builds `relay/Dockerfile`)
 3. Set secrets: `fly secrets set DATABASE_URL=... AUTH_SECRET=... ALLOWED_ORIGINS=... REDIS_URL=...` (`ALLOWED_ORIGINS` is the frontend's deployed origin — production is `https://app.scorehub.co.nz`; `scorehub.co.nz` apex is reserved for the marketing site, not this app. `AUTH_SECRET` must match the frontend's value exactly — see Phase 2/SA-20 in the multi-tenant auth model. Add R2_* vars for logo/sound uploads, see `relay/.env.example`.)
 4. Scale into additional regions for failover: `fly scale count 2 --region iad`
-5. Note the public anycast URL (e.g. `https://scorehub-relay.fly.dev`)
+5. Note the public anycast URL (e.g. `https://scorehub-relay.fly.dev`). Production also answers on
+   `https://relay.scorehub.co.nz` (`fly certs add` plus DNS-only `A`/`AAAA` records in Cloudflare) —
+   that is the address the frontend, Bridge app and Stream Deck plugin use.
 
 ### Frontend → Vercel
 1. Push to GitHub

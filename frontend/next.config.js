@@ -6,7 +6,7 @@
 // error. Local dev is exempt — localhost is a valid target without this var.
 if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_RELAY_URL) {
   throw new Error(
-    "NEXT_PUBLIC_RELAY_URL is not set. Add it to your Vercel project's environment variables (e.g. https://scorehub-relay.fly.dev) before deploying."
+    "NEXT_PUBLIC_RELAY_URL is not set. Add it to your Vercel project's environment variables (production: https://relay.scorehub.co.nz) before deploying."
   );
 }
 
