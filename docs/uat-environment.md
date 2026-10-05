@@ -102,17 +102,22 @@ prod, or vice versa).
      --git-branch uat --force --sensitive`, then a `vercel redeploy <latest-uat-deployment>
      --target preview` (env var changes need a fresh deployment to reach running functions).
   5. The unrelated `git-main`-alias webhook endpoint in Stripe (stray, not the real production
-     one) still needs manual deletion — low priority, it's just noisy in the dashboard.
+     one; it lived in the live account's test mode and its target URL returned 410) was
+     deleted on 2026-10-05.
 - **Mailgun**: UAT shares the generic Preview environment's Mailgun config, now on
   the verified `mail.scorehub.co.nz` domain (SA-107) — real emails send to real addresses
   on signup/invite flows tested in UAT.
 - **Sentry**: `uat`-branch-scoped `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`,
   `NEXT_PUBLIC_SENTRY_ENVIRONMENT`, and `SENTRY_ENVIRONMENT` are now set on
   Vercel (2026-08-15).
-- **Generic (non-`uat`) Vercel Preview env**: worth independently verifying
-  the branch-unscoped `DATABASE_URL`/`NEXT_PUBLIC_RELAY_URL` (used by
-  every ad-hoc PR preview) don't point at production — this was flagged
-  during UAT setup but not confirmed either way.
+- **Generic (non-`uat`) Vercel Preview env**: checked 2026-10-05 against a PR
+  preview deployment. The branch-unscoped `DATABASE_URL` points at the Neon
+  `dev` branch, not production (a read-only request to the preview woke the
+  `dev` compute endpoint). The branch-unscoped `NEXT_PUBLIC_RELAY_URL`,
+  however, is `https://scorehub-relay.fly.dev` — the **production** relay —
+  so every ad-hoc PR preview talks to the production relay. Both values are
+  Sensitive in Vercel and can't be read back, so re-verify the same way if
+  they're ever changed.
 
 ## Redeploying / resetting
 
