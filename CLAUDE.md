@@ -32,9 +32,10 @@ for the full decision). All three build/deploy independently of `frontend/`'s Ve
 share its gating: `deploy.yml`'s `deploy-marketing`/`deploy-help`/`deploy-downloads` jobs push to
 Cloudflare Workers on every push to `main`, behind the same `production` GitHub Environment
 required-reviewer gate as relay/frontend (needs a `CLOUDFLARE_API_TOKEN` repo secret, scoped to
-account `c0c396b5f4c3cf71c2ecb3821febaf92`). UAT (`uat` branch) is still manual and ungated — `cd
-marketing && npm run build && npx wrangler deploy --env uat` (same pattern for `help/` and
-`downloads/`), see `docs/uat-environment.md`. **When a change touches user-facing naming, pricing,
+account `c0c396b5f4c3cf71c2ecb3821febaf92`). UAT (`uat` branch) is ungated: `help/` auto-deploys on
+every push to `uat` (`deploy-uat.yml`'s `deploy-help-uat` job), while `marketing/` and `downloads/`
+are still manual — `cd marketing && npm run build && npx wrangler deploy --env uat` (same pattern
+for `downloads/`), see `docs/uat-environment.md`. **When a change touches user-facing naming, pricing,
 plans/add-ons, feature descriptions, URLs/routes, or anything else these sites reference, check
 `marketing/` and `help/` for content that now needs updating too** — they're easy to forget since
 they build and deploy independently of `frontend/`.
