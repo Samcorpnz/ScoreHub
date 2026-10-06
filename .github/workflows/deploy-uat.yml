@@ -61,6 +61,35 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --expect multi --auth "$SMOKE_AUTH_MODE" --wait 180
 
+  # Help centre (Cloudflare Worker `scorehub-help-uat`, help.uat.scorehub.co.nz).
+  # Same steps as deploy.yml's deploy-help, minus the production environment
+  # gate. Worker secrets (OPENROUTER_API_KEY, BETTER_STACK_SOURCE_TOKEN) are set
+  # once with `wrangler secret put --env uat` and survive deploys.
+  deploy-help-uat:
+    name: Deploy help centre (Cloudflare Worker UAT)
+    needs: test
+    # workflow_dispatch can be started from any branch; only ever deploy `uat`.
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-help-uat
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: help
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: help/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npx wrangler deploy --env uat
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
   # Frontend needs no job here: Vercel's GitHub integration auto-deploys a
   # preview on every push to any branch, including `uat`, using the
   # branch-scoped env vars set via `vercel env add --git-branch uat` (see
