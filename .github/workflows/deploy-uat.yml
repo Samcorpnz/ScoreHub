@@ -68,6 +68,8 @@ jobs:
   deploy-help-uat:
     name: Deploy help centre (Cloudflare Worker UAT)
     needs: test
+    # workflow_dispatch can be started from any branch; only ever deploy `uat`.
+    if: github.ref == 'refs/heads/uat'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-help-uat
