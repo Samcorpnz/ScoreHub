@@ -3,6 +3,12 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # A push that only touches the Better Stack Terraform has nothing to
+    # deploy here — infra-betterstack.yml plans and applies it. Keep this list
+    # in step with test.yml's.
+    paths-ignore:
+      - "infra/betterstack/**"
+      - ".github/workflows/infra-betterstack.yml"
   workflow_dispatch: {}
 
 permissions:

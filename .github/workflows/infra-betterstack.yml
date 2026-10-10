@@ -1,0 +1,103 @@
+name: Infra (Better Stack)
+
+# Terraform for the Better Stack monitors and status page (infra/betterstack).
+# Pull requests get a plan; pushes to main get a plan, then an apply behind
+# the same `production` required-reviewer gate as deploy.yml — read the plan
+# job's log before approving. Kept out of deploy.yml so a monitoring change
+# neither waits on, nor is cancelled with, an app deploy.
+on:
+  pull_request:
+    paths:
+      - "infra/betterstack/**"
+      - ".github/workflows/infra-betterstack.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/betterstack/**"
+      - ".github/workflows/infra-betterstack.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  BETTERUPTIME_API_TOKEN: ${{ secrets.BETTERUPTIME_API_TOKEN }}
+  TF_VAR_deep_health_secret: ${{ secrets.DEEP_HEALTH_SECRET }}
+  # HCP Terraform holds the state (see versions.tf). The workspace runs in
+  # "Local" execution mode, so Terraform itself runs here, not on HCP.
+  TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+defaults:
+  run:
+    working-directory: infra/betterstack
+
+jobs:
+  plan:
+    name: Terraform plan
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          # The wrapper swallows plan's -detailed-exitcode.
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+
+      # Pull requests from forks get no secrets, so they can't reach the state
+      # or Better Stack — they stop at a backend-less validate.
+      - name: Validate (fork PR, no secrets)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Plan
+        id: plan
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        # No -out: a saved plan holds deep_health_secret in plain text, and
+        # artifacts on a public repo are downloadable. The apply job plans
+        # again instead. Sensitive values are redacted in this log.
+        run: |
+          terraform init
+          terraform validate
+          set +e
+          terraform plan -detailed-exitcode
+          code=$?
+          set -e
+          # 0 = no changes, 2 = changes, anything else = error.
+          if [ "$code" -eq 2 ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -eq 0 ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            exit "$code"
+          fi
+
+  apply:
+    name: Terraform apply
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    # Paused for approval by the "production" environment's required reviewers,
+    # same as the deploy jobs in deploy.yml (SA-12).
+    environment: production
+    # HCP locks the state, so a second apply would fail rather than corrupt
+    # anything — this makes it queue instead. Never cancel one mid-flight: an
+    # interrupted apply can leave state behind what Better Stack actually has.
+    concurrency:
+      group: infra-betterstack-apply
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.4
+          terraform_wrapper: false
+      - run: terraform init
+      - run: terraform apply -auto-approve

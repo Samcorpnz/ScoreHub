@@ -3,17 +3,48 @@
 Terraform for the Better Stack uptime monitors — relay `/health`, relay `/health/deep`
 (internal-only, SA-109), frontend `/api/health`, a synthetic Sentry error-rate check
 (SA-48), and the marketing/help/downloads Workers (SA-111) — plus the public status page.
-Not part of the npm workspace or the `deploy.yml` pipeline — apply by hand.
+Not part of the npm workspace or the `deploy.yml` pipeline — it has its own workflow,
+`.github/workflows/infra-betterstack.yml`.
 
-## Apply
+## How changes ship
+
+- **Pull request** touching `infra/betterstack/**`: the workflow runs `terraform fmt -check`,
+  `validate` and `plan`. Read the plan in the job log. (PRs from forks get no secrets, so
+  they stop at `validate`.)
+- **Push to `main`**: plan again, then — only if the plan has changes — `terraform apply`
+  behind the same `production` required-reviewer gate as the app deploys. The apply job
+  re-plans rather than reusing a saved plan (a saved plan would hold `deep_health_secret` in
+  plain text), so check the plan job's log before approving.
+- **Manual run** (`workflow_dispatch` on `main`): same as a push; use it to correct drift.
+
+State lives in HCP Terraform (app.terraform.io), workspace `scorehub-betterstack`, which
+also provides state locking. It contains `deep_health_secret` in plain text, so keep access
+to that workspace tight. The workspace's execution mode must be **Local** (workspace ->
+Settings -> General): HCP only stores the state, and Terraform itself runs in GitHub Actions
+or on your machine. In the default Remote mode the run would happen on HCP's runners, which
+don't have the Better Stack token or `deep_health_secret`.
+
+What the workflow needs in the repo's Actions settings:
+
+| Name | Kind | What it is |
+| --- | --- | --- |
+| `TF_CLOUD_ORGANIZATION` | variable | The HCP Terraform organization name |
+| `TF_API_TOKEN` | secret | HCP Terraform API token (a team token, or a user token on the free tier) |
+| `BETTERUPTIME_API_TOKEN` | secret | Better Stack dashboard -> Settings -> API tokens |
+| `DEEP_HEALTH_SECRET` | secret | Must match relay's `DEEP_HEALTH_SECRET` (SA-109) |
+
+## Running it locally
+
+For a plan against real state, or an emergency apply:
 
 ```bash
 cd infra/betterstack
-export BETTERUPTIME_API_TOKEN=...   # Better Stack dashboard -> Settings -> API tokens
-export TF_VAR_deep_health_secret=... # must match relay's DEEP_HEALTH_SECRET (SA-109)
+terraform login                      # once; stores an HCP token in ~/.terraform.d
+export TF_CLOUD_ORGANIZATION=...
+export BETTERUPTIME_API_TOKEN=...
+export TF_VAR_deep_health_secret=...
 terraform init
 terraform plan
-terraform apply
 ```
 
 ## Steps Terraform doesn't cover
