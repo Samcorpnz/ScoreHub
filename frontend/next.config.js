@@ -10,7 +10,37 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_RELAY_URL)
   );
 }
 
+const { buildCsp } = require("./csp");
+
+// Report-only while the policy is proven against real traffic: nothing is
+// blocked. To enforce, move the directives into the Content-Security-Policy
+// header below.
+const cspOptions = {
+  relayUrl: process.env.NEXT_PUBLIC_RELAY_URL || "http://localhost:4000",
+  sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  sentryEnvironment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
+  isDev: process.env.NODE_ENV === "development",
+};
+const contentSecurityPolicy = buildCsp({ ...cspOptions, report: false });
+
+// Violation reports go to Sentry and include the page's full URL, so they are
+// sent only from pages listed here, whose URLs never carry a secret. Display
+// links (?token=) and the emailed reset/invite/verify links must stay off this
+// list; a page left off it still gets the policy, just without reporting.
+const cspReportingSources = [
+  "/", "/login", "/signup", "/forgot-password", "/terms", "/privacy",
+  "/dashboard", "/setup", "/control/:path*", "/account/:path*",
+];
+const reportingCspHeaders = [
+  { key: "Content-Security-Policy-Report-Only", value: buildCsp(cspOptions) },
+];
+
+// Pages opened from an emailed link with a single-use token in the URL: keep
+// that URL out of the Referer header and document.referrer of whatever loads next.
+const tokenLinkSources = ["/reset-password", "/invite/accept", "/signup/confirm", "/verify-email"];
+
 const securityHeaders = [
+  { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   // Display links carry their token in the URL — never send the path off-site.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -30,6 +60,12 @@ const nextConfig = {
     return [
       { source: "/:path*", headers: securityHeaders },
       { source: "/((?!display/).*)", headers: frameHeaders },
+      // Later entries override earlier ones for the same header.
+      ...cspReportingSources.map(source => ({ source, headers: reportingCspHeaders })),
+      ...tokenLinkSources.map(source => ({
+        source,
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      })),
     ];
   },
   // Allow loading logos from the relay server
