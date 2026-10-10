@@ -10,7 +10,20 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_RELAY_URL)
   );
 }
 
+const { buildCsp } = require("./csp");
+
+// Report-only while the policy is proven against real traffic: violations go
+// to Sentry (and the browser console) but nothing is blocked. To enforce, move
+// these directives into the Content-Security-Policy header below.
+const contentSecurityPolicy = buildCsp({
+  relayUrl: process.env.NEXT_PUBLIC_RELAY_URL || "http://localhost:4000",
+  sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  sentryEnvironment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
+  isDev: process.env.NODE_ENV === "development",
+});
+
 const securityHeaders = [
+  { key: "Content-Security-Policy-Report-Only", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   // Display links carry their token in the URL — never send the path off-site.
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
