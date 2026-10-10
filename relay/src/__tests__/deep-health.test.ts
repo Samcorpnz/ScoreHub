@@ -35,6 +35,16 @@ describe("GET /health/deep with a configured secret", () => {
     closeServer(done);
   });
 
+  it("sends security headers on every response", async () => {
+    const res = await request(app).get("/health");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["x-frame-options"]).toBe("DENY");
+    expect(res.headers["content-security-policy"]).toBe("frame-ancestors 'none'");
+    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+    expect(res.headers["strict-transport-security"]).toBe("max-age=63072000");
+    expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+
   it("401s with no secret header", async () => {
     const res = await request(app).get("/health/deep");
     expect(res.status).toBe(401);

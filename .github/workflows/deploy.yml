@@ -12,6 +12,32 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
+  # A run paused at the production approval gate stays approvable indefinitely,
+  # and approving an old one would ship that older commit over a newer deploy.
+  # So once this run's tests pass, it cancels every older run still waiting for
+  # approval. Only `waiting` runs are touched: one that has been approved and is
+  # mid-deploy is left to finish, since cancelling it could leave relay and
+  # frontend on different commits (which is why this isn't a workflow-level
+  # `concurrency` group with cancel-in-progress).
+  cancel-superseded:
+    name: Cancel superseded deploy runs
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel older runs still waiting for approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=waiting&per_page=100" \
+            --jq ".workflow_runs[] | select(.run_number < $GITHUB_RUN_NUMBER) | .id" |
+          while read -r id; do
+            echo "Cancelling superseded run $id"
+            gh run cancel "$id" --repo "$GITHUB_REPOSITORY"
+          done
+
   deploy-relay:
     name: Deploy relay (Fly.io)
     needs: test
