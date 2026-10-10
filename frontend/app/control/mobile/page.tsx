@@ -32,7 +32,7 @@ function MobileControlInner() {
   const matchQuery = matchId ? `?matchId=${encodeURIComponent(matchId)}` : "";
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
+    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
     controllerStatus, takeControl, estimateServerNow,
   } = useMatchState({
     secret: controlToken,
@@ -115,6 +115,20 @@ function MobileControlInner() {
           </a>
         </div>
       </div>
+
+      {/* ── Ended match ── */}
+      {matchEnded && (
+        <div
+          data-testid="match-ended-banner"
+          style={{
+            padding: "8px 16px", flexShrink: 0, fontSize: 11, fontWeight: 700, color: "#ff3c3c",
+            background: "rgba(255,60,60,0.12)", borderBottom: "1px solid rgba(255,60,60,0.3)",
+          }}
+        >
+          This match has ended, so it can&apos;t be changed.{" "}
+          <a href={`/control${matchQuery}`} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
+        </div>
+      )}
 
       {/* ── Controller status ── */}
       {controllerStatus !== "connecting" && (

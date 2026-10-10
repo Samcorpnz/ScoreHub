@@ -111,14 +111,31 @@ It asks you to confirm first, and it can be undone with **UNDO**.
 
 ## Changing sport
 
-On the **Settings** tab, **Sport** changes which sport the match uses, and **Apply Template
-Defaults** then sets the clock, period and possession to that sport's defaults without touching
-scores, names or colours.
+On the **Settings** tab, **Sport** changes which sport the match uses. **Apply Template
+Defaults** then puts the match structure back to that sport's defaults: it stops the clock, sets
+the clock time and direction, returns to period 1, sets possession, clears both teams' fouls and
+restores their full timeout allowance. Scores, names and colours aren't touched.
 
 ## Ending the match
 
-When the match is over, open the **Settings** tab and select **End Match**. The match moves to
-**History** on the dashboard, its displays stop receiving updates, and it can't be scored again.
-On the Free plan, this is also what frees you up to start your next match.
+When the match is over, open the **Settings** tab and select **End Match**. The clock stops, the
+match moves to **History** on the dashboard, and its score is locked — the control panel, Stream
+Deck, webhooks and Bridge can no longer change it. Displays keep showing the final score. On the
+Free plan, this is also what frees you up to start your next match.
 
-Admins and Operators can end a match.
+Admins, Managers and Operators can end a match.
+
+## Correcting a match after it has ended
+
+An ended match has to be reopened before anything can be changed.
+
+1. On the dashboard, open the **History** tab and select **Reopen** on the match.
+2. Confirm. The match becomes live again and its control panel opens.
+3. Make the correction, then select **End Match** on the **Settings** tab again.
+
+If a control panel is still open on a match that has ended, it shows **This match has ended** with
+a **Reopen Match** button that does the same thing.
+
+A reopened match is a live match. On the Free plan you can't reopen one while another match is
+live — end that one first. See [The Free plan's one-match limit](/billing/free-plan-limit).
+Admins, Managers and Operators can reopen a match.

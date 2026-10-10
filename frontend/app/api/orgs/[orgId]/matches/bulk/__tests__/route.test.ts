@@ -130,6 +130,23 @@ describe("/api/orgs/[orgId]/matches/bulk", () => {
       expect(res.status).toBe(400);
     });
 
+    it("400s on a scheduledAt with no timezone offset, rather than guessing one", async () => {
+      const { POST } = await import("../route");
+      const res = await POST(
+        makePostRequest({ fixtures: [{ ...validFixture, scheduledAt: "2026-10-17T18:30" }] }),
+        { params },
+      );
+      expect(res.status).toBe(400);
+      expect(matchCreateManyMock).not.toHaveBeenCalled();
+    });
+
+    it("stores a scheduledAt given with an offset as the matching UTC instant", async () => {
+      matchCreateManyMock.mockResolvedValue({ count: 1 });
+      const { POST } = await import("../route");
+      await POST(makePostRequest({ fixtures: [{ ...validFixture, scheduledAt: "2026-10-17T18:30+13:00" }] }), { params });
+      expect(matchCreateManyMock.mock.calls[0][0].data[0].scheduledAt).toEqual(new Date("2026-10-17T05:30:00.000Z"));
+    });
+
     it("400s when a field exceeds its max length", async () => {
       const { POST } = await import("../route");
       const res = await POST(

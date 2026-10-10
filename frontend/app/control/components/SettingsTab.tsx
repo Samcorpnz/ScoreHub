@@ -578,7 +578,7 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
 
 export function SettingsTab({ state, push, matchId, onEnded }: {
   readonly state: MatchState;
-  readonly push: (p: Partial<MatchState>) => void;
+  readonly push: (p: Partial<MatchState>) => void | Promise<void>;
   readonly matchId?: string;
   readonly onEnded?: () => void;
 }) {
@@ -590,9 +590,12 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
 
   async function handleEndMatch() {
     if (!orgId || !matchId) return;
-    if (!globalThis.confirm("End this match? It will move to History and can't be scored again.")) return;
+    if (!globalThis.confirm("End this match? It will move to History and can't be scored unless you reopen it.")) return;
     setEnding(true);
     setEndError("");
+    // An ended match is read-only on the relay, so nothing could stop a
+    // clock that was left running once this goes through.
+    if (state.isRunning) await push({ isRunning: false });
     try {
       const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/end`, { method: "POST" });
       if (!res.ok) {
@@ -705,7 +708,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
       {matchId && (
         <Card title="End Match">
           <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-            Moves this match to History. Displays connected to it will stop receiving updates.
+            Moves this match to History and locks its score. To correct it later, reopen it from History.
           </p>
           {endError && (
             <p className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{endError}</p>

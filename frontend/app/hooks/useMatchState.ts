@@ -41,6 +41,10 @@ export function useMatchState(auth?: { secret: string; role: string }) {
   // display pages show a "get a fresh link" fallback instead of a blank
   // screen indistinguishable from a normal connection drop.
   const [unauthorized, setUnauthorized] = useState(false);
+  // Set when the relay reports this match as ENDED — it refuses changes to
+  // one, so the control panel shows a "reopen it" notice instead of buttons
+  // that silently do nothing.
+  const [matchEnded, setMatchEnded] = useState(false);
   const [feedStale, setFeedStale] = useState(false);
   const [relayUnreachable, setRelayUnreachable] = useState(false);
   const [controllerStatus, setControllerStatus] = useState<ControllerStatus>(
@@ -142,6 +146,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     socket.on("connect", () => {
       setStatus("connected");
       setUnauthorized(false);
+      setMatchEnded(false);
       lastUpdateRef.current = Date.now();
       setFeedStale(false);
       disconnectedSinceRef.current = null;
@@ -197,6 +202,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     socket.on("controllerGranted", () => { clearControlRetries(); setControllerStatus("granted"); });
     socket.on("controllerConflict", () => { clearControlRetries(); setControllerStatus("conflict"); });
     socket.on("controllerRevoked",  () => setControllerStatus("revoked"));
+    socket.on("matchEnded", () => setMatchEnded(true));
 
     return () => { clearControlRetries(); clearInterval(timeSyncTimer); socket.disconnect(); };
   }, [secret, role]);
@@ -275,7 +281,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
   };
 
   return {
-    state, status, feedStale, relayUnreachable, unauthorized, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
+    state, status, feedStale, relayUnreachable, unauthorized, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
     sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
     sendScoreAdjust, sendIndoorCricketWicket, estimateServerNow,
   };

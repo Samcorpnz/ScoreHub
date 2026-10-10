@@ -22,7 +22,9 @@ Each live or upcoming match has two buttons:
   the control panel's Outputs tab — see [Displaying your score](/displaying-your-score).
 - **Open Control** (live) or **Start** (upcoming) opens the control panel for that match.
 
-Ended matches are listed for reference and can't be reopened.
+Ended matches are listed in **History** with their score locked. To correct one, select **Reopen**
+— it becomes live again and its control panel opens. End it again when you're done. See
+[Using the control panel](/running-a-match).
 
 ## Starting an upcoming match
 
@@ -37,7 +39,7 @@ On the Free plan this counts as your one live match — see
 **Set Up a New Match** opens the setup wizard for a one-off match that starts straight away. See
 [Getting started](/getting-started).
 
-Admins and Operators can set up matches and upload fixtures.
+Admins, Managers and Operators can set up matches and upload fixtures.
 
 ## Uploading fixtures
 
@@ -59,7 +61,7 @@ The first row must be a header row naming the columns. Column order doesn't matt
 | `home` | Yes | Home team name, up to 100 characters. |
 | `visitor` | Yes | Visitor team name, up to 100 characters. |
 | `competition` | No | Competition or grade, up to 200 characters. Used by the dashboard's competition filter. |
-| `scheduledAt` | No | Date and time, for example `2026-10-17T18:30`. |
+| `scheduledAt` | No | Date and time, for example `2026-10-17T18:30`, in your own timezone. See [Dates and timezones](#dates-and-timezones). |
 | `matchName` | No | Shown on displays, up to 200 characters. |
 
 Example:
@@ -70,6 +72,21 @@ netball,Premier Grade,Northern Stars,Southern Steel,2026-10-17T18:30
 basketball,Division 1,Hawks,Rams,2026-10-17T20:00
 rugby_union,,Marist,Old Boys,2026-10-18T14:30
 ```
+
+### Dates and timezones
+
+Times in your file are read in **the timezone of the computer you upload from**. The upload panel
+names that timezone before you upload, and the list of fixtures it read shows each time with its
+timezone, so check them there.
+
+ScoreHub stores the time itself, not the text you typed, so everyone sees a fixture in their own
+local time. A fixture you upload as 6:30 pm in Auckland shows as 4:30 pm to someone in Sydney.
+
+- Write times as `YYYY-MM-DDTHH:MM`, for example `2026-10-17T18:30`. A space instead of the `T`
+  also works.
+- A date with no time, such as `2026-10-17`, is read as midnight at the start of that day.
+- To schedule a fixture in a different timezone from your own, add its offset to the end:
+  `2026-10-17T18:30+11:00`.
 
 ### Sport codes
 
@@ -86,8 +103,9 @@ Use these exact values in the `sport` column:
 - **Commas inside a value aren't supported**, even in quotes. A team called "Smith, Jones & Co"
   needs the comma removed.
 - A row missing `sport`, `home` or `visitor` is skipped and listed as an error before you upload.
-- If any row has an unknown sport code, an unreadable date or a value that's too long, the whole
-  upload is rejected and nothing is created. Fix the file and upload it again.
+- A row with a date ScoreHub can't read is skipped and listed as an error before you upload.
+- If any row has an unknown sport code or a value that's too long, the whole upload is rejected and
+  nothing is created. Fix the file and upload it again.
 - Sport-specific match options (cricket format, softball format and so on) can't be set from a
   CSV. Fixtures use each sport's default.
 

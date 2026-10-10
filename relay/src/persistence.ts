@@ -18,6 +18,16 @@ export class MatchNotFoundError extends Error {
   }
 }
 
+// Thrown when something tries to change a match that has been ended — an
+// ENDED match is read-only until it's reopened from the dashboard's History
+// tab (frontend POST /api/orgs/[orgId]/matches/[matchId]/reopen).
+export class MatchEndedError extends Error {
+  constructor() {
+    super("This match has ended — reopen it from the dashboard's History tab to make changes");
+    this.name = "MatchEndedError";
+  }
+}
+
 export interface MatchStore {
   orgId: string;
   load(): Promise<MatchState>;

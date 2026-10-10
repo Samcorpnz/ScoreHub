@@ -17,7 +17,8 @@ An Admin or Manager does this once per device.
 The token is long-lived and lets its holder change scores for your organisation, so treat it like
 a password. To cut off a device, select **Revoke** next to its token.
 
-You'll also need the **relay URL**, shown in the **Connection** card on the same tab.
+If you're calling the endpoints yourself (2b), you'll also need the **relay URL**, shown in the
+**Connection** card on the same tab. The Stream Deck plugin already has it.
 
 ## 2a. Set up a Stream Deck
 
@@ -26,8 +27,8 @@ Requires Stream Deck software 6.4 or later, on macOS 10.15+ or Windows 10+.
 1. On the **Stream Deck / Webhooks** card, select **Download** to get the ScoreHub plugin, then
    double-click the downloaded file to install it.
 2. In the Stream Deck app, find the **ScoreHub** category and drag an action onto a key.
-3. In the key's settings, paste the **Relay URL** and **Control Token**, and select
-   **Connect & Save**.
+3. In the key's settings, paste the **Control Token** and select **Connect & Save**. Leave
+   **Relay URL**, under **Advanced**, as it is unless ScoreHub support asks you to change it.
 4. Under **Match**, choose the match the keys should control. The list shows your organisation's
    live and upcoming matches. The choice applies to every ScoreHub key, so change it here when you
    move on to the next match.
@@ -50,6 +51,11 @@ basketball three-pointer press a +2 key then a +1 key, or use the control panel.
   download the plugin again from the **Stream Deck / Webhooks** card.
 </Callout>
 
+**Keys stopped showing the live score or clock?** Plugin versions before 1.2 can no longer read
+live match state, so their keys still work when pressed but stop updating. Download the plugin
+again from the **Stream Deck / Webhooks** card and install it over the old one; your token and
+match are kept.
+
 ## 2b. Call the endpoints yourself
 
 Every action is a `POST` request to the relay URL with your token in an `x-control-secret` header.
@@ -65,7 +71,7 @@ button.
 | `/action/score/visitor?delta=1` | Change the visitor score by `delta` |
 | `/action/period/next` | Next period (number only) |
 | `/action/period/prev` | Previous period (number only) |
-| `/action/period/end` | End the period: stop the clock, move on, reset the clock, and reset set scores where the sport does |
+| `/action/period/end` | End the period, exactly as the **END** button does: stop the clock, move on, reset the clock, reset set scores where the sport does, and for basketball reset team fouls and give overtime a 5:00 clock |
 
 `delta` can be any whole number from −99 to 99, and scores stop at zero. Add `matchId=<id>` to the
 query string to target a specific match — the URLs on the Settings card already include it.
@@ -79,7 +85,8 @@ curl -X POST \
 ```
 
 Each call returns JSON confirming the new value, for example `{"ok":true,"score":14}`. A missing or
-revoked token returns `401`.
+revoked token returns `401`. A match that has been ended returns `409` and isn't changed — reopen it
+first (see [Using the control panel](/running-a-match)).
 
 ## Things to know
 
