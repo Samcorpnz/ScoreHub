@@ -15,6 +15,17 @@ function isPaidPlan(plan: string): plan is PaidPlan {
   return plan === "pro" || plan === "venue";
 }
 
+// A failed renewal moves the subscription to "past_due" while Stripe retries
+// the card. The account keeps its plan and add-ons through that window, and
+// only drops to Free once Stripe gives up and cancels the subscription (or
+// marks it unpaid). The length of the window is not set here: it is the retry
+// schedule in each Stripe account's dashboard (Billing > Revenue recovery),
+// which must be "retry for 2 weeks, then cancel the subscription" to match
+// PAYMENT_GRACE_DAYS.
+function keepsPaidAccess(status: Stripe.Subscription.Status): boolean {
+  return status === "active" || status === "past_due";
+}
+
 // Stripe retries webhooks on any non-2xx response, so on a real processing
 // failure we return 500 deliberately to get that retry. Errors are caught
 // here rather than rethrown (so we can clean up the stripeEvent row first),
@@ -159,7 +170,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
       : await findAccountByAddOnSubscription(subscription.id);
     if (!account) return;
     const addOn = metadataAddOn ?? addOnForPriceId(priceId!)!;
-    if (subscription.status === "active") {
+    if (keepsPaidAccess(subscription.status)) {
       await addAddOn(account.id, addOn, subscription.id);
     } else {
       await removeAddOn(account.id, addOn);
@@ -174,13 +185,14 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   const plan = priceId ? planForPriceId(priceId) : null;
   const interval = subscription.items.data[0]?.price.recurring?.interval ?? null;
-  const nextPlan = subscription.status === "active" ? (plan ?? account.plan) : "free";
+  const paid = keepsPaidAccess(subscription.status);
+  const nextPlan = paid ? (plan ?? account.plan) : "free";
   await prisma.account.update({
     where: { id: account.id },
     data: {
       stripeSubscriptionId: subscription.id,
       plan: nextPlan,
-      billingInterval: subscription.status === "active" ? interval : null,
+      billingInterval: paid ? interval : null,
     },
   });
   // Add-ons require an active paid plan — if the base plan just lapsed,

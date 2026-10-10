@@ -48,6 +48,8 @@ export const NAV: NavSection[] = [
     links: [
       { title: "Using the control panel", href: "/running-a-match" },
       { title: "The dashboard and fixtures", href: "/running-a-match/dashboard-and-fixtures" },
+      { title: "Managing fixtures after upload", href: "/running-a-match/managing-fixtures" },
+      { title: "Match history and final scores", href: "/running-a-match/match-history" },
       { title: "Sharing control of a match", href: "/running-a-match/sharing-control" },
       { title: "Scoring from a phone", href: "/running-a-match/scoring-from-a-phone" },
       { title: "Sound cues", href: "/running-a-match/sound-cues" },
@@ -70,6 +72,7 @@ export const NAV: NavSection[] = [
     links: [
       { title: "Connecting a console (Bridge)", href: "/connecting-the-bridge" },
       { title: "ChampionData and Bridge updates", href: "/connecting-the-bridge/championdata-and-updates" },
+      { title: "Developer reference", href: "/connecting-the-bridge/developer-reference" },
     ],
   },
   {
@@ -86,6 +89,7 @@ export const NAV: NavSection[] = [
       { title: "Roles & permissions", href: "/account/roles-and-permissions" },
       { title: "Inviting your team", href: "/account/inviting-your-team" },
       { title: "Switching organisations", href: "/account/switching-organisations" },
+      { title: "Managing your organisation", href: "/account/managing-your-organisation" },
     ],
   },
   {
@@ -98,6 +102,7 @@ export const NAV: NavSection[] = [
       { title: "Graphics Operator add-on", href: "/billing/graphics-addon" },
       { title: "Data Feed add-on", href: "/billing/data-feed-addon" },
       { title: "Invoices & payment methods", href: "/billing/invoices-and-payment-methods" },
+      { title: "If a payment fails", href: "/billing/failed-payments" },
       { title: "Cancelling your plan", href: "/billing/cancelling" },
     ],
   },
@@ -107,6 +112,7 @@ export const NAV: NavSection[] = [
     links: [
       { title: "Contact support", href: "/support" },
       { title: "Troubleshooting", href: "/support/troubleshooting" },
+      { title: "Is ScoreHub down?", href: "/support/service-status" },
     ],
   },
 ];

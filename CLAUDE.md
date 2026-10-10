@@ -95,6 +95,12 @@ touches exactly 4 files:
 4. `relay/src/server.ts` — add to `SPORT_DEFAULT_CLOCK` (and `SPORT_RESET_SCORE_ON_PERIOD` if
    the sport zeroes scores between games/sets)
 
+A new sport also needs its public pages, which live outside the app: a guide in
+`help/app/(docs)/sports/<slug>/page.mdx` (plus `help/app/nav.ts`), and an entry in
+`marketing/app/sports-data.ts`, which generates the sport's landing page at
+`scorehub.co.nz/sports/<slug>` and its sitemap entry. The marketing site's "21 sports" counts
+(`marketing/app/pricing-data.ts`, page copy) are hand-written, so update them too.
+
 Sports with bespoke state or UI (cricket, softball, indoor cricket) additionally define a state
 type in `packages/types/sports/<sport>.ts`, added to the `sportState` discriminated union
 (`state.sport` narrows it), and can supply a custom `ScoreTab` panel component instead of the
