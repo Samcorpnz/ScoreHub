@@ -78,10 +78,38 @@ resource "betteruptime_monitor" "relay_deep_health" {
 resource "betteruptime_status_page" "main" {
   company_name = "ScoreHub"
   company_url  = "https://scorehub.co.nz"
+  # Renders as the page's "Get in touch" link. Points at the help centre's
+  # support page rather than a mailto so visitors land on troubleshooting and
+  # the help assistant first.
+  contact_url  = "https://help.scorehub.co.nz/support"
   subdomain    = var.status_page_subdomain
   # Better Stack stores the Rails zone name, not the IANA one — "Pacific/Auckland"
   # is accepted on create but reads back as "Wellington", causing a perpetual diff.
   timezone     = "Wellington"
+
+  # v2 is the only design that honours navigation_links. Setting any link
+  # replaces the built-in set, so the three defaults are restated here; only
+  # the first 4 links are rendered.
+  design = "v2"
+  theme  = "light"
+  layout = "vertical"
+
+  navigation_links {
+    text = "Status"
+    href = "/"
+  }
+  navigation_links {
+    text = "Maintenance"
+    href = "/maintenance"
+  }
+  navigation_links {
+    text = "Previous incidents"
+    href = "/incidents"
+  }
+  navigation_links {
+    text = "Help centre"
+    href = "https://help.scorehub.co.nz"
+  }
 }
 
 resource "betteruptime_status_page_resource" "relay" {

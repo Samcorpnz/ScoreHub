@@ -33,7 +33,11 @@ Always send `matchId`. If the token was generated for one specific match, it ret
 and `matchId` is ignored.
 
 The response is one JSON object holding the whole match state. Poll it; once or twice a second is
-enough for a live scoreboard.
+enough for a live scoreboard. To be sent each change as it happens instead, see
+[Live updates](#live-updates).
+
+Reading the feed never changes a match. You can point an integration at an **upcoming** fixture
+to test it: you get the fixture's starting state, and it stays upcoming until someone starts it.
 
 ### Match state
 
@@ -142,17 +146,49 @@ Up to **600 requests a minute** from one IP address.
 | --- | --- |
 | `200` | The match state. |
 | `401` | The token is missing, wrong or has been revoked. |
-| `402` | The request would have started a second live match on the Free plan. See the note below. |
+| `402` | No `matchId` was sent, the organisation has no live match, and the Free plan's one live match is in use elsewhere on the account. Send a `matchId`. |
 | `403` | The account doesn't have an active Data Feed add-on. |
+| `404` | No match with that ID belongs to the token's organisation. |
 | `429` | Too many requests. Slow down and try again within a minute. |
 
 Errors return JSON with an `error` message, for example `{"error":"unauthorized"}`.
 
-<Callout>
-  Requesting the feed for an **upcoming** fixture starts that fixture, the same as selecting
-  **Start** on the dashboard. Only point an integration at a match once you're ready for it to be
-  live. A match that has ended keeps returning its final state.
-</Callout>
+A match that has ended keeps returning its final state.
+
+### Live updates
+
+Instead of polling, you can hold a [Socket.io](https://socket.io/docs/v4/client-api/) connection
+open and be sent the state each time it changes. Use a Socket.io version 4 client; a plain
+WebSocket client won't work.
+
+```js
+import { io } from "socket.io-client";
+
+const socket = io("RELAY_URL", {
+  auth: { role: "data-feed", secret: "YOUR_TOKEN", matchId: "MATCH_ID" },
+});
+
+socket.on("matchStateChange", (state) => {
+  // the same object the data feed request returns
+});
+
+socket.on("connect_error", (err) => {
+  console.error(err.message);
+});
+```
+
+- `matchStateChange` is sent once when you connect, then again on every change. Each one carries
+  the whole [match state](#match-state), not just what changed.
+- While the clock runs, `clockSeconds` arrives about once a second.
+- `matchId` works the same as for a request: always send it, and it's ignored if the token was
+  generated for one specific match.
+- Connecting to an upcoming fixture doesn't start it. You're sent its starting state, then
+  updates once it's live.
+- The connection is read-only. Anything you send is ignored.
+
+If the connection is refused, `connect_error` fires. `match not found` means the match ID isn't
+one of the organisation's. Any other message usually means the token is wrong or revoked, or the
+account has no active Data Feed add-on — check both on the **Settings** tab.
 
 ## Webhooks
 

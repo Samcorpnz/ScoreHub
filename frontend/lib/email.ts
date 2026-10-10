@@ -23,6 +23,10 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+// Where replies go for the emails that ask for one (SA-164). EMAIL_FROM is
+// typically a noreply address, so without this a reply goes nowhere.
+const SUPPORT_EMAIL = "hello@scorehub.co.nz";
+
 function getMailgun() {
   if (globalForMailgun.mailgun) return globalForMailgun.mailgun;
 
@@ -240,6 +244,7 @@ export async function sendSubscriptionEndedEmail({ to, plan }: { to: string[]; p
   await getMailgun().messages.create(domain, {
     from,
     to,
+    "h:Reply-To": SUPPORT_EMAIL,
     subject: `Your ScoreHub ${label} plan has ended`,
     text: `Your ScoreHub ${label} subscription has ended, and your account is back on the Free plan.\n\nThat means ${losing} are switched off for now — but nothing else has changed. Your matches, your scoreboards, your settings: all exactly where you left them, ready the moment you're back.\n\nGetting back to full strength takes under a minute:\n\n${link}\n\nIf something about ${label} wasn't working for you, just hit reply and tell us — we read every message, and it shapes what we build next.\n\n— The ScoreHub team`,
     html: `<p>Your ScoreHub ${label} subscription has ended, and your account is back on the Free plan.</p><p>That means ${escapeHtml(losing)} are switched off for now — but nothing else has changed. Your matches, your scoreboards, your settings: all exactly where you left them, ready the moment you're back.</p><p><a href="${link}">Reactivate ${label}</a> — it takes under a minute.</p><p>If something about ${label} wasn't working for you, just hit reply and tell us — we read every message, and it shapes what we build next.</p><p>— The ScoreHub team</p>`,

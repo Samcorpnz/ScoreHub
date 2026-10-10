@@ -81,6 +81,19 @@ describe("LoginPage", () => {
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
   });
 
+  it("says to wait, not that the password is wrong, when sign-in is rate limited", async () => {
+    searchParamsMock.mockReturnValue(paramsWithCallback(null));
+    signInMock.mockResolvedValue({ error: "CredentialsSignin", code: "rate_limited" });
+    const { container } = render(<LoginPage />);
+
+    fireEvent.change(container.querySelector('input[type="email"]')!, { target: { value: "sam@example.com" } });
+    fireEvent.change(container.querySelector('input[type="password"]')!, { target: { value: "right-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => expect(screen.getByText("Too many sign-in attempts. Wait a minute and try again.")).toBeInTheDocument());
+    expect(screen.queryByText("Invalid email or password.")).not.toBeInTheDocument();
+  });
+
   it("shows an error message and does not redirect when credentials are invalid", async () => {
     searchParamsMock.mockReturnValue(paramsWithCallback(null));
     signInMock.mockResolvedValue({ error: "CredentialsSignin" });

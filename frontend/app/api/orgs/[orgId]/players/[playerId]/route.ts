@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SignJWT } from "jose";
 import { prisma } from "@scorehub/db";
 import { auth } from "@/auth";
 import { validatePlayerField } from "@/lib/playerFields";
 
 const GRAPHICS_ROLES = ["ADMIN", "MANAGER", "OPERATOR"] as const;
 
+// Server-to-server calls (Vercel -> Fly) should hit the relay's internal
+// address where one is configured — same as the matches route.
+const RELAY_URL = process.env.RELAY_INTERNAL_URL ?? process.env.NEXT_PUBLIC_RELAY_URL ?? "http://localhost:4000";
+
 async function authorize(orgId: string) {
   const session = await auth();
   if (!session?.user?.activeOrgId || session.user.activeOrgId !== orgId) {
-    return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+    return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }), role: null };
   }
-  if (!GRAPHICS_ROLES.includes(session.user.activeRole as (typeof GRAPHICS_ROLES)[number])) {
-    return { error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+  const role = session.user.activeRole;
+  if (!GRAPHICS_ROLES.includes(role as (typeof GRAPHICS_ROLES)[number])) {
+    return { error: NextResponse.json({ error: "forbidden" }, { status: 403 }), role: null };
   }
   if (process.env.DATABASE_URL) {
     const org = await prisma.org.findUnique({
@@ -24,11 +30,38 @@ async function authorize(orgId: string) {
           { error: "This feature requires the graphics-operator add-on — upgrade at /account/billing" },
           { status: 403 }
         ),
+        role: null,
       };
     }
   }
-  return { error: null };
+  return { error: null, role };
 }
+
+// Deletes the player's headshot from storage (SA-160). Storage belongs to the
+// relay, so this calls its DELETE /api/player-photo/:playerId with a
+// short-lived control token, the same way the matches route calls POST /match.
+// Photos are served from public URLs, so removing the Player row alone would
+// leave the file reachable by anyone who has the link.
+async function deleteStoredPhoto(orgId: string, role: string | null, playerId: string): Promise<boolean> {
+  const authSecret = process.env.AUTH_SECRET;
+  if (!authSecret) return false;
+  try {
+    const secret = await new SignJWT({ orgId, role })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(new TextEncoder().encode(authSecret));
+    const res = await fetch(`${RELAY_URL}/api/player-photo/${encodeURIComponent(playerId)}`, {
+      method: "DELETE",
+      headers: { "x-control-secret": secret },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+const PHOTO_NOT_REMOVED = "Couldn't remove the player's photo from storage. Nothing was changed — try again.";
 
 const PATCHABLE_FIELDS = ["firstName", "lastName", "displayName", "externalId", "provider", "bio", "photoUrl"] as const;
 
@@ -75,7 +108,7 @@ export async function PATCH(
   { params }: { params: Promise<{ orgId: string; playerId: string }> }
 ) {
   const { orgId, playerId } = await params;
-  const { error } = await authorize(orgId);
+  const { error, role } = await authorize(orgId);
   if (error) return error;
 
   const existing = await prisma.player.findUnique({ where: { id: playerId } });
@@ -86,6 +119,13 @@ export async function PATCH(
   const body = await req.json().catch(() => null);
   const data = parsePlayerPatch(body);
   if (data instanceof NextResponse) return data;
+
+  // Clearing photoUrl is "remove this photo", so the file goes too.
+  if ("photoUrl" in data && data.photoUrl === null && existing.photoUrl) {
+    if (!(await deleteStoredPhoto(orgId, role, playerId))) {
+      return NextResponse.json({ error: PHOTO_NOT_REMOVED }, { status: 502 });
+    }
+  }
 
   try {
     const player = await prisma.player.update({ where: { id: playerId }, data });
@@ -103,12 +143,19 @@ export async function DELETE(
   { params }: { params: Promise<{ orgId: string; playerId: string }> }
 ) {
   const { orgId, playerId } = await params;
-  const { error } = await authorize(orgId);
+  const { error, role } = await authorize(orgId);
   if (error) return error;
 
   const existing = await prisma.player.findUnique({ where: { id: playerId } });
   if (existing?.orgId !== orgId) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
+  // Always attempted, since an upload can succeed without photoUrl having
+  // been saved. Only a player known to have a photo is held back by a failure.
+  const photoRemoved = await deleteStoredPhoto(orgId, role, playerId);
+  if (!photoRemoved && existing.photoUrl) {
+    return NextResponse.json({ error: PHOTO_NOT_REMOVED }, { status: 502 });
   }
 
   await prisma.player.delete({ where: { id: playerId } });

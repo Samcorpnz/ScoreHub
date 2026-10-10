@@ -9,7 +9,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { MatchState, DEFAULT_MATCH_STATE, IndoorCricketState } from "./types";
-import { getMatchStore, allActiveStores, evictMatchStore, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
+import { getMatchStore, allActiveStores, evictMatchStore, peekScheduledState, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
 import { prisma } from "@scorehub/db";
 import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
 import { getRedisClients, acquireTickLock, closeRedis, publishStateUpdate, subscribeStateUpdates } from "./redis";
@@ -333,6 +333,17 @@ export function createServer(options: ServerOptions = {}) {
     const state = store ? await store.load() : { ...DEFAULT_MATCH_STATE };
     matchStates.set(room, { orgId, matchId, state });
     return state;
+  }
+
+  // getState for callers that only look (the data feed). An upcoming fixture
+  // nobody has opened yet is answered from its saved row, so it stays
+  // upcoming and doesn't count against the Free plan's live-match limit.
+  async function readState(orgId: string, matchId?: string): Promise<MatchState> {
+    if (matchId && !matchStates.has(roomFor(orgId, matchId))) {
+      const scheduled = await peekScheduledState(orgId, matchId);
+      if (scheduled) return scheduled;
+    }
+    return getState(orgId, matchId);
   }
 
   function setState(orgId: string, next: MatchState, matchId?: string): void {
@@ -689,6 +700,17 @@ export function createServer(options: ServerOptions = {}) {
     },
   });
 
+  async function deletePlayerPhotos(orgId: string, playerId: string): Promise<void> {
+    if (r2Enabled) {
+      await deleteByPrefix(`player-photos/${orgId}/${playerId}.`);
+      return;
+    }
+    const dir = path.join(PLAYER_PHOTOS_DIR, orgId);
+    if (fs.existsSync(dir)) {
+      fs.readdirSync(dir).filter(f => f.startsWith(`${playerId}.`)).forEach(f => fs.unlinkSync(path.join(dir, f)));
+    }
+  }
+
   app.post(
     "/api/player-photo/:playerId",
     controlRateLimit,
@@ -709,6 +731,9 @@ export function createServer(options: ServerOptions = {}) {
         throw err;
       }
       const ext = path.extname(req.file.originalname).toLowerCase() || ".png";
+      // The stored name includes the extension, so a replacement of another
+      // type would otherwise leave the old photo behind at its public URL.
+      await deletePlayerPhotos(orgId, playerId);
       const storedUrl = await storeImage("player-photos", orgId, playerId, ext, req.file.mimetype, buffer);
       res.json({ photoUrl: `${storedUrl}?t=${Date.now()}` });
     }
@@ -718,14 +743,7 @@ export function createServer(options: ServerOptions = {}) {
     const orgId = (req as any).orgId as string;
     const playerId = safeSegment(req.params.playerId);
     if (!playerId) { res.status(400).json({ error: "invalid playerId" }); return; }
-    if (r2Enabled) {
-      await deleteByPrefix(`player-photos/${orgId}/${playerId}.`);
-    } else {
-      const dir = path.join(PLAYER_PHOTOS_DIR, orgId);
-      if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).filter(f => f.startsWith(`${playerId}.`)).forEach(f => fs.unlinkSync(path.join(dir, f)));
-      }
-    }
+    await deletePlayerPhotos(orgId, playerId);
     res.json({ status: "removed" });
   });
 
@@ -804,6 +822,10 @@ export function createServer(options: ServerOptions = {}) {
     }
     if (err instanceof MatchEndedError) {
       res.status(409).json({ error: err.message });
+      return;
+    }
+    if (err instanceof MatchNotFoundError) {
+      res.status(404).json({ error: "match not found" });
       return;
     }
     console.error("[relay] failed to load/update match state:", err);
@@ -948,7 +970,7 @@ export function createServer(options: ServerOptions = {}) {
     }
     const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
     try {
-      res.json(await getState(result.orgId, matchId));
+      res.json(await readState(result.orgId, matchId));
     } catch (err) {
       respondToStateError(res, err);
     }
@@ -1227,7 +1249,6 @@ export function createServer(options: ServerOptions = {}) {
 
     let orgId: string | null = null;
     let matchId: string | undefined;
-    let isMonitor = false;
 
     if (role === "bridge") {
       // Unlike graphics/data-feed below, a refused bridge is a hard error
@@ -1280,13 +1301,14 @@ export function createServer(options: ServerOptions = {}) {
       if (result) {
         orgId = result.orgId;
         matchId = result.matchId;
-        isMonitor = true;
         (socket as any).isMonitor = true;
       }
     }
 
     // A role branch above proved itself with a secret. For a monitor the
     // org is the token's, never the one the client asked for.
+    const s = socket as any;
+    const provedItself = s.isBridge || s.isControl || s.isGraphics || s.isDataFeed || s.isMonitor;
     orgId = orgId ?? requestedOrgId ?? null;
 
     // Viewer/display connections have no signed token — they pass orgId and
@@ -1299,16 +1321,22 @@ export function createServer(options: ServerOptions = {}) {
     // also where the displayToken is checked (see DISPLAY_TOKEN_REQUIRED) —
     // a role branch above (bridge/control/graphics/data-feed) already proved
     // itself via a signed secret, so only the unauthenticated viewer path
-    // needs this.
+    // needs this. A token that isn't pinned to one match gets here too, to
+    // have the matchId it asked for checked against its own org (SA-163).
     if (!matchId && requestedMatchId && process.env.DATABASE_URL) {
       const row = await prisma.match.findUnique({ where: { id: requestedMatchId }, select: { orgId: true, displayToken: true } });
       if (row && (!orgId || row.orgId === orgId)) {
-        if (!isMonitor && !isDisplayTokenValid(row.displayToken, requestedToken, DISPLAY_TOKEN_REQUIRED)) {
+        if (!provedItself && !isDisplayTokenValid(row.displayToken, requestedToken, DISPLAY_TOKEN_REQUIRED)) {
           next(new Error("invalid or missing display token"));
           return;
         }
         matchId = requestedMatchId;
         orgId = orgId ?? row.orgId;
+      } else if (s.isDataFeed) {
+        // Falling through would put the feed in the org's default room, where
+        // it would quietly watch (or create) a different match.
+        next(new Error("match not found"));
+        return;
       }
     }
 
@@ -1324,8 +1352,6 @@ export function createServer(options: ServerOptions = {}) {
 
     // See DISPLAY_ORIGIN_REQUIRED — only the unauthenticated viewer path is
     // held to it.
-    const s = socket as any;
-    const provedItself = s.isBridge || s.isControl || s.isGraphics || s.isDataFeed || s.isMonitor;
     if (!provedItself && !isDisplayOriginAllowed(socket.handshake.headers.origin)) {
       next(new Error(DISPLAY_ORIGIN_REFUSED_MESSAGE));
       return;
@@ -1732,7 +1758,7 @@ export function createServer(options: ServerOptions = {}) {
       console.log(`[-] ${role} disconnected from room ${room} (${socket.id})`);
     });
 
-    getState(orgId, matchId)
+    (isDataFeed ? readState : getState)(orgId, matchId)
       .then(state => socket.emit("matchStateChange", state))
       .catch(err => {
         if (err instanceof ConcurrentMatchLimitError) {
