@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures/auth";
 import { createMatch, endMatch, waitForLive } from "../helpers/match";
-import { bowlBall, completeOver, startInnings, takeWicket } from "../helpers/cricket";
+import { bowlBall, completeOver, startInnings, takeWicket, waitForCricketPanel } from "../helpers/cricket";
 
 test.describe("cricket", () => {
   test("squad entry seeds batters/bowler, ball-by-ball scoring, wide, and wicket", async ({ page }) => {
@@ -16,6 +16,7 @@ test.describe("cricket", () => {
       },
     });
     await waitForLive(page);
+    await waitForCricketPanel(page);
 
     await startInnings(page);
     await expect(page.getByText("A Smith *")).toBeVisible();
@@ -47,6 +48,7 @@ test.describe("cricket", () => {
           squads: { home: ["P1", "P2"], visitor: ["P3", "P4"] },
         });
         await waitForLive(page);
+        await waitForCricketPanel(page);
         await expect(page.getByText(new RegExp(format.toUpperCase()))).toBeVisible();
         await endMatch(page);
       });

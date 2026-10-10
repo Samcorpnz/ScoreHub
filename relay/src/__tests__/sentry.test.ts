@@ -37,13 +37,26 @@ describe("sentry", () => {
   it("initializes Sentry with the DSN and environment when set", async () => {
     process.env.SENTRY_DSN = "https://example.invalid/1";
     process.env.NODE_ENV = "production";
-    const { initSentry } = await import("../sentry");
+    const { initSentry, scrubTokens } = await import("../sentry");
     initSentry();
     expect(initMock).toHaveBeenCalledWith({
       dsn: "https://example.invalid/1",
       environment: "production",
       tracesSampleRate: 0.1,
+      beforeSend: scrubTokens,
+      beforeSendTransaction: scrubTokens,
     });
+  });
+
+  it("filters the display token out of an event's URLs", async () => {
+    const { scrubTokens } = await import("../sentry");
+    const event = scrubTokens({
+      request: { url: "https://relay.scorehub.co.nz/state?matchId=m1&token=s3cret", query_string: "matchId=m1&token=s3cret" },
+      spans: [{ data: { "url.full": "https://relay.scorehub.co.nz/state?token=s3cret&matchId=m1" } }],
+    });
+    expect(JSON.stringify(event)).not.toContain("s3cret");
+    expect(event.request.url).toBe("https://relay.scorehub.co.nz/state?matchId=m1&token=[Filtered]");
+    expect(event.spans[0].data["url.full"]).toBe("https://relay.scorehub.co.nz/state?token=[Filtered]&matchId=m1");
   });
 
   it("SENTRY_ENVIRONMENT overrides NODE_ENV when both are set", async () => {

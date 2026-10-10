@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { scrubTokens } from "@/lib/sentryScrub";
 
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   const relayUrl = process.env.NEXT_PUBLIC_RELAY_URL;
@@ -12,6 +13,8 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     // to the relay on a different origin, so it needs to be added explicitly
     // for trace headers to propagate across that boundary.
     tracePropagationTargets: ["localhost", /^\//, ...(relayUrl ? [relayUrl] : [])],
+    beforeSend: scrubTokens,
+    beforeSendTransaction: scrubTokens,
   });
 }
 
