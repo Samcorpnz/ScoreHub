@@ -1,0 +1,224 @@
+export const metadata = { title: "Developer reference: data feed and webhooks" };
+
+# Developer reference: data feed and webhooks
+
+This page is for people writing software against ScoreHub. It covers the two supported
+integration points:
+
+- **The data feed** — read a match's live state. Needs the
+  [Data Feed add-on](/billing/data-feed-addon).
+- **Webhooks** — run the clock and score with HTTP requests. Available on every plan. See
+  [Stream Deck and webhooks](/running-a-match/stream-deck-and-webhooks) for setup.
+
+Both are served from the relay URL shown in the **Connection** card on the control panel's
+**Settings** tab. The examples below call it `RELAY_URL`.
+
+<Callout>
+  Display links aren't a data source. ScoreHub only serves a display link's data to its own
+  display pages, so other software or another website pointed at one gets nothing. Use the data
+  feed.
+</Callout>
+
+## Data feed
+
+```
+GET RELAY_URL/api/data-feed/state?matchId=MATCH_ID
+x-data-feed-secret: YOUR_TOKEN
+```
+
+Generate the token on the **Data Feed** card of the control panel's **Settings** tab. A match's
+ID is in the address bar of its control panel, after `matchId=`.
+
+Always send `matchId`. If the token was generated for one specific match, it returns that match
+and `matchId` is ignored.
+
+The response is one JSON object holding the whole match state. Poll it; once or twice a second is
+enough for a live scoreboard.
+
+### Match state
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `sequenceId` | number | Goes up by one each time the state changes. Use it to skip a response you've already handled. |
+| `sport` | string | A sport code, such as `netball` or `rugby_union`. See [Sport codes](/running-a-match/dashboard-and-fixtures#sport-codes). |
+| `matchName` | string | The match name shown on displays. |
+| `clockSeconds` | number | The clock, in whole seconds. |
+| `isRunning` | boolean | Whether the clock is running. |
+| `countDown` | boolean | `true` if the clock counts down, `false` if it counts up. |
+| `period` | string | The current period. Usually a number as text, such as `"2"`. `"E"` is extra time. |
+| `periodBreak` | boolean | `true` between periods, after a period has been ended. |
+| `possession` | string | `home`, `visitor`, `both` or `none`. |
+| `hornActive` | boolean | Whether the horn is sounding, when a scoring console reports it. |
+| `inputSource` | string | Where the last update came from. `manual` for the control panel and webhooks. |
+| `home`, `visitor` | object | Each team. See [Team](#team). |
+| `displayTheme` | object | The match's display theme. See [Display theme](#display-theme). |
+| `sportConfig` | object | Match options chosen at setup, such as a best-of-3 or best-of-5 format. Its keys depend on the sport. May be absent. |
+| `sportState` | object | Extra state for cricket, softball and indoor cricket. Absent for other sports. See [Sport-specific state](#sport-specific-state). |
+
+The response can include other fields that ScoreHub uses internally, and statistics fields that
+are only present while a ChampionData feed is running. Ignore any field not listed here; unlisted
+fields can change without notice.
+
+### Team
+
+`home` and `visitor` have the same shape.
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `name` | string | Team name. |
+| `score` | number | Current score. For sports scored in sets or games, the score in the current one. |
+| `faults` | number | Team fouls or faults. |
+| `timeouts` | number | Timeouts remaining. |
+| `color` | string | Team colour as a hex value, such as `#00C8FF`. |
+| `logoUrl` | string | Address of the team logo, or an empty string. |
+| `players` | array | Players, when a scoring console supplies them. Each has `number`, `name`, `onCourt`, `faults` and `points`. Usually empty. |
+
+### Display theme
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `primaryColor` | string | Accent colour, hex. |
+| `backgroundColor` | string | Display background colour, hex. |
+| `font` | string | Google Font name, or an empty string for the default. |
+| `textScale` | number | Text size multiplier, from 0.5 to 2. |
+| `competitionLogoUrl` | string | Address of the competition logo, or an empty string. |
+
+### Sport-specific state
+
+`sportState.sport` tells you which shape you have.
+
+**Softball** (`"softball"`)
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `format` | string | `fastpitch` or `slowpitch`. |
+| `inningHalf` | string | `top` or `bottom`. |
+| `outs`, `balls`, `strikes` | number | The current count. |
+
+**Indoor cricket** (`"indoor_cricket"`)
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `wicketPenalty` | number | Runs deducted per wicket: `2` or `5`. |
+| `homeWickets`, `visitorWickets` | number | Wickets lost by each team. |
+| `oversPerInnings` | number | Overs in each innings. |
+
+**Cricket** (`"cricket"`)
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `format` | string | `t20`, `odi` or `test`. |
+| `inningsNumber` | number | The current innings, starting at 1. |
+| `innings` | array | One entry per innings so far. See below. |
+| `homeSquad`, `visitorSquad` | array | Each player's `id` and `name`. |
+| `dayNumber` | number | Test matches only. |
+| `session` | string | Test matches only: `morning`, `afternoon` or `evening`. |
+
+Each entry in `innings`:
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `battingTeam` | string | `home` or `visitor`. |
+| `runs`, `wickets` | number | The innings total. |
+| `oversComplete`, `ballsThisOver` | number | Overs bowled, and legal balls in the current over. |
+| `extras` | object | `wides`, `noBalls`, `byes`, `legByes` and `penalties`. |
+| `batters` | array | Each has `playerId`, `name`, `runs`, `ballsFaced`, `fours`, `sixes`, `dismissed` and, once out, `wicketType`. |
+| `bowlers` | array | Each has `playerId`, `name`, `overs`, `ballsThisOver`, `maidens`, `runs` and `wickets`. |
+| `currentBatter1Index`, `currentBatter2Index` | number | Positions in `batters` of the two batters at the crease. |
+| `currentBowlerIndex` | number | Position in `bowlers` of the current bowler. |
+| `thisOverBalls` | array | The balls of the current over, as short text labels. |
+| `target` | number | The target, when chasing. |
+| `declared` | boolean | Present when the innings was declared. |
+| `freeHit` | boolean | Present when the next ball is a free hit. |
+
+`wicketType` is one of `bowled`, `caught`, `lbw`, `run_out`, `stumped`, `hit_wicket`,
+`obstructed_field` or `handled_ball`.
+
+### Data feed limits and errors
+
+Up to **600 requests a minute** from one IP address.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | The match state. |
+| `401` | The token is missing, wrong or has been revoked. |
+| `402` | The request would have started a second live match on the Free plan. See the note below. |
+| `403` | The account doesn't have an active Data Feed add-on. |
+| `429` | Too many requests. Slow down and try again within a minute. |
+
+Errors return JSON with an `error` message, for example `{"error":"unauthorized"}`.
+
+<Callout>
+  Requesting the feed for an **upcoming** fixture starts that fixture, the same as selecting
+  **Start** on the dashboard. Only point an integration at a match once you're ready for it to be
+  live. A match that has ended keeps returning its final state.
+</Callout>
+
+## Webhooks
+
+Every webhook is a `POST` with a control token in an `x-control-secret` header. Generate the token
+on the **Stream Deck / Webhooks** card of the **Settings** tab.
+
+```
+POST RELAY_URL/action/score/home?delta=2&matchId=MATCH_ID
+x-control-secret: YOUR_TOKEN
+```
+
+Add `matchId` to every call. No request body is needed.
+
+### Endpoints and responses
+
+| Endpoint | What it does | Response |
+| --- | --- | --- |
+| `/action/start` | Starts the clock. | `{"ok":true,"isRunning":true}` |
+| `/action/stop` | Stops the clock. | `{"ok":true,"isRunning":false}` |
+| `/action/toggle` | Starts the clock if stopped, stops it if running. | `{"ok":true,"isRunning":true}` |
+| `/action/score/home?delta=1` | Changes the home score by `delta`. | `{"ok":true,"score":14}` |
+| `/action/score/visitor?delta=1` | Changes the visitor score by `delta`. | `{"ok":true,"score":9}` |
+| `/action/period/next` | Moves to the next period. Changes the period number only. | `{"ok":true,"period":"3"}` |
+| `/action/period/prev` | Moves to the previous period, stopping at 1. | `{"ok":true,"period":"2"}` |
+| `/action/period/end` | Ends the period. See below. | `{"ok":true,"period":"3","clockSeconds":900}` |
+
+`delta` is a whole number from −99 to 99 and defaults to 1. A score never goes below zero. The
+response gives the value after the change.
+
+### Ending a period
+
+`/action/period/end` does what the control panel's **END** button does:
+
+- stops the clock
+- moves to the next period
+- resets the clock to the sport's period length
+- marks a break, so displays show it
+- for volleyball, tennis, pickleball, badminton, table tennis and squash, resets both scores to 0
+- for basketball, resets both teams' fouls to 0, and gives any period after the fourth a 5:00
+  clock for overtime
+
+In a match set up as best-of-3 or best-of-5, `/action/period/next` and `/action/period/end` do
+nothing once the last set or game has been reached. They return the current values.
+
+### Webhook limits and errors
+
+Up to **120 requests a minute** from one IP address.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Done. The body confirms the new value. |
+| `400` | The team wasn't `home` or `visitor`, or `delta` wasn't a whole number from −99 to 99. |
+| `401` | The token is missing, wrong or has been revoked. |
+| `402` | The call would have started a second live match on the Free plan. See [The Free plan's one-match limit](/billing/free-plan-limit). |
+| `409` | The match has ended, so nothing was changed. Reopen it first. |
+| `429` | Too many requests. Slow down and try again within a minute. |
+
+Errors return JSON with an `error` message, for example
+`{"error":"delta must be an integer between -99 and 99"}`.
+
+### Things to know
+
+- Webhook calls work alongside whoever is scoring on screen. They don't take
+  [control](/running-a-match/sharing-control) from the operator.
+- Score changes made by webhook can be undone from the control panel.
+- Calling a webhook for an upcoming fixture starts it, the same as selecting **Start** on the
+  dashboard. That's when a `402` can come back on the Free plan.
+- Both tokens are long-lived. Treat them like passwords, and revoke one from its card on the
+  **Settings** tab if it leaks.

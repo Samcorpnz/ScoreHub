@@ -1,0 +1,61 @@
+export const metadata = { title: "Is ScoreHub down?" };
+
+# Is ScoreHub down?
+
+Check [status.scorehub.co.nz](https://status.scorehub.co.nz/). It shows whether ScoreHub's
+services are running and lists any incident we're working on.
+
+If the status page shows everything working and you still have a problem, it's most likely the
+network at your venue or one device. The next section helps you tell which.
+
+## Is it ScoreHub, or my network?
+
+Every display and control panel has a status badge in the top right: **LIVE**, **CONNECTING** or
+**OFFLINE**.
+
+| What you see | Most likely cause |
+| --- | --- |
+| One device shows **OFFLINE** or **CONNECTING**, others show **LIVE** | That device's connection. Check its Wi-Fi and reload the page. |
+| Every device at the venue is affected, but a phone on mobile data shows **LIVE** | The venue's network. Move the scoring device to a phone hotspot. |
+| Every device is affected, including a phone on mobile data | ScoreHub. Check the status page. |
+| Badges show **LIVE** but the score isn't changing, with a **FEED STALE** badge | The scoring console or Bridge, not ScoreHub. See [Troubleshooting](/support/troubleshooting). |
+
+A quick test: open one of the match's display links on a phone with Wi-Fi turned off. If that
+shows **LIVE**, ScoreHub is working.
+
+## What's kept during an outage
+
+**The match itself is safe.** The score, clock, period, team names, fouls, timeouts and everything
+you set up are saved on ScoreHub's servers as you go, not in your browser. When a control panel or
+display reconnects, it picks up where the match was.
+
+A few things are only held while the service is running, and are reset if ScoreHub restarts:
+
+- **Undo history.** **UNDO** can't step back through actions from before the restart.
+- **Who has control.** If two people had the match open, the first panel to reconnect takes
+  control. The other shows **VIEWING ONLY** and can select **Take Control**. See
+  [Sharing control of a match](/running-a-match/sharing-control).
+- **The live Graphics Operator scene.** The graphics display goes blank until the operator
+  selects a scene again.
+
+Sound cues, your display links and your tokens aren't affected.
+
+## What to do during an outage
+
+1. **Check the status page** so you know whether it's us.
+2. **Leave your pages open.** Displays and control panels reconnect by themselves when the
+   connection returns. A page that has been offline for a while shows **RELAY UNREACHABLE**; reload
+   it once the status page shows ScoreHub is back.
+3. **Keep a note of the score.** Write down score changes while the control panel can't connect.
+   Don't rely on anything you select while the badge isn't **LIVE** having been saved.
+4. **Check the score and clock when you're back.** Correct them on the control panel if the match
+   moved on while you were disconnected.
+
+If you use Bridge, it shows **RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL** while it can't reach
+ScoreHub, and reconnects by itself. You don't need to restart it.
+
+## Telling us about a problem
+
+If the status page shows everything working but every device is affected, email
+[hello@scorehub.co.nz](mailto:hello@scorehub.co.nz) with the match's link and what the badges
+show. See [Contact support](/support).

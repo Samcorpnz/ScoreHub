@@ -37,20 +37,21 @@ the Account page.
    Only Admins and Managers see this card. The token is a long-lived credential — treat it like a
    password and don't share it outside your venue team. One token per laptop is enough; you don't
    need a new one for each match.
-3. **Copy the relay URL** from the **Connection** card on the same Settings tab, using its **Copy**
-   button.
-4. **Download and install Bridge** on the laptop connected to the console (or running the
+3. **Download and install Bridge** on the laptop connected to the console (or running the
    ChampionData feed):
    [Download for Mac](https://downloads.scorehub.co.nz/mac) ·
    [Download for Windows](https://downloads.scorehub.co.nz/windows).
-5. **Configure Bridge.** Under **Configuration**, paste the relay URL into **Relay URL** and the
-   token into **Bridge Secret**. Select **Refresh** next to **Match** and choose the match this
-   console is scoring. Then choose your **Data Source**, fill in its settings (for a console:
-   **Serial Port** and **Baud Rate**), and select **Save Config**.
-6. **Select Start.** Bridge begins forwarding match state as soon as the console sends data, and
+4. **Configure Bridge.** Under **Configuration**, paste the token into **Bridge Secret**. Select
+   **Refresh** next to **Match** and choose the match this console is scoring. Then choose your
+   **Data Source**, fill in its settings (for a console: **Serial Port** and **Baud Rate**), and
+   select **Save Config**.
+5. **Select Start.** Bridge begins forwarding match state as soon as the console sends data, and
    the **Live Log** shows what's arriving and what's being sent.
-7. **Check a display.** Open one of the match's display links from the **Outputs** tab and confirm
+6. **Check a display.** Open one of the match's display links from the **Outputs** tab and confirm
    the console's score appears before the match starts.
+
+Bridge already knows ScoreHub's address, so there's no relay URL to enter. The **Relay URL** field
+is tucked under **Advanced** and only needs changing if ScoreHub support asks you to.
 
 <Callout>
   **Choose the match in Bridge.** If **Match** is left on **Organisation default**, the console's

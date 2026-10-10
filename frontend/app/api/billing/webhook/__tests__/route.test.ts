@@ -403,7 +403,7 @@ describe("POST /api/billing/webhook", () => {
       constructEventMock.mockReturnValue(
         stripeEvent("customer.subscription.updated", {
           id: "sub_1",
-          status: "past_due",
+          status: "unpaid",
           metadata: {},
           items: { data: [{ price: { id: "price_venue" } }] },
         }),
@@ -428,6 +428,53 @@ describe("POST /api/billing/webhook", () => {
       expect(sendSubscriptionEndedEmailMock).toHaveBeenCalledWith({
         to: ["admin@example.com"],
         plan: "venue",
+      });
+    });
+
+    it("keeps the plan and add-ons while a failed payment is being retried (past_due)", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "past_due",
+          metadata: {},
+          items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
+        }),
+      );
+      planForPriceIdMock.mockReturnValue("venue");
+      accountFindFirstMock.mockResolvedValue({
+        id: "acc_1",
+        plan: "venue",
+        graphicsSubscriptionId: "sub_graphics",
+      });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month" },
+      });
+      expect(subscriptionsCancelMock).not.toHaveBeenCalled();
+      expect(sendSubscriptionEndedEmailMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps an add-on while its own failed payment is being retried (past_due)", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "past_due",
+          metadata: { accountId: "acc_1", addOn: "graphics-operator" },
+          items: { data: [] },
+        }),
+      );
+      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", addOns: ["graphics-operator"] });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: { graphicsSubscriptionId: "sub_1", addOns: ["graphics-operator"] },
       });
     });
 

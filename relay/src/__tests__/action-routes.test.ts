@@ -315,3 +315,38 @@ describe("socket — indoorCricket:wicket", () => {
     warn.mockRestore();
   });
 });
+
+describe("POST /action/period/end — basketball", () => {
+  it("resets both teams' fouls for the next quarter, like the control panel's END QTR", async () => {
+    await manual({
+      sport: "basketball", period: "1", clockSeconds: 12, isRunning: true,
+      home: { name: "Home", score: 20, faults: 4, timeouts: 5 },
+      visitor: { name: "Visitor", score: 18, faults: 3, timeouts: 5 },
+    });
+    const res = await post("/action/period/end");
+    expect(res.body).toMatchObject({ ok: true, period: "2", clockSeconds: 600 });
+    const state = await getState();
+    expect(state.home).toMatchObject({ score: 20, faults: 0 });
+    expect(state.visitor).toMatchObject({ score: 18, faults: 0 });
+    expect(state.isRunning).toBe(false);
+    expect(state.periodBreak).toBe(true);
+  });
+
+  it("gives overtime periods a 5:00 clock", async () => {
+    await manual({ sport: "basketball", period: "4", clockSeconds: 0, isRunning: false });
+    const res = await post("/action/period/end");
+    expect(res.body).toMatchObject({ ok: true, period: "5", clockSeconds: 300 });
+  });
+
+  it("leaves fouls alone for other sports", async () => {
+    await manual({
+      sport: "netball", period: "1", clockSeconds: 0, isRunning: false,
+      home: { name: "Home", score: 5, faults: 2, timeouts: 1 },
+      visitor: { name: "Visitor", score: 4, faults: 1, timeouts: 1 },
+    });
+    await post("/action/period/end");
+    const state = await getState();
+    expect(state.home.faults).toBe(2);
+    expect(state.visitor.faults).toBe(1);
+  });
+});

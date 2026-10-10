@@ -1,0 +1,78 @@
+export const metadata = { title: "Managing fixtures after upload" };
+
+# Managing fixtures after upload
+
+Once fixtures are [uploaded](/running-a-match/dashboard-and-fixtures), they sit in the dashboard's
+**Upcoming** tab until someone starts them. This page covers what you can change afterwards, and
+what to do about a fixture that's wrong.
+
+<Callout>
+  An uploaded fixture can't be edited, rescheduled or deleted yet. Check the list ScoreHub shows
+  before you select **Upload … Fixtures** — that's the easiest point to catch a mistake.
+</Callout>
+
+## What you can and can't change
+
+| | Before the fixture is started | After it's started |
+| --- | --- | --- |
+| Team names | No | Yes |
+| Match name | No | Yes |
+| Sport | No | Yes, on the **Settings** tab |
+| Competition | No | No |
+| Scheduled time | No | No |
+
+After a fixture is started, team names and the match name are changed on the control panel's Score
+tab, under **Clock & Match Controls**. See [Using the control panel](/running-a-match).
+
+## Fixing a wrong team name or match name
+
+Leave the fixture where it is. When it's time to play, select **Start**, then correct the names
+under **Clock & Match Controls** before the match begins. Displays update straight away.
+
+## Removing a fixture you don't want
+
+There's no delete button. To clear a fixture out of **Upcoming**, start it and end it:
+
+1. On the **Upcoming** tab, select **Start** on the fixture. Its control panel opens.
+2. Open the **Settings** tab and select **End Match**.
+
+The fixture moves to **History**. Nothing else is affected.
+
+On the Free plan this briefly uses your one live match, so you can't do it while another match is
+live — end that match first. See [The Free plan's one-match limit](/billing/free-plan-limit).
+
+## Changing a fixture's time or competition
+
+These can't be changed on an existing fixture. Replace it:
+
+1. Remove the wrong fixture by starting and ending it, as above.
+2. Upload a CSV containing only the corrected fixture.
+
+If only the time is wrong, you can also leave the fixture as it is and start it when the match is
+actually played. The scheduled time is only a label on the dashboard — it doesn't start or stop
+anything.
+
+## Re-uploading a corrected file
+
+ScoreHub doesn't check for duplicates. If you upload the same file twice, every fixture in it
+appears twice.
+
+When you need to fix an upload, put **only the new or corrected rows** in the file you upload
+next, not the whole round again. Then remove the wrong originals by starting and ending them.
+
+## Scheduling a single future match
+
+**Set Up a New Match** always starts a match straight away. To put one match in **Upcoming** for a
+later date, upload a CSV with a header row and one fixture:
+
+```
+sport,competition,home,visitor,scheduledAt
+netball,Premier Grade,Northern Stars,Southern Steel,2026-10-17T18:30
+```
+
+Fixture upload needs a **Pro** or **Venue** plan. On Free, set the match up when it's time to
+play.
+
+## Who can do this
+
+Admins, Managers and Operators can upload fixtures, start them and end them.

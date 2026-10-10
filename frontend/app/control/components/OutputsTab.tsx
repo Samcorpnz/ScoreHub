@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { RELAY_URL } from "../lib/relay";
 import { SectionLabel } from "./primitives";
 
 const DISPLAYS = [
@@ -96,6 +95,10 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
   // per-match displayToken (see DISPLAY_TOKEN_REQUIRED) — always included
   // once known so freshly copied/opened links keep working after enforcement
   // flips on.
+  //
+  // The link is only ever handed over through Copy URL / Pop Out, never
+  // printed: it's for a ScoreHub display, and the relay won't serve its feed
+  // to anything else (DISPLAY_ORIGIN_REQUIRED, SA-159).
   const withOrg = (path: string) => {
     const params = new URLSearchParams();
     if (orgId) params.set("org", orgId);
@@ -139,7 +142,6 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
                   ))}
                 </div>
                 <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>{d.desc}</p>
-                <p className="text-xs mt-2 font-mono" style={{ color: "var(--text-dim)" }}>{origin}{href}</p>
               </div>
               <div className="flex flex-col gap-2 flex-shrink-0">
                 <button
@@ -184,32 +186,20 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
         </div>
       </div>
 
-      {/* Graphics software section */}
+      {/* Graphics software section — the feed itself is part of the Data
+          Feed add-on (token-authenticated, see DataFeedTokensCard on the
+          Settings tab), so this only points there. Display links are for
+          ScoreHub's own displays, not a data source for other software. */}
       <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
-        <SectionLabel>Graphics Software — Data Feed</SectionLabel>
+        <SectionLabel>Graphics Software — Data Feed Add-on</SectionLabel>
         <p className="text-sm mt-2" style={{ color: "var(--text-secondary)" }}>
-          For software that drives its own graphics templates (Singular.live, Chyron, Ross Xpression, VIZRT), connect to the live data feed:
+          For software that drives its own graphics templates (Singular.live, Chyron, Ross Xpression, VIZRT), the Data
+          Feed add-on gives you a token-authenticated feed of this match&apos;s live state.
         </p>
-        <div className="mt-4 space-y-3">
-          <DataFeedRow label="REST snapshot" value={`${RELAY_URL}${withOrg("/state")}`} desc="GET — JSON snapshot of current state, poll at 1–5 Hz" />
-          <DataFeedRow label="WebSocket (Socket.io)" value={`${RELAY_URL}`} desc={`Connect with socket.io-client, listen to "matchStateChange" event`} />
-          <DataFeedRow
-            label="Event name"
-            value="matchStateChange"
-            desc="Fired on every state change — score, clock, period, possession, logos"
-          />
-        </div>
-        <div className="mt-4 rounded-lg p-3 text-xs font-mono overflow-x-auto"
-          style={{ background: "var(--bg-elevated)", color: "var(--text-secondary)", whiteSpace: "pre" }}>
-{`// Example: connect from any JS graphics template
-const socket = io("${RELAY_URL}", { auth: { orgId: "${orgId ?? "<your-org-id>"}"${matchId ? `, matchId: "${matchId}"` : ""}${displayToken ? `, token: "${displayToken}"` : ""} } });
-socket.on("matchStateChange", (state) => {
-  // state.home.name, state.home.score, state.home.color, state.home.logoUrl
-  // state.visitor.name, state.visitor.score
-  // state.clockSeconds, state.period, state.isRunning
-  updateGraphics(state);
-});`}
-        </div>
+        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
+          An Admin or Manager generates a token on the <strong>Settings</strong> tab under <strong>Data Feed</strong>.
+          An Admin can add the add-on under <a href="/account" style={{ color: "var(--accent)" }}>Account → Add-ons</a>.
+        </p>
       </div>
     </div>
   );
@@ -228,26 +218,5 @@ function GraphicsLinkCard({ href, label, desc }: { readonly href: string; readon
       </div>
       <span className="text-xs font-bold" style={{ color: "var(--accent)" }}>Open ↗</span>
     </a>
-  );
-}
-
-function DataFeedRow({ label, value, desc }: { readonly label: string; readonly value: string; readonly desc: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <span className="text-xs font-bold tracking-wide pt-0.5 flex-shrink-0" style={{ color: "var(--text-dim)", minWidth: 180 }}>{label}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <code className="text-xs font-mono flex-1 min-w-0 truncate" style={{ color: "var(--accent)" }}>{value}</code>
-          <button
-            className="text-xs rounded px-2 py-0.5 flex-shrink-0"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-dim)" }}
-            onClick={() => navigator.clipboard.writeText(value)}
-          >
-            Copy
-          </button>
-        </div>
-        <p className="text-xs mt-0.5" style={{ color: "var(--text-dim)" }}>{desc}</p>
-      </div>
-    </div>
   );
 }

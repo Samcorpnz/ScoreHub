@@ -68,3 +68,9 @@ export function isPlanUpgrade(fromPlan: string, toPlan: PaidPlan): boolean {
   const fromRank = PLAN_RANK[fromPlan as "free" | PaidPlan] ?? -1;
   return PLAN_RANK[toPlan] > fromRank;
 }
+
+// Days a failed renewal is retried before the account drops to Free. Quoted
+// in the payment-failed email and the help centre. It is enforced by Stripe's
+// retry schedule, not by this constant — see keepsPaidAccess in
+// app/api/billing/webhook/route.ts.
+export const PAYMENT_GRACE_DAYS = 14;

@@ -16,13 +16,21 @@ Every `/display` and `/control` page shows a small status badge (top right): **L
   — check the Bridge app on the venue laptop, not your internet connection.
 - A **RELAY UNREACHABLE** badge appears when the page has been offline for a while and can't get
   back to ScoreHub on its own. Check the internet connection on that device, then reload. If
-  every device is affected, [contact support](/support).
+  every device is affected, check [status.scorehub.co.nz](https://status.scorehub.co.nz/) — see
+  [Is ScoreHub down?](/support/service-status).
 
 ## The control panel says VIEWING ONLY
 
 Only one control panel can score a match at a time. If another operator or another browser tab
 already has the match open, yours shows **VIEWING ONLY** and a **Take Control** button. See
 [Sharing control of a match](/running-a-match/sharing-control).
+
+## The control panel says "This match has ended"
+
+The match was ended, so its score is locked and nothing can change it — not the control panel,
+Stream Deck, webhooks or Bridge. If it needs a correction, select **Reopen Match** on that banner,
+or **Reopen** on the match in the dashboard's **History** tab, then end it again when you're done.
+See [Using the control panel](/running-a-match).
 
 ## The score isn't updating from the console
 
@@ -38,7 +46,8 @@ already has the match open, yours shows **VIEWING ONLY** and a **Take Control** 
 5. If the Live Log says connecting a console **requires the Data Feed add-on**, an Admin needs to
    add it from the Account page. See [Data Feed add-on](/billing/data-feed-addon).
 6. If Bridge shows **RELAY UNREACHABLE — SWITCH TO MANUAL CONTROL**, the venue laptop has lost its
-   connection to ScoreHub. Check its internet connection and the **Relay URL** field.
+   connection to ScoreHub. Check its internet connection. If **Relay URL** under **Advanced** has
+   been changed, set it back to `https://relay.scorehub.co.nz`.
 7. As a fallback while you debug the console connection, you can always score the match by hand
    from the control panel — Bridge and manual scoring aren't mutually exclusive, either can drive
    the same match.
@@ -64,6 +73,18 @@ live, or upgrade — see [The Free plan's one-match limit](/billing/free-plan-li
 
 Use **Forgot password?** on the sign-in page to get a reset link — see
 [Signing in, passwords and passkeys](/account/signing-in).
+
+If you're sure the password is right and you still see "Invalid email or password.", you may have
+tried too many times — wait a minute and try once more.
+
+## I can't sign up
+
+- **No confirmation email** — check spam, then sign up again to get a fresh link. Links last 24
+  hours.
+- **The button stays greyed out** or you see "captcha verification failed" — the bot check hasn't
+  passed. Turn off ad blockers for the page, or try another browser.
+
+See [Problems signing up or signing in](/account/signing-in#problems-signing-up-or-signing-in).
 
 ## An invite link says it's invalid or expired
 

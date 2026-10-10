@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { OutputsTab } from "../OutputsTab";
 
 const { useSessionMock } = vi.hoisted(() => ({ useSessionMock: vi.fn() }));
@@ -31,17 +31,16 @@ describe("OutputsTab", () => {
     expect(screen.getByText("Advanced")).toBeInTheDocument();
     expect(screen.getByText("Lower-Third Overlay")).toBeInTheDocument();
     expect(screen.getByText("Scorebug")).toBeInTheDocument();
-    expect(
-      screen.getByText((_content, el) => el?.textContent === "http://localhost:3000/display/fullscreen?org=org1&matchId=match1")
-    ).toBeInTheDocument();
+    expect(screen.getAllByText("Copy URL")).toHaveLength(5);
   });
 
-  it("renders URLs without query params when there is no org or match", () => {
+  it("copies URLs without query params when there is no org or match", () => {
     useSessionMock.mockReturnValue({ data: null });
+    const writeText = vi.fn();
+    Object.assign(navigator, { clipboard: { writeText } });
     render(<OutputsTab />);
-    expect(
-      screen.getByText((_content, el) => el?.textContent === "http://localhost:3000/display/fullscreen")
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Copy URL")[0]);
+    expect(writeText).toHaveBeenCalledWith("http://localhost:3000/display/fullscreen");
   });
 
   it("opens a pop-out window when Pop Out is clicked", () => {
@@ -84,25 +83,27 @@ describe("OutputsTab", () => {
     vi.stubGlobal("fetch", vi.fn(() =>
       Promise.resolve({ json: () => Promise.resolve({ matches: [{ id: "match1", displayToken: "the-token" }] }) })
     ));
-    render(<OutputsTab matchId="match1" />);
-    expect(
-      await screen.findByText(
-        (_content, el) => el?.textContent === "http://localhost:3000/display/fullscreen?org=org1&matchId=match1&token=the-token"
-      )
-    ).toBeInTheDocument();
-  });
-
-  it("renders the data feed rows with copy buttons", () => {
-    useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1" } } });
     const writeText = vi.fn();
     Object.assign(navigator, { clipboard: { writeText } });
     render(<OutputsTab matchId="match1" />);
-    expect(screen.getByText("REST snapshot")).toBeInTheDocument();
-    expect(screen.getByText("WebSocket (Socket.io)")).toBeInTheDocument();
-    expect(screen.getByText("matchStateChange")).toBeInTheDocument();
-    const copyButtons = screen.getAllByText("Copy");
-    fireEvent.click(copyButtons[0]);
-    expect(writeText).toHaveBeenCalled();
+    await waitFor(() => {
+      fireEvent.click(screen.getAllByText("Copy URL")[0]);
+      expect(writeText).toHaveBeenLastCalledWith("http://localhost:3000/display/fullscreen?org=org1&matchId=match1&token=the-token");
+    });
+  });
+
+  it("doesn't print the display links on the page", async () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1" } } });
+    render(<OutputsTab matchId="match1" />);
+    expect(screen.queryByText(/\/display\/fullscreen\?/)).not.toBeInTheDocument();
+  });
+
+  it("points third-party graphics software at the Data Feed add-on rather than the display feed", () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1" } } });
+    render(<OutputsTab matchId="match1" />);
+    expect(screen.getByText("Graphics Software — Data Feed Add-on")).toBeInTheDocument();
+    expect(screen.queryByText("REST snapshot")).not.toBeInTheDocument();
+    expect(screen.queryByText("matchStateChange")).not.toBeInTheDocument();
   });
 
   describe("Regenerate display link (SA-117)", () => {

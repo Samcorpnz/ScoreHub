@@ -1,5 +1,6 @@
 import Mailgun from "mailgun.js";
 import FormData from "form-data";
+import { PAYMENT_GRACE_DAYS } from "./plans";
 import type { PaidPlan } from "./plans";
 
 // Lazily constructed, mirroring lib/stripe.ts's getStripe() — importing this
@@ -161,8 +162,8 @@ export async function sendPaymentFailedEmail({ to }: { to: string[] }): Promise<
     from,
     to,
     subject: "Your ScoreHub payment failed",
-    text: `We couldn't charge your card for your ScoreHub subscription. Stripe will retry automatically, but you may want to update your payment method to avoid losing access.\n\n${link}\n\nIf you've already resolved this, you can ignore this email.`,
-    html: `<p>We couldn't charge your card for your ScoreHub subscription. Stripe will retry automatically, but you may want to update your payment method to avoid losing access.</p><p><a href="${link}">Update payment method</a></p><p>If you've already resolved this, you can ignore this email.</p>`,
+    text: `We couldn't charge your card for your ScoreHub subscription. Your plan stays active while we retry the payment over the next ${PAYMENT_GRACE_DAYS} days. Update your payment method before then, or your account will move to the Free plan.\n\n${link}\n\nIf you've already resolved this, you can ignore this email.`,
+    html: `<p>We couldn't charge your card for your ScoreHub subscription. Your plan stays active while we retry the payment over the next ${PAYMENT_GRACE_DAYS} days. Update your payment method before then, or your account will move to the Free plan.</p><p><a href="${link}">Update payment method</a></p><p>If you've already resolved this, you can ignore this email.</p>`,
   });
 }
 

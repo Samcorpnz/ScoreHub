@@ -291,6 +291,63 @@ describe("respondToStateError — unexpected persistence failures (500)", () => 
   });
 });
 
+// ─── Ended matches are read-only until reopened ──────────────────────────
+
+describe("ended matches", () => {
+  const liveRow = (id: string, orgId: string) => ({ id, orgId, status: "LIVE", state: { sequenceId: 1, home: { score: 3 }, visitor: { score: 2 } } });
+
+  it.each([
+    ["/action/start"],
+    ["/action/score/home"],
+    ["/action/period/end"],
+  ])("POST %s is refused with 409 once the match has ended", async (route) => {
+    matchFindUniqueMock.mockResolvedValue({ ...liveRow("m-ended", "org-ended"), status: "ENDED" });
+    const token = await controlToken("org-ended", { matchId: "m-ended" });
+    const res = await request(app).post(route).set("x-control-secret", token);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/has ended/);
+  });
+
+  it("POST /manual is refused with 409 once the match has ended", async () => {
+    matchFindUniqueMock.mockResolvedValue({ ...liveRow("m-ended-manual", "org-ended"), status: "ENDED" });
+    const token = await controlToken("org-ended", { matchId: "m-ended-manual" });
+    const res = await request(app).post("/manual").set("x-control-secret", token).send({ matchName: "x" });
+    expect(res.status).toBe(409);
+  });
+
+  it("accepts changes again as soon as the match is reopened", async () => {
+    const token = await controlToken("org-reopen", { matchId: "m-reopen" });
+    matchFindUniqueMock.mockResolvedValue({ ...liveRow("m-reopen", "org-reopen"), status: "ENDED" });
+    expect((await request(app).post("/action/start").set("x-control-secret", token)).status).toBe(409);
+
+    matchFindUniqueMock.mockResolvedValue(liveRow("m-reopen", "org-reopen"));
+    const res = await request(app).post("/action/start").set("x-control-secret", token);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, isRunning: true });
+    await request(app).post("/action/stop").set("x-control-secret", token);
+  });
+
+  it("tells a control panel the match has ended and ignores its scoring", async () => {
+    matchFindUniqueMock.mockResolvedValue({ ...liveRow("m-ended-socket", "org-ended-socket"), status: "ENDED" });
+    const token = await controlToken("org-ended-socket", { matchId: "m-ended-socket" });
+    const socket = ioClient(serverUrl, { auth: { secret: token, role: "control" }, reconnection: false });
+    const states: { home: { score: number } }[] = [];
+    socket.on("matchStateChange", state => states.push(state));
+    await new Promise<void>(resolve => socket.on("matchEnded", () => resolve()));
+
+    const refused = new Promise<void>(resolve => socket.once("matchEnded", () => resolve()));
+    socket.emit("adjustScore", { side: "home", delta: 1 });
+    await refused;
+    await new Promise<void>(resolve => socket.emit("manualUpdate", { matchName: "changed" }, () => resolve()));
+
+    expect(states.every(state => state.home.score === 3)).toBe(true);
+    const res = await request(app).get("/state").query({ matchId: "m-ended-socket" });
+    expect(res.body.home.score).toBe(3);
+    expect(res.body.matchName).not.toBe("changed");
+    socket.disconnect();
+  });
+});
+
 describe("GET /health", () => {
   it("returns ok with no auth required", async () => {
     const res = await request(app).get("/health");

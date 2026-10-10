@@ -34,7 +34,7 @@ function ControlPanelInner() {
   const matchId = useSearchParams().get("matchId") ?? undefined;
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
+    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
     sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
     sendScoreAdjust, sendIndoorCricketWicket, estimateServerNow,
   } = useMatchState({ secret: controlToken, role: "control" });
@@ -48,6 +48,30 @@ function ControlPanelInner() {
     },
   });
   const [tab, setTab] = useState<Tab>("score");
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState("");
+  const orgId = session?.user?.activeOrgId;
+
+  // The relay refuses changes to an ended match; reopening makes it live
+  // again, and a reload picks up a fresh connection that can score it.
+  async function reopenMatch() {
+    if (!orgId || !matchId) return;
+    setReopening(true);
+    setReopenError("");
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/reopen`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setReopenError(body?.error ?? "Couldn't reopen the match — try again.");
+        setReopening(false);
+        return;
+      }
+      globalThis.location.reload();
+    } catch {
+      setReopenError("Couldn't reach the server — try again.");
+      setReopening(false);
+    }
+  }
   // Logos and theming are Pro features (SA-32) — the relay drops them from a
   // Free-tier org's updates, so show the upgrade prompt rather than controls
   // that would silently do nothing.
@@ -150,6 +174,25 @@ function ControlPanelInner() {
           </button>
         </div>
       </div>
+
+      {/* Ended-match banner */}
+      {matchEnded && (
+        <div data-testid="match-ended-banner" className="flex items-center justify-between gap-4 px-6 py-3" style={{ background: "rgba(255,60,60,0.12)", borderBottom: "1px solid rgba(255,60,60,0.3)" }}>
+          <span className="text-sm font-bold" style={{ color: "#ff3c3c" }}>
+            This match has ended, so it can&apos;t be changed. Reopen it to make a correction.
+            {reopenError && <span className="block text-xs font-semibold mt-1">{reopenError}</span>}
+          </span>
+          <button
+            data-testid="reopen-match"
+            onClick={reopenMatch}
+            disabled={reopening}
+            className="rounded-lg px-4 py-1.5 text-xs font-bold whitespace-nowrap"
+            style={{ background: "#ff3c3c", color: "#fff" }}
+          >
+            {reopening ? "Reopening…" : "Reopen Match"}
+          </button>
+        </div>
+      )}
 
       {/* Controller conflict banner */}
       {controllerStatus === "conflict" && (
