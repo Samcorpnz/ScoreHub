@@ -28,9 +28,9 @@ test.describe("billing", () => {
   let orgId: string;
 
   test("upgrade to Pro (monthly) via embedded checkout", async ({ page }) => {
-    // Billing tests don't need a live match, but there's no lighter-weight
-    // way to learn this worker's orgId than the Outputs tab's display links
-    // (see helpers/match.ts's getOrgId) — create and immediately end one.
+    // Billing tests don't need a live match — this one dates from when the
+    // Outputs tab's display links were the only way to learn the worker's
+    // orgId (getOrgId now reads the session instead).
     await createMatch(page, { sport: "netball", matchName: "E2E Billing Setup", homeName: "Home", visitorName: "Visitor" });
     await waitForLive(page);
     orgId = await getOrgId(page);
