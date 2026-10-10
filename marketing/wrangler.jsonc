@@ -14,7 +14,9 @@
     "CONTACT_TO_EMAIL": "hello@scorehub.co.nz"
   },
   "routes": [
-    { "pattern": "scorehub.co.nz", "custom_domain": true }
+    { "pattern": "scorehub.co.nz", "custom_domain": true },
+    // Same site on www — every page's canonical URL points at the apex.
+    { "pattern": "www.scorehub.co.nz", "custom_domain": true }
   ],
   "observability": {
     "enabled": true

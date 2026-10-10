@@ -216,6 +216,19 @@ export function createServer(options: ServerOptions = {}) {
   // the same IP, defeating the per-IP brute-force limits on controlAuth
   // routes. `1` trusts exactly one hop (the platform's own proxy).
   app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  // The relay serves JSON and uploaded files, never a page, so nothing has a
+  // reason to frame it. The CSP is deliberately only frame-ancestors: logos
+  // and sounds are loaded cross-origin by the frontend, and a default-src
+  // here would also apply when one is opened directly in a tab.
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Strict-Transport-Security", "max-age=63072000");
+    next();
+  });
   app.use(cors({ origin: ALLOWED_ORIGINS }));
   app.use(express.json());
   // nosniff on all served uploads; SVGs (which can carry markup) get a

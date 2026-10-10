@@ -10,7 +10,28 @@ if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_RELAY_URL)
   );
 }
 
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  // Display links carry their token in the URL — never send the path off-site.
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+];
+
+// Clickjacking protection for everything a signed-in user can act on.
+// /display/* is left frameable on purpose: venues embed scoreboards in their
+// own sites and signage players.
+const frameHeaders = [
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+];
+
 const nextConfig = {
+  async headers() {
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      { source: "/((?!display/).*)", headers: frameHeaders },
+    ];
+  },
   // Allow loading logos from the relay server
   images: {
     remotePatterns: [
