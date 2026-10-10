@@ -35,8 +35,8 @@ function origins(httpUrl) {
   }
 }
 
-/** @param {{ relayUrl?: string, sentryDsn?: string, sentryEnvironment?: string, isDev?: boolean }} [options] */
-function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false } = {}) {
+/** @param {{ relayUrl?: string, sentryDsn?: string, sentryEnvironment?: string, isDev?: boolean, report?: boolean }} [options] */
+function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false, report = true } = {}) {
   const relay = origins(relayUrl);
   const sentryIngest = sentryDsn ? origins(sentryDsn).slice(0, 1) : [];
   const stripeScript = ["https://js.stripe.com", "https://*.js.stripe.com", "https://checkout.stripe.com"];
@@ -70,7 +70,9 @@ function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false } = {}
     "form-action": ["'self'"],
   };
 
-  const reportUri = sentryReportUri(sentryDsn, sentryEnvironment);
+  // A violation report carries the page's full URL, query string included, so
+  // callers turn reporting off for pages whose URL holds a token.
+  const reportUri = report ? sentryReportUri(sentryDsn, sentryEnvironment) : null;
   if (reportUri) directives["report-uri"] = [reportUri];
 
   return Object.entries(directives)

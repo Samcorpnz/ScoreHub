@@ -33,6 +33,12 @@ describe("buildCsp", () => {
     ]);
   });
 
+  it("drops the report endpoint but keeps Sentry ingest when reporting is off", () => {
+    const silent = buildCsp({ sentryDsn: DSN, report: false });
+    expect(silent).not.toContain("report-uri");
+    expect(directive(silent, "connect-src")).toContain("https://o42.ingest.us.sentry.io");
+  });
+
   it("keeps eval and the HMR socket out of production", () => {
     expect(directive(csp, "script-src")).not.toContain("'unsafe-eval'");
     expect(directive(csp, "connect-src")).not.toContain("ws:");
