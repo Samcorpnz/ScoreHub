@@ -1,4 +1,6 @@
 import request from "supertest";
+import { io as ioClient, Socket } from "socket.io-client";
+import type { AddressInfo } from "net";
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
@@ -167,6 +169,27 @@ describe("GET /api/data-feed/state", () => {
     expect(res.body.sport).toBe("netball");
   });
 
+  // SA-162: looking at an upcoming fixture must not start it.
+  it("returns an upcoming fixture's state without making it live", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("fixture-1", { orgId: "org-1", status: "SCHEDULED", state: { sport: "hockey" } });
+    const update = (db as unknown as { prisma: { match: { update: jest.Mock } } }).prisma.match.update;
+    update.mockClear();
+    const res = await request(app).get("/api/data-feed/state").query({ matchId: "fixture-1" }).set("x-data-feed-secret", "tok-1");
+    expect(res.status).toBe(200);
+    expect(res.body.sport).toBe("hockey");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("404s for a match in another org", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("other-1", { orgId: "org-2" });
+    const res = await request(app).get("/api/data-feed/state").query({ matchId: "other-1" }).set("x-data-feed-secret", "tok-1");
+    expect(res.status).toBe(404);
+  });
+
   it("401s for a token of the wrong type (e.g. BRIDGE)", async () => {
     seedOrg("org-1", "acc-1", ["data-feed"]);
     seedToken("tok-1", { type: "BRIDGE", orgId: "org-1" });
@@ -217,5 +240,47 @@ describe("GET /state — DISPLAY_TOKEN_REQUIRED rollout", () => {
     seedMatch("match-1", { orgId: "org-1", displayToken: null });
     const res = await request(enforcedApp).get("/state").query({ org: "org-1", matchId: "match-1" });
     expect(res.status).toBe(200);
+  });
+});
+
+// SA-163: a data feed token that isn't pinned to one match names the match in
+// the handshake. It has proved itself with its secret, so it isn't asked for
+// the match's display token as well.
+describe("data-feed socket with a token not pinned to a match", () => {
+  let socket: Socket | undefined;
+  afterEach(() => { socket?.disconnect(); socket = undefined; });
+
+  function connect(auth: Record<string, string>): Socket {
+    const { port } = enforcedHttpServer.address() as AddressInfo;
+    socket = ioClient(`http://localhost:${port}`, { auth, transports: ["websocket"], reconnection: false });
+    return socket;
+  }
+
+  it("joins the match it asks for and is sent its state", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("match-9", { orgId: "org-1", displayToken: "display-tok", state: { sport: "hockey" } });
+    const s = connect({ role: "data-feed", secret: "tok-1", matchId: "match-9" });
+    const state = await new Promise<{ sport: string }>((resolve, reject) => {
+      s.on("matchStateChange", resolve);
+      s.on("connect_error", reject);
+    });
+    expect(state.sport).toBe("hockey");
+  });
+
+  it("is refused a match that belongs to another org", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("other-1", { orgId: "org-2", displayToken: "display-tok" });
+    const s = connect({ role: "data-feed", secret: "tok-1", matchId: "other-1" });
+    const err = await new Promise<Error>(resolve => s.on("connect_error", resolve));
+    expect(err.message).toBe("match not found");
+  });
+
+  it("still asks an unauthenticated viewer for the display token", async () => {
+    seedMatch("match-9", { orgId: "org-1", displayToken: "display-tok" });
+    const s = connect({ matchId: "match-9" });
+    const err = await new Promise<Error>(resolve => s.on("connect_error", resolve));
+    expect(err.message).toBe("invalid or missing display token");
   });
 });

@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore, Suspense, SubmitEvent } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postLoginDestination } from "@/lib/authRedirect";
+import { RATE_LIMITED_CODE, TOO_MANY_ATTEMPTS } from "@/lib/signInErrors";
 import { CantSignIn } from "./CantSignIn";
 
 export default function LoginPage() {
@@ -88,7 +89,7 @@ function LoginForm() {
     setLoading(false);
 
     if (result?.error) {
-      setError("Invalid email or password.");
+      setError(result.code === RATE_LIMITED_CODE ? TOO_MANY_ATTEMPTS : "Invalid email or password.");
       setSignInFailed(true);
     } else {
       continueAfterSignIn();
@@ -113,7 +114,7 @@ function LoginForm() {
       });
 
       if (result?.error) {
-        setPasskeyError("Passkey sign-in failed.");
+        setPasskeyError(result.code === RATE_LIMITED_CODE ? TOO_MANY_ATTEMPTS : "Passkey sign-in failed.");
         setSignInFailed(true);
       } else {
         continueAfterSignIn();

@@ -154,6 +154,19 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
   return store;
 }
 
+// Reads an upcoming fixture's saved state without starting it (SA-162).
+// getMatchStore().load() moves a SCHEDULED match to LIVE, which is right when
+// someone opens its control panel but not when a read-only caller such as the
+// data feed looks at it. Returns null for any other status, and in legacy
+// mode, so the caller falls back to the normal load.
+export async function peekScheduledState(orgId: string, matchId: string): Promise<MatchState | null> {
+  if (!process.env.DATABASE_URL) return null;
+  const row = await prisma.match.findUnique({ where: { id: matchId } });
+  if (row?.orgId !== orgId) throw new MatchNotFoundError();
+  if (row.status !== "SCHEDULED") return null;
+  return (row.state as unknown as MatchState) ?? { ...DEFAULT_MATCH_STATE };
+}
+
 // Called when the last socket leaves a match's room (server.ts) so the cache
 // doesn't grow forever as orgs accumulate matches over time — unlike the
 // legacy org-singleton entry (cacheKey ending in ":default"), of which there
