@@ -2,6 +2,13 @@ name: Tests
 
 on:
   pull_request:
+    # A change that only touches the Better Stack Terraform can't affect the
+    # app, so it skips this suite — infra-betterstack.yml runs fmt, validate
+    # and plan for it instead. A PR that also touches anything else still runs
+    # everything. Keep this list in step with deploy.yml's.
+    paths-ignore:
+      - "infra/betterstack/**"
+      - ".github/workflows/infra-betterstack.yml"
   workflow_call: {}
 
 permissions:
