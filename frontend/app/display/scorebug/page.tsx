@@ -17,7 +17,7 @@ import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
-import { getPeriodLabel } from "../../sport-templates";
+import { getPeriodText } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
 import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
@@ -42,21 +42,15 @@ function resolveScorebugLogo(logoUrl: string | undefined): string | null {
   return logoUrl.startsWith("/logos/") ? `${RELAY_URL}${logoUrl}` : logoUrl;
 }
 
-function scorebugPeriodText(periodBreak: boolean | undefined, periodLabel: string, period: string): string {
-  if (periodBreak) return periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
-  return period === "E" ? "EXTRA" : `${periodLabel} ${period}`;
-}
-
 function Scorebug() {
   const params   = useSearchParams();
   const position = (params.get("position") as string) || "tr";
   const size     = (params.get("size")     as string) || "md";
 
   const { state, unauthorized } = useMatchState();
-  const { home, visitor, clockSeconds, countDown, period, isRunning, hornActive, possession } = state;
+  const { home, visitor, clockSeconds, countDown, isRunning, hornActive, possession } = state;
   const displayClock = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs });
   const { backgroundColor: _bg, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme);
-  const periodLabel = getPeriodLabel(state);
 
   if (unauthorized) return <DisplayLinkExpiredNotice />;
 
@@ -71,7 +65,7 @@ function Scorebug() {
   const homeLogo    = resolveScorebugLogo(home.logoUrl);
   const visitorLogo = resolveScorebugLogo(visitor.logoUrl);
   const clockColor  = hornActive ? "#EF4444" : isRunning ? "#fff" : "#94A3B8";
-  const periodText  = scorebugPeriodText(state.periodBreak, periodLabel, period);
+  const periodText  = getPeriodText(state);
 
   return (
     <div style={{

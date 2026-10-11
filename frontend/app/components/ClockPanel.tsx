@@ -9,6 +9,12 @@ interface Props {
   period: string;
   periodBreak?: boolean;
   periodLabel?: string;
+  // Shown instead of the period during a break; defaults to "<label> BREAK"
+  breakLabel?: string;
+  // A short flag under the period, e.g. Fast5's "POWER PLAY"
+  notice?: string;
+  // A penalty shoot-out: takes the period's place, with each side's attempts
+  shootout?: { label: string; home: boolean[]; visitor: boolean[]; homeGoals: number; visitorGoals: number };
   isRunning: boolean;
   hornActive: boolean;
   matchName?: string;
@@ -17,13 +23,16 @@ interface Props {
   clockCarryMs?: number;
 }
 
+// Spelled out under the period number once a match is past regulation
+const EXTRA_TIME_SUBTEXT: Record<string, string> = { ET: "EXTRA TIME", OT: "OVERTIME", GP: "GOLDEN POINT" };
+
 function clockTextShadow(isRunning: boolean, hornActive: boolean): string {
   if (hornActive) return "0 0 30px rgba(239,68,68,0.5)";
   if (isRunning) return "0 0 30px rgba(255,255,255,0.15)";
   return "none";
 }
 
-export function ClockPanel({ clockSeconds, countDown, period, periodBreak, periodLabel = "QTR", isRunning, hornActive, matchName, size = "full", clockAnchorMs, clockCarryMs }: Props) {
+export function ClockPanel({ clockSeconds, countDown, period, periodBreak, periodLabel = "QTR", breakLabel, notice, shootout, isRunning, hornActive, matchName, size = "full", clockAnchorMs, clockCarryMs }: Props) {
   const isCompact = size === "compact";
   const display = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs, clockCarryMs });
   let clockColor: string;
@@ -33,9 +42,9 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
 
   let periodHeadline: string;
   if (!periodBreak) periodHeadline = period;
-  else periodHeadline = periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
+  else periodHeadline = breakLabel ?? (periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`);
 
-  const periodSubtext = period === "E" ? "EXTRA TIME" : periodLabel;
+  const periodSubtext = period === "E" ? "EXTRA TIME" : EXTRA_TIME_SUBTEXT[periodLabel] ?? periodLabel;
   const periodColor = periodBreak ? "rgb(251,146,60)" : "var(--accent)";
 
   return (
@@ -63,8 +72,21 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
         {formatClockDisplay(display)}
       </div>
 
+      {shootout && (
+        <div data-testid="display-shootout" className="flex flex-col items-center gap-1">
+          <p className="uppercase font-black tracking-widest" style={{ fontSize: isCompact ? "0.8rem" : "calc(1.1rem * var(--text-scale, 1))", color: "var(--accent)" }}>
+            {shootout.label}
+          </p>
+          <p className="score-digit" style={{ fontSize: isCompact ? "1.2rem" : "calc(2rem * var(--text-scale, 1))", color: "var(--text-primary)" }}>
+            {shootout.homeGoals} – {shootout.visitorGoals}
+          </p>
+          <ShootoutAttempts attempts={shootout.home} color="var(--home-color)" />
+          <ShootoutAttempts attempts={shootout.visitor} color="var(--visitor-color)" />
+        </div>
+      )}
+
       {/* Period */}
-      <div className="flex flex-col items-center gap-1">
+      {!shootout && <div className="flex flex-col items-center gap-1">
         <p
           data-testid="display-period"
           className="uppercase font-black tracking-widest"
@@ -80,10 +102,38 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
             {periodSubtext}
           </p>
         )}
-      </div>
+        {notice && !periodBreak && (
+          <p
+            data-testid="display-notice"
+            className="uppercase font-black tracking-widest rounded-full px-3 py-1"
+            style={{
+              fontSize: isCompact ? "0.6rem" : "calc(0.8rem * var(--text-scale, 1))",
+              color: "rgb(250,204,21)", background: "rgba(250,204,21,0.12)", border: "1px solid rgba(250,204,21,0.35)",
+            }}
+          >
+            {notice}
+          </p>
+        )}
+      </div>}
 
       {/* Running indicator */}
       {!isCompact && <RunningIndicator isRunning={isRunning} />}
+    </div>
+  );
+}
+
+// One mark per attempt in the order taken: filled = scored, hollow = missed
+export function ShootoutAttempts({ attempts, color }: { readonly attempts: readonly boolean[]; readonly color: string }) {
+  return (
+    <div className="flex items-center gap-1" style={{ minHeight: 12 }}>
+      {attempts.map((scored, i) => (
+        <span
+          // attempts are positional and only ever appended or popped
+          key={i}
+          title={scored ? "Scored" : "Missed"}
+          style={{ width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: scored ? color : "transparent" }}
+        />
+      ))}
     </div>
   );
 }

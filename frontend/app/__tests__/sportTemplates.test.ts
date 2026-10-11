@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { SPORT_TEMPLATES, getTemplate, getMatchLength, getStructureLabel } from "../sport-templates";
-import type { SportType } from "../types";
+import {
+  SPORT_TEMPLATES, getTemplate, getMatchLength, getStructureLabel, getMatchTemplate, getExtraTimePeriod,
+  getExtraTimeSeconds, getPeriodClockSeconds, getActivePowerPlay, getScoreIncrements, getPeriodLabel,
+  getPeriodNumber, getBreakLabel, getShootout, getPeriodText,
+} from "../sport-templates";
+import { DEFAULT_MATCH_STATE } from "../types";
+import type { MatchState, SportType } from "../types";
+
+function makeState(overrides: Partial<MatchState> = {}): MatchState {
+  return { ...DEFAULT_MATCH_STATE, ...overrides } as MatchState;
+}
 
 // Every value in the SportType union.
 const DROP_IN_SPORT_TYPES: SportType[] = [
@@ -232,5 +241,176 @@ describe("best-of match length (SA-118)", () => {
     expect(getStructureLabel({ sport: "squash", sportConfig: { format: "bo3" } })).toBe("Best of 3 games to 11");
     expect(getStructureLabel({ sport: "tennis", sportConfig: { format: "bo5" } })).toBe("Best of 5 sets");
     expect(getStructureLabel({ sport: "tennis" })).toBe("Best of 3 or 5 sets");
+  });
+});
+
+describe("Fast5 netball format", () => {
+  const fast5 = { sport: "netball", sportConfig: { format: "fast5" } } as const;
+
+  it("is offered as a netball format, defaulting to the standard game", () => {
+    const field = getTemplate("netball").matchConfig?.find(f => f.key === "format");
+    expect(field?.options.map(o => o.value)).toEqual(["standard", "fast5"]);
+    expect(field?.defaultValue).toBe("standard");
+  });
+
+  it("plays four 6:00 quarters with 1, 2 and 3-point shots", () => {
+    const template = getMatchTemplate(fast5);
+    expect(template).toMatchObject({ periods: 4, periodLabel: "QTR", clockSeconds: 360, scoreIncrements: [1, 2, 3] });
+    expect(getStructureLabel(fast5)).toBe("4 quarters × 6:00");
+  });
+
+  it("leaves standard netball, and matches with no format recorded, as they were", () => {
+    for (const state of [{ sport: "netball" }, { sport: "netball", sportConfig: { format: "standard" } }] as const) {
+      expect(getMatchTemplate(state)).toMatchObject({ clockSeconds: 900, scoreIncrements: [1, 2] });
+      expect(getMatchTemplate(state).powerPlay).toBeUndefined();
+    }
+  });
+
+  it("ignores a format the sport doesn't define", () => {
+    expect(getMatchTemplate({ sport: "basketball", sportConfig: { format: "fast5" } })).toBe(getTemplate("basketball"));
+  });
+
+  describe("Power Play", () => {
+    const live = (overrides: Partial<MatchState>) =>
+      makeState({ ...fast5, countDown: true, period: "1", clockSeconds: 360, ...overrides });
+
+    it("doubles outer and super shots for the last two minutes of a quarter", () => {
+      expect(getScoreIncrements(live({ clockSeconds: 121 }))).toEqual([1, 2, 3]);
+      expect(getScoreIncrements(live({ clockSeconds: 120 }))).toEqual([1, 4, 6]);
+      expect(getScoreIncrements(live({ clockSeconds: 0 }))).toEqual([1, 4, 6]);
+      expect(getActivePowerPlay(live({ clockSeconds: 90 }))?.label).toBe("POWER PLAY");
+    });
+
+    it("applies in every quarter but not in extra time", () => {
+      expect(getActivePowerPlay(live({ period: "4", clockSeconds: 60 }))).toBeDefined();
+      expect(getActivePowerPlay(live({ period: "5", clockSeconds: 30 }))).toBeUndefined();
+      expect(getActivePowerPlay(live({ period: "E", clockSeconds: 30 }))).toBeUndefined();
+    });
+
+    it("prefers a more precise clock when given one", () => {
+      expect(getScoreIncrements(live({ clockSeconds: 120 }), 120.4)).toEqual([1, 2, 3]);
+    });
+
+    it("can't be told from a clock that counts up", () => {
+      expect(getActivePowerPlay(live({ countDown: false, clockSeconds: 60 }))).toBeUndefined();
+    });
+
+    it("never applies to standard netball", () => {
+      expect(getActivePowerPlay(makeState({ sport: "netball", countDown: true, clockSeconds: 30 }))).toBeUndefined();
+    });
+  });
+});
+
+describe("extra time", () => {
+  it("defaults to 7:00 periods for netball, 1:00 for Fast5 and 5:00 for basketball", () => {
+    expect(getExtraTimeSeconds({ sport: "netball" })).toBe(420);
+    expect(getExtraTimeSeconds({ sport: "netball", sportConfig: { format: "fast5" } })).toBe(60);
+    expect(getExtraTimeSeconds({ sport: "basketball" })).toBe(300);
+  });
+
+  it.each([
+    ["handball", 300], ["futsal", 300], ["floorball", 600], ["hockey", 450], ["waterpolo", 180], ["touch_rugby", 120],
+  ] as const)("gives %s its own extra-time length", (sport, seconds) => {
+    expect(getExtraTimeSeconds({ sport })).toBe(seconds);
+    expect(getPeriodClockSeconds({ sport }, getTemplate(sport).periods + 1)).toBe(seconds);
+  });
+
+  it("keeps count-up sports counting up from zero in extra time", () => {
+    for (const sport of ["football", "rugby_union", "rugby_league"] as const) {
+      expect(getPeriodClockSeconds({ sport }, 3)).toBe(0);
+    }
+  });
+
+  it("uses the length the operator set for the match", () => {
+    expect(getExtraTimeSeconds({ sport: "netball", sportConfig: { extraTimeSeconds: 300 } })).toBe(300);
+    expect(getExtraTimeSeconds({ sport: "netball", sportConfig: { format: "fast5", extraTimeSeconds: 120 } })).toBe(120);
+    // anything that isn't a whole number of seconds is ignored
+    expect(getExtraTimeSeconds({ sport: "netball", sportConfig: { extraTimeSeconds: "300" } })).toBe(420);
+    expect(getExtraTimeSeconds({ sport: "netball", sportConfig: { extraTimeSeconds: -5 } })).toBe(420);
+  });
+
+  it("puts the extra-time length on the clock only after the last regulation period", () => {
+    expect(getPeriodClockSeconds({ sport: "netball" }, 4)).toBe(900);
+    expect(getPeriodClockSeconds({ sport: "netball" }, 5)).toBe(420);
+    expect(getPeriodClockSeconds({ sport: "netball" }, 6)).toBe(420);
+    expect(getPeriodClockSeconds({ sport: "basketball" }, 5)).toBe(300);
+    expect(getPeriodClockSeconds({ sport: "netball", sportConfig: { format: "fast5" } }, 5)).toBe(60);
+  });
+
+  it("counts extra-time periods from 1", () => {
+    expect(getExtraTimePeriod({ sport: "netball", period: "4" })).toBe(0);
+    expect(getExtraTimePeriod({ sport: "netball", period: "5" })).toBe(1);
+    expect(getExtraTimePeriod({ sport: "netball", period: "6" })).toBe(2);
+    expect(getExtraTimePeriod({ sport: "football", period: "3" })).toBe(1);
+    expect(getExtraTimePeriod({ sport: "netball", period: "E" })).toBe(0);
+  });
+
+  it("doesn't apply to set and innings sports, or to custom matches of unknown length", () => {
+    for (const sport of ["volleyball", "tennis", "lawn_bowls", "indoor_cricket", "custom"] as const) {
+      expect(getExtraTimePeriod({ sport, period: "30" })).toBe(0);
+      expect(getPeriodClockSeconds({ sport }, 30)).toBe(getTemplate(sport).clockSeconds);
+    }
+  });
+
+  it("labels extra-time periods on displays", () => {
+    const netball = makeState({ sport: "netball", period: "6" });
+    expect(`${getPeriodLabel(netball)} ${getPeriodNumber(netball)}`).toBe("ET 2");
+    const basketball = makeState({ sport: "basketball", period: "5" });
+    expect(`${getPeriodLabel(basketball)} ${getPeriodNumber(basketball)}`).toBe("OT 1");
+    const league = makeState({ sport: "rugby_league", period: "3" });
+    expect(`${getPeriodLabel(league)} ${getPeriodNumber(league)}`).toBe("GP 1");
+    const touch = makeState({ sport: "touch_rugby", period: "4" });
+    expect(`${getPeriodLabel(touch)} ${getPeriodNumber(touch)}`).toBe("DROP-OFF 2");
+    const regulation = makeState({ sport: "netball", period: "3" });
+    expect(`${getPeriodLabel(regulation)} ${getPeriodNumber(regulation)}`).toBe("QTR 3");
+  });
+
+  it("calls the break after the last regulation period full time", () => {
+    expect(getBreakLabel(makeState({ sport: "netball", period: "2", periodBreak: true }))).toBe("QTR BREAK");
+    expect(getBreakLabel(makeState({ sport: "football", period: "2", periodBreak: true }))).toBe("HALF TIME");
+    expect(getBreakLabel(makeState({ sport: "netball", period: "5", periodBreak: true }))).toBe("FULL TIME");
+    expect(getBreakLabel(makeState({ sport: "football", period: "3", periodBreak: true }))).toBe("FULL TIME");
+    expect(getBreakLabel(makeState({ sport: "netball", period: "6", periodBreak: true }))).toBe("ET BREAK");
+  });
+
+  it("calls the middle break of a four-quarter match half time", () => {
+    expect(getBreakLabel(makeState({ sport: "netball", period: "3", periodBreak: true }))).toBe("HALF TIME");
+    expect(getBreakLabel(makeState({ sport: "basketball", period: "3", periodBreak: true }))).toBe("HALF TIME");
+    expect(getBreakLabel(makeState({ sport: "netball", period: "4", periodBreak: true }))).toBe("QTR BREAK");
+    expect(getBreakLabel(makeState({ sport: "floorball", period: "2", periodBreak: true }))).toBe("PERIOD BREAK");
+    expect(getBreakLabel(makeState({ sport: "volleyball", period: "3", periodBreak: true }))).toBe("SET BREAK");
+  });
+});
+
+describe("penalty shoot-outs", () => {
+  it("is offered for the sports that settle ties with one", () => {
+    const offered = SPORT_TEMPLATES.filter(t => t.shootout).map(t => t.sport).sort();
+    expect(offered).toEqual(["floorball", "football", "futsal", "handball", "hockey", "waterpolo"]);
+  });
+
+  it("counts each side's goals from the attempts taken", () => {
+    const state = makeState({ sport: "football", shootout: { home: [true, false, true], visitor: [true, true] } });
+    expect(getShootout(state)).toMatchObject({ label: "PENALTIES", homeGoals: 2, visitorGoals: 2 });
+  });
+
+  it("is absent until one is started, once cleared, and for sports without one", () => {
+    expect(getShootout(makeState({ sport: "football" }))).toBeUndefined();
+    expect(getShootout(makeState({ sport: "football", shootout: null }))).toBeUndefined();
+    expect(getShootout(makeState({ sport: "netball", shootout: { home: [true], visitor: [] } }))).toBeUndefined();
+  });
+});
+
+describe("getPeriodText", () => {
+  it("shows the shoot-out tally ahead of anything else", () => {
+    const state = makeState({ sport: "hockey", period: "5", periodBreak: true, shootout: { home: [true, true], visitor: [false, true] } });
+    expect(getPeriodText(state)).toBe("S/O 2–1");
+  });
+
+  it("otherwise shows the break, a power play, or the period", () => {
+    expect(getPeriodText(makeState({ sport: "football", period: "3", periodBreak: true }))).toBe("FULL TIME");
+    expect(getPeriodText(makeState({ sport: "netball", sportConfig: { format: "fast5" }, countDown: true, clockSeconds: 30 }))).toBe("POWER PLAY");
+    expect(getPeriodText(makeState({ sport: "football", period: "3" }))).toBe("ET 1");
+    expect(getPeriodText(makeState({ sport: "netball", period: "E" }))).toBe("EXTRA");
+    expect(getPeriodText(makeState({ sport: "volleyball", period: "2" }))).toBe("SET 2");
   });
 });

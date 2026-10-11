@@ -92,8 +92,13 @@ touches exactly 4 files:
    `resetScoreOnPeriod`, optional `matchConfig` for match-creation config fields, optional
    `controlPanel` component override)
 3. `relay/src/schemas.ts` — add to the Zod `sportSchema` enum
-4. `relay/src/server.ts` — add to `SPORT_DEFAULT_CLOCK` (and `SPORT_RESET_SCORE_ON_PERIOD` if
-   the sport zeroes scores between games/sets)
+4. `relay/src/periodClock.ts` — add to `SPORT_DEFAULT_CLOCK` (and to `SPORT_EXTRA_TIME` if the
+   template sets `extraTime`), plus `SPORT_RESET_SCORE_ON_PERIOD` in `relay/src/server.ts` if the
+   sport zeroes scores between games/sets
+
+A variant of an existing sport (Fast5 netball) is a `formats` entry on that sport's template, picked
+by its `format` match option, not a new `SportType` — read a match's template with
+`getMatchTemplate(state)` rather than `getTemplate(sport)` so the variant applies.
 
 A new sport also needs its public pages, which live outside the app: a guide in
 `help/app/(docs)/sports/<slug>/page.mdx` (plus `help/app/nav.ts`), and an entry in

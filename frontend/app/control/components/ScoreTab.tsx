@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { IndoorCricketState, formatClockDisplay, formatScore } from "../../types";
+import { IndoorCricketState, formatClock, formatClockDisplay, formatScore } from "../../types";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { parseClock } from "../lib/parseClock";
-import { getTemplate, getMatchLength, ControlPanelProps } from "../../sport-templates";
+import {
+  getMatchTemplate, getMatchLength, getActivePowerPlay, getBreakLabel, getExtraTimePeriod, getExtraTimeSeconds,
+  getPeriodClockSeconds, getPeriodLabel, getPeriodNumber, getShootout, ControlPanelProps,
+} from "../../sport-templates";
+import { ShootoutAttempts } from "../../components/ClockPanel";
 import { ClockAdjustButtons, NameField, ScoreButtons, SectionLabel, SmallBtn } from "./primitives";
 
 type Side = "home" | "visitor";
@@ -27,9 +31,9 @@ function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn
   return false;
 }
 
-function periodStatusLabel(periodBreak: boolean, periodLabel: string, period: string, matchLength?: number): string {
-  if (!periodBreak) return matchLength ? `${periodLabel} ${period} of ${matchLength}` : `${periodLabel} ${period}`;
-  return periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
+function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, period: string, matchLength?: number): string {
+  if (breakLabel) return breakLabel;
+  return matchLength ? `${periodLabel} ${period} of ${matchLength}` : `${periodLabel} ${period}`;
 }
 
 export function ScoreTab({
@@ -42,6 +46,7 @@ export function ScoreTab({
   const [matchName,  setMatchName]  = useState("");
   const [period,     setPeriod]     = useState("");
   const [clockInput, setClockInput] = useState("");
+  const [extraTimeInput, setExtraTimeInput] = useState("");
   const displayClock = useInterpolatedClock({
     clockSeconds: state.clockSeconds, isRunning: state.isRunning, countDown: state.countDown,
     clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs,
@@ -53,17 +58,26 @@ export function ScoreTab({
   const pushRef = useRef(push);
   const undoRef = useRef(sendUndo);
   const adjustRef = useRef(sendScoreAdjust);
+
+  const isBasketball = state.sport === "basketball";
+  const faultLabel = isBasketball ? "Fouls" : "Faults";
+  const template = getMatchTemplate(state);
+  const { scoreLabels } = template;
+  // Fast5: outer and super shots are worth double for the last two minutes of
+  // each quarter, so the buttons (and their keys) change value with the clock.
+  const powerPlay = getActivePowerPlay(state, displayClock);
+  const scoreIncrements = powerPlay?.scoreIncrements ?? template.scoreIncrements;
+  const incrementsRef = useRef(scoreIncrements);
   useEffect(() => {
     stateRef.current = state;
     pushRef.current = push;
     undoRef.current = sendUndo;
     adjustRef.current = sendScoreAdjust;
+    incrementsRef.current = scoreIncrements;
   });
 
-  const isBasketball = state.sport === "basketball";
-  const faultLabel = isBasketball ? "Fouls" : "Faults";
-  const template = getTemplate(state.sport);
-  const { scoreIncrements, scoreLabels } = template;
+  const periodLabel = getPeriodLabel(state);
+  const extraTimeSeconds = getExtraTimeSeconds(state);
   // Best-of sports stop at the chosen match length (SA-118); undefined = no cap
   const matchLength = getMatchLength(state);
   const currentPeriod = Number.parseInt(state.period, 10);
@@ -79,6 +93,31 @@ export function ScoreTab({
     sendIndoorCricketWicket({ side });
   }
 
+  // Shoot-out attempts go in one at a time, so whole-tally patches are safe
+  // here (unlike rapid-fire scoring, which needs adjustScore's deltas).
+  const shootout = getShootout(state);
+  function recordAttempt(side: Side, scored: boolean) {
+    if (!state.shootout) return;
+    push({ shootout: { ...state.shootout, [side]: [...state.shootout[side], scored] } });
+  }
+  function removeAttempt(side: Side) {
+    if (!state.shootout) return;
+    push({ shootout: { ...state.shootout, [side]: state.shootout[side].slice(0, -1) } });
+  }
+
+  function commitExtraTime() {
+    const seconds = parseClock(extraTimeInput);
+    if (seconds === null) return;
+    // If an extra-time period is already waiting on the old length, move its
+    // clock too — but never a clock that's running or has been adjusted.
+    const clockIsWaiting = getExtraTimePeriod(state) > 0 && !state.isRunning && state.clockSeconds === extraTimeSeconds;
+    push({
+      sportConfig: { ...state.sportConfig, extraTimeSeconds: seconds },
+      ...(clockIsWaiting && { clockSeconds: seconds }),
+    });
+    setExtraTimeInput("");
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       // Don't fire while the user is typing in an input or textarea
@@ -87,7 +126,7 @@ export function ScoreTab({
 
       const s = stateRef.current;
       const p = pushRef.current;
-      const inc = getTemplate(s.sport).scoreIncrements;
+      const inc = incrementsRef.current;
 
       // Cmd/Ctrl+Z — undo last action
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
@@ -167,11 +206,10 @@ export function ScoreTab({
           onClick={() => {
             const n = Number.parseInt(state.period, 10);
             const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
-            // FIBA: overtime periods are 5 minutes (300s), not 10
-            const nextClock = isBasketball && nextPeriod > 4 ? 300 : template.clockSeconds;
             push({
               isRunning: false,
-              clockSeconds: nextClock,
+              // Extra-time periods get the extra-time length, not a full period
+              clockSeconds: getPeriodClockSeconds(state, nextPeriod),
               period: String(nextPeriod),
               periodBreak: true,
               // FIBA: team fouls reset each quarter
@@ -187,7 +225,7 @@ export function ScoreTab({
             });
           }}
         >
-          {isFinalPeriod ? `FINAL ${template.periodLabel}` : `⏭  END ${template.periodLabel}`}
+          {isFinalPeriod ? `FINAL ${template.periodLabel}` : `⏭  END ${periodLabel}`}
         </button>
         <button
           data-testid="score-reopen-period"
@@ -195,10 +233,11 @@ export function ScoreTab({
           style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
           onClick={() => {
             const n = Number.parseInt(state.period, 10);
+            const previousPeriod = Number.isNaN(n) || n <= 1 ? 1 : n - 1;
             push({
               isRunning: false,
-              clockSeconds: template.clockSeconds,
-              period: String(Number.isNaN(n) || n <= 1 ? 1 : n - 1),
+              clockSeconds: getPeriodClockSeconds(state, previousPeriod),
+              period: String(previousPeriod),
               periodBreak: false,
             });
           }}
@@ -223,8 +262,13 @@ export function ScoreTab({
             {formatClockDisplay(displayClock)}
           </p>
           <p className="text-xs mt-1 font-black tracking-widest" style={{ color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)" }}>
-            {periodStatusLabel(state.periodBreak, template.periodLabel, state.period, matchLength)}
+            {periodStatusLabel(state.periodBreak ? getBreakLabel(state) : undefined, periodLabel, getPeriodNumber(state), matchLength)}
           </p>
+          {powerPlay && (
+            <p data-testid="score-power-play" className="text-xs mt-1 font-black tracking-widest" style={{ color: "rgb(250,204,21)" }}>
+              ⚡ {powerPlay.label}
+            </p>
+          )}
           <p className="text-xs mt-1 font-semibold" style={{ color: state.isRunning ? "var(--running)" : "var(--stopped)" }}>
             {state.isRunning ? "● RUNNING" : "■ PAUSED"}
           </p>
@@ -295,6 +339,50 @@ export function ScoreTab({
           )}
         </div>
       </div>
+
+      {/* Penalty shoot-out — tallied apart from the match score */}
+      {template.shootout && !shootout && (
+        <button
+          data-testid="shootout-start"
+          className="w-full rounded-xl py-3 text-sm font-black tracking-widest uppercase"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+          onClick={() => push({ isRunning: false, shootout: { home: [], visitor: [] } })}
+        >
+          Start {template.shootout.label.toLowerCase()}
+        </button>
+      )}
+      {shootout && (
+        <div className="rounded-2xl p-5" style={{ background: "var(--bg-surface)", border: "2px solid var(--border-accent)" }}>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-black tracking-widest uppercase" style={{ color: "var(--accent)" }}>
+              {shootout.label} · <span data-testid="shootout-tally">{shootout.homeGoals}–{shootout.visitorGoals}</span>
+            </p>
+            <SmallBtn label="Clear shoot-out" testId="shootout-clear"
+              onClick={() => { if (confirm("Clear the shoot-out? Its tally comes off every display.")) push({ shootout: null }); }} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {(["home", "visitor"] as const).map(side => (
+              <div key={side}>
+                <p className="text-xs font-bold tracking-widest uppercase mb-2" style={{ color: state[side].color || `var(--${side}-color)` }}>
+                  {state[side].name || side}
+                </p>
+                <ShootoutAttempts attempts={shootout[side]} color={state[side].color || `var(--${side}-color)`} />
+                <div className="flex gap-2 mt-2">
+                  <button data-testid={`shootout-${side}-scored`} className="flex-1 rounded-xl py-3 text-sm font-black"
+                    style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
+                    onClick={() => recordAttempt(side, true)}>✓ Scored</button>
+                  <button data-testid={`shootout-${side}-missed`} className="flex-1 rounded-xl py-3 text-sm font-black"
+                    style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+                    onClick={() => recordAttempt(side, false)}>✕ Missed</button>
+                </div>
+                <div className="mt-2">
+                  <SmallBtn label="Remove last" testId={`shootout-${side}-remove`} onClick={() => removeAttempt(side)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Possession */}
       <div className="flex gap-3">
@@ -386,6 +474,18 @@ export function ScoreTab({
             >Set</button>
           </div>
         </div>
+
+        {/* Extra time — competitions set their own length, so it's per match */}
+        {template.extraTime && state.countDown && (
+          <div className="pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+            <NameField label={`Extra time — length of each period (currently ${formatClock(extraTimeSeconds)})`}
+              value={extraTimeInput} placeholder="e.g. 5:00" testId="score-extra-time"
+              onChange={setExtraTimeInput} onCommit={commitExtraTime} />
+            <p className="text-xs" style={{ color: "var(--text-dim)" }}>
+              Ending the last {template.periodLabel.toLowerCase()} moves to extra time with this on the clock.
+            </p>
+          </div>
+        )}
 
         {/* Team names */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>

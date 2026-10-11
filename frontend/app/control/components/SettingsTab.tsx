@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
-import { SPORT_TEMPLATES, getTemplate, getStructureLabel } from "../../sport-templates";
+import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
 
@@ -582,11 +582,23 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
   readonly matchId?: string;
   readonly onEnded?: () => void;
 }) {
-  const template = getTemplate(state.sport);
+  const template = getMatchTemplate(state);
+  // Only offered where the format is just a different template (Netball /
+  // Fast5) — cricket's and softball's formats are baked into their sportState.
+  const formatField = template.formats ? template.matchConfig?.find(f => f.key === "format") : undefined;
+  const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
   const { data: session } = useSession();
   const orgId = session?.user?.activeOrgId;
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState("");
+
+  function selectFormat(format: string) {
+    const sportConfig = { ...state.sportConfig, format };
+    // Bring the clock along if it's still sitting untouched on the old
+    // format's opening value; anything else is the operator's to change.
+    const untouched = !state.isRunning && state.period === "1" && state.clockSeconds === template.clockSeconds;
+    push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
+  }
 
   async function handleEndMatch() {
     if (!orgId || !matchId) return;
@@ -674,6 +686,29 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
           ))}
         </div>
       </Card>
+
+      {/* Format — for fixtures, which don't pass through /setup's options */}
+      {formatField && (
+        <Card title={formatField.label}>
+          <div className="flex flex-wrap gap-2">
+            {formatField.options.map(opt => (
+              <button key={opt.value}
+                data-testid={`settings-format-${opt.value}`}
+                className="rounded-lg px-4 py-2 text-left"
+                style={{
+                  background: currentFormat === opt.value ? "var(--accent-dim)" : "var(--bg-elevated)",
+                  border: `1px solid ${currentFormat === opt.value ? "var(--border-accent)" : "var(--border)"}`,
+                  color: currentFormat === opt.value ? "var(--accent)" : "var(--text-secondary)",
+                }}
+                onClick={() => selectFormat(opt.value)}
+              >
+                <div className="text-sm font-semibold">{opt.label}</div>
+                {opt.description && <div className="text-xs mt-0.5" style={{ opacity: 0.7 }}>{opt.description}</div>}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Template defaults preview */}
       <Card title={`Template Defaults — ${template.label}`}>

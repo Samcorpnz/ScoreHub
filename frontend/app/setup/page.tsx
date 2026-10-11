@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { SPORT_TEMPLATES, getTemplate } from "../sport-templates";
+import { SPORT_TEMPLATES, getTemplate, getMatchTemplate } from "../sport-templates";
 import type { SportType, CricketInningsState } from "../types";
 import { useControlToken } from "../hooks/useControlToken";
 import { useMatchState } from "../hooks/useMatchState";
@@ -69,7 +69,7 @@ export default function SetupPage() {
   // be dropped if that happens before the relay finishes applying it.
   useEffect(() => {
     if (state !== "applying" || connStatus !== "connected") return;
-    const template = getTemplate(sport);
+    const template = getMatchTemplate({ sport, sportConfig });
     const freshInnings: CricketInningsState = {
       battingTeam: "home", runs: 0, wickets: 0, oversComplete: 0, ballsThisOver: 0,
       extras: { wides: 0, noBalls: 0, byes: 0, legByes: 0, penalties: 0 },

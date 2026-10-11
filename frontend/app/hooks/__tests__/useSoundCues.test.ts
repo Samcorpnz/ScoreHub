@@ -60,6 +60,25 @@ describe("useSoundPlayback", () => {
     playSpy.mockRestore();
   });
 
+  it("plays an Extra time cue in the periods after regulation, and not before", () => {
+    const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const cue: SoundCue = { ...CUE, period: "E" };
+    const cross = (period: string) => {
+      const state: MatchState = { ...DEFAULT_MATCH_STATE, sport: "netball", period, isRunning: true, countDown: true, clockSeconds: 31 };
+      const { rerender, unmount } = renderHook(({ state }) => useSoundPlayback(state, [cue]), { initialProps: { state } });
+      rerender({ state: { ...state, clockSeconds: 29 } });
+      unmount();
+    };
+
+    cross("4");
+    expect(playSpy).not.toHaveBeenCalled();
+    cross("5");
+    expect(playSpy).toHaveBeenCalledTimes(1);
+    cross("E");
+    expect(playSpy).toHaveBeenCalledTimes(2);
+    playSpy.mockRestore();
+  });
+
   it("does not fire when the match is not running", () => {
     const playSpy = vi.spyOn(window.HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
 

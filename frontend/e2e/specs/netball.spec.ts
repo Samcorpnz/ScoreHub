@@ -91,6 +91,55 @@ test.describe("netball", () => {
     await endMatch(page);
   });
 
+  test("extra time: ending the fourth quarter puts the length set for the match on the clock", async ({ page }) => {
+    const { matchId } = await createMatch(page, { sport: "netball", matchName: "E2E Netball ET", homeName: "Silver Ferns", visitorName: "Diamonds" });
+    await waitForLive(page);
+    const orgId = await getOrgId(page);
+
+    // Competitions vary the length, so it's set per match (default 7:00).
+    await page.getByTestId("score-extra-time").fill("5:00");
+    await page.getByTestId("score-extra-time").press("Enter");
+    await expect.poll(async () => (await getMatchState(page.request, orgId, matchId)).sportConfig?.extraTimeSeconds).toBe(300);
+
+    // One at a time: END works from the period the panel last heard about.
+    for (let quarter = 1; quarter <= 4; quarter++) {
+      await endPeriod(page);
+      await expect.poll(async () => (await getMatchState(page.request, orgId, matchId)).period).toBe(String(quarter + 1));
+    }
+    await expect(page.getByTestId("score-clock")).toHaveText("05:00");
+    await expect(page.getByText("FULL TIME")).toBeVisible();
+
+    await endMatch(page);
+  });
+
+  test("Fast5 format: 6:00 quarters, 1/2/3-point shots, and doubled shots in the Power Play", async ({ page }) => {
+    const { matchId } = await createMatch(page, {
+      sport: "netball", matchConfig: { format: "fast5" }, matchName: "E2E Fast5", homeName: "Fast Ferns", visitorName: "Fast Diamonds",
+    });
+    await waitForLive(page);
+    const orgId = await getOrgId(page);
+
+    await expect(page.getByTestId("score-clock")).toHaveText("06:00");
+    await expect(page.getByTestId("score-power-play")).toHaveCount(0);
+    await clickScoreIncrement(page, "home", 3);
+    await expect.poll(() => getScore(page, "home")).toBe(3);
+
+    // The last two minutes of a quarter: outer and super shots count double.
+    await page.locator('input[placeholder="MM:SS"]').fill("2:00");
+    await page.locator('input[placeholder="MM:SS"]').press("Enter");
+    await expect(page.getByTestId("score-power-play")).toBeVisible();
+    await expect(page.getByTestId("score-home-inc-2")).toHaveCount(0);
+    await clickScoreIncrement(page, "home", 6);
+    await expect.poll(() => getScore(page, "home")).toBe(9);
+
+    // The next quarter is back to 6:00 and standard values.
+    await endPeriod(page);
+    await expect.poll(async () => (await getMatchState(page.request, orgId, matchId)).clockSeconds).toBe(360);
+    await expect(page.getByTestId("score-home-inc-2")).toBeVisible();
+
+    await endMatch(page);
+  });
+
   test("defaults to no possession, and toggling home possession is reflected in match state", async ({ page }) => {
     const { matchId } = await createMatch(page, {
       sport: "netball", matchName: "E2E Netball Possession", homeName: "Silver Ferns", visitorName: "Diamonds",

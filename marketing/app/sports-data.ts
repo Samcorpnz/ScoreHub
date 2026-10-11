@@ -49,9 +49,10 @@ export const SPORTS: Sport[] = [
     timeouts: "1 per team",
     buttons: [
       { label: "+1", desc: "A standard goal from inside the goal circle." },
-      { label: "+2", desc: "A Super Shot from the outer zone, for Fast5-style rules." },
+      { label: "+2", desc: "A Super Shot, for competitions that play a two-point shot." },
     ],
-    summary: "Four 15-minute quarters, goals and Super Shots, centre-pass possession.",
+    options: [{ name: "Format", choices: ["Standard — 7-a-side, 4 quarters of 15:00", "Fast5 — 5-a-side, 4 quarters of 6:00, 1/2/3-point shots and Power Play"] }],
+    summary: "Four 15-minute quarters, goals and Super Shots, centre-pass possession — or Fast5 with Power Play.",
     intro:
       "ScoreHub's netball template is set up for four 15-minute quarters with a countdown clock, so a volunteer at the scorer's bench can run a full match from a laptop or tablet without touching a settings screen.",
     sections: [
@@ -62,6 +63,14 @@ export const SPORTS: Sport[] = [
       {
         heading: "Quarter breaks handled in one tap",
         body: "End Quarter stops the clock, moves to the next quarter, resets the clock to 15:00 and tells every display it's a break. If you end a quarter early by mistake, Reopen takes you back.",
+      },
+      {
+        heading: "Fast5, with the Power Play done for you",
+        body: "Choose the Fast5 format and the match runs as four 6-minute quarters with buttons for inner (1), outer (2) and super (3) shots. In the last two minutes of each quarter the outer and super buttons double to 4 and 6 by themselves, and displays flag the Power Play next to the clock.",
+      },
+      {
+        heading: "Extra time at your competition's length",
+        body: "Ending the fourth quarter shows full time and sets the clock for extra time: 7:00 for netball, 1:00 for Fast5. If your competition plays something else, type the length in before the match and every extra-time period starts on it.",
       },
       {
         heading: "A netball stats panel for data-fed matches",

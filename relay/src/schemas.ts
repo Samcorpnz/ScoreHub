@@ -6,6 +6,7 @@ import { z } from "zod";
 // gameplay value, so ranges are generous (SA-5).
 const MAX_NAME_LEN = 100;
 const MAX_PLAYERS = 50;
+const MAX_SHOOTOUT_ATTEMPTS = 50;
 
 const teamPlayerSchema = z.object({
   number: z.number().int().min(0).max(999),
@@ -68,6 +69,11 @@ const matchStateFields = {
   netballStats: z.looseObject({}).optional(),
   sportState: z.looseObject({}).optional(),
   sportConfig: z.record(z.string(), z.unknown()).optional(),
+  // Penalty shoot-out tally; null clears it (a patch can't carry undefined)
+  shootout: z.object({
+    home: z.array(z.boolean()).max(MAX_SHOOTOUT_ATTEMPTS),
+    visitor: z.array(z.boolean()).max(MAX_SHOOTOUT_ATTEMPTS),
+  }).nullable().optional(),
   // Graphics Operator add-on feed — flattened, provider-agnostic stat bag
   // produced by bridge/src/graphics/feedTransform.ts. Passthrough for the
   // same reason as netballStats/sportState: it's already validated (loosely,

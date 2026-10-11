@@ -8688,6 +8688,40 @@ import {
   action as action3,
   SingletonAction as SingletonAction3
 } from "@elgato/streamdeck";
+
+// src/periodTitle.ts
+var PERIODS = {
+  netball: { label: "QTR", periods: 4 },
+  basketball: { label: "QTR", periods: 4, extra: "OT" },
+  rugby_union: { label: "HALF", periods: 2 },
+  rugby_league: { label: "HALF", periods: 2, extra: "GP" },
+  football: { label: "HALF", periods: 2 },
+  handball: { label: "HALF", periods: 2 },
+  hockey: { label: "QTR", periods: 4 },
+  waterpolo: { label: "QTR", periods: 4 },
+  touch_rugby: { label: "HALF", periods: 2, extra: "DROP" },
+  futsal: { label: "HALF", periods: 2 },
+  floorball: { label: "PERIOD", periods: 3 },
+  volleyball: { label: "SET" },
+  tennis: { label: "SET" },
+  pickleball: { label: "GAME" },
+  badminton: { label: "GAME" },
+  table_tennis: { label: "GAME" },
+  squash: { label: "GAME" },
+  lawn_bowls: { label: "END" },
+  indoor_cricket: { label: "INN" },
+  softball: { label: "INN" },
+  cricket: { label: "INN" }
+};
+function periodTitle(state) {
+  const sport = PERIODS[state.sport ?? ""] ?? { label: "PERIOD" };
+  const n = Number.parseInt(state.period, 10);
+  if (state.period === "E") return "EXTRA";
+  if (sport.periods && n > sport.periods) return `${sport.extra ?? "ET"} ${n - sport.periods}`;
+  return `${sport.label} ${state.period}`;
+}
+
+// src/actions/period.ts
 function toPeriod(raw) {
   return { direction: raw.direction === "prev" ? "prev" : "next" };
 }
@@ -8715,7 +8749,7 @@ var PeriodAction = class extends (_a3 = SingletonAction3) {
   }
   render(action4, state, settings) {
     const dir = settings.direction ?? "next";
-    action4.setTitle(`QTR ${state.period}
+    action4.setTitle(`${periodTitle(state)}
 ${dir === "next" ? "\u25B6" : "\u25C0"}`);
   }
   async onKeyDown(ev) {

@@ -71,7 +71,7 @@ button.
 | `/action/score/visitor?delta=1` | Change the visitor score by `delta` |
 | `/action/period/next` | Next period (number only) |
 | `/action/period/prev` | Previous period (number only) |
-| `/action/period/end` | End the period, exactly as the **END** button does: stop the clock, move on, reset the clock, reset set scores where the sport does, and for basketball reset team fouls and give overtime a 5:00 clock |
+| `/action/period/end` | End the period, exactly as the **END** button does: stop the clock, move on, reset the clock, reset set scores where the sport does, for basketball reset team fouls, and give [extra time](/running-a-match#extra-time) its own clock |
 
 `delta` can be any whole number from −99 to 99, and scores stop at zero. Add `matchId=<id>` to the
 query string to target a specific match — the URLs on the Settings card already include it.
