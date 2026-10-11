@@ -11,6 +11,13 @@ function newDisplayToken(): string {
 }
 
 const SAVE_DEBOUNCE_MS = 2000;
+// Event log writes are batched to at most one insert per match per interval,
+// and a match's log stops growing at the cap, so a client that can score
+// (a control panel, a Control API token, a bridge) can't turn rapid score
+// changes into unbounded database writes or rows. A real match logs a few
+// hundred events; ball-by-ball cricket a couple of thousand.
+const EVENT_FLUSH_MS = 1000;
+const MAX_EVENTS_PER_MATCH = 10_000;
 
 export class MatchNotFoundError extends Error {
   constructor() {
@@ -80,10 +87,39 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
   let resolvedId: string | null = null;
   let pending: MatchState | null = null;
   let timer: NodeJS.Timeout | null = null;
-  // Event log writes go straight through rather than on the save debounce —
-  // they're rare next to state saves and a consumer polling for them
-  // shouldn't wait on it — chained so rows land in the order things happened.
+  // Event log: batches wait in pendingEvents for the flush timer, and writes
+  // are chained so rows land in the order things happened. storedEvents is
+  // this match's row count, read once and kept up to date from then on.
+  let pendingEvents: MatchEvent[] = [];
+  let eventTimer: NodeJS.Timeout | null = null;
+  let storedEvents: number | null = null;
+  let eventCapLogged = false;
   let eventWrites: Promise<void> = Promise.resolve();
+
+  async function writeEvents(): Promise<void> {
+    const batch = pendingEvents;
+    pendingEvents = [];
+    if (batch.length === 0) return;
+    const id = await resolveMatch();
+    storedEvents ??= await prisma.matchEvent.count({ where: { matchId: id } });
+    const rows = batch.slice(0, Math.max(0, MAX_EVENTS_PER_MATCH - storedEvents));
+    if (rows.length < batch.length && !eventCapLogged) {
+      eventCapLogged = true;
+      console.warn("[relay] match event log is full, further events are not logged:", id);
+    }
+    if (rows.length === 0) return;
+    await prisma.matchEvent.createMany({
+      data: rows.map(e => ({ matchId: id, type: e.type, at: new Date(e.at), data: e as object })),
+    });
+    storedEvents += rows.length;
+  }
+
+  function queueEventWrite(): Promise<void> {
+    eventWrites = eventWrites
+      .then(writeEvents)
+      .catch(err => console.error("[relay] failed to persist match events for org:", orgId, err));
+    return eventWrites;
+  }
 
   async function resolveMatch(): Promise<string> {
     if (resolvedId) return resolvedId;
@@ -149,14 +185,13 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
 
     appendEvents(events: MatchEvent[]) {
       if (events.length === 0) return;
-      eventWrites = eventWrites
-        .then(async () => {
-          const id = await resolveMatch();
-          await prisma.matchEvent.createMany({
-            data: events.map(e => ({ matchId: id, type: e.type, at: new Date(e.at), data: e as object })),
-          });
-        })
-        .catch(err => console.error("[relay] failed to persist match events for org:", orgId, err));
+      // Bounds memory too: nothing waits here beyond what could be stored.
+      if (pendingEvents.length + events.length > MAX_EVENTS_PER_MATCH) return;
+      pendingEvents.push(...events);
+      eventTimer ??= setTimeout(() => {
+        eventTimer = null;
+        void queueEventWrite();
+      }, EVENT_FLUSH_MS);
     },
 
     async flush() {
@@ -165,7 +200,9 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
       const toWrite = pending;
       pending = null;
       if (toWrite) await writeThrough(toWrite);
-      await eventWrites;
+      if (eventTimer) clearTimeout(eventTimer);
+      eventTimer = null;
+      await queueEventWrite();
     },
   };
 

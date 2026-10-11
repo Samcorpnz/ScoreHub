@@ -5,6 +5,7 @@ const matchUpdateMock = jest.fn();
 const matchCountMock = jest.fn();
 const eventCreateManyMock = jest.fn();
 const eventFindManyMock = jest.fn();
+const eventCountMock = jest.fn();
 
 jest.mock("@scorehub/db", () => ({
   recordAuditEvent: jest.fn(),
@@ -19,6 +20,7 @@ jest.mock("@scorehub/db", () => ({
     matchEvent: {
       createMany: (...a: unknown[]) => eventCreateManyMock(...a),
       findMany: (...a: unknown[]) => eventFindManyMock(...a),
+      count: (...a: unknown[]) => eventCountMock(...a),
     },
   },
 }));
@@ -46,6 +48,8 @@ describe("persistence", () => {
     matchCountMock.mockReset();
     eventCreateManyMock.mockReset();
     eventFindManyMock.mockReset();
+    eventCountMock.mockReset();
+    eventCountMock.mockResolvedValue(0);
     getOrgAccountMock.mockReset();
     process.env.DATABASE_URL = "postgres://test";
   });
@@ -312,40 +316,108 @@ describe("persistence", () => {
       type, at, clockSeconds: 60, period: "1", home: 1, visitor: 0,
     });
 
-    it("appendEvents writes each batch against the resolved match, in call order", async () => {
+    const liveMatch = () =>
       matchFindUniqueMock.mockResolvedValue({ id: "m1", orgId: "org-1", status: "LIVE", state: DEFAULT_MATCH_STATE });
-      const written: string[] = [];
-      eventCreateManyMock.mockImplementation(async ({ data }: { data: { type: string }[] }) => {
-        written.push(...data.map(d => d.type));
-      });
+    const writtenTypes = () =>
+      eventCreateManyMock.mock.calls.flatMap(([arg]) => (arg as { data: { type: string }[] }).data.map(d => d.type));
+
+    it("appendEvents batches events into one write per flush interval, in order", async () => {
+      liveMatch();
       const { getMatchStore } = await import("../persistence");
       const store = getMatchStore("org-1", "m1")!;
 
       store.appendEvents([event("clock_start", "2026-10-11T02:00:00.000Z"), event("score", "2026-10-11T02:00:05.000Z")]);
       store.appendEvents([event("score", "2026-10-11T02:00:09.000Z")]);
       store.appendEvents([]);
-      await store.flush();
+      expect(eventCreateManyMock).not.toHaveBeenCalled();
 
-      expect(written).toEqual(["clock_start", "score", "score"]);
-      expect(eventCreateManyMock).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
+      expect(writtenTypes()).toEqual(["clock_start", "score", "score"]);
       expect(eventCreateManyMock.mock.calls[0][0].data[1]).toEqual({
         matchId: "m1",
         type: "score",
         at: new Date("2026-10-11T02:00:05.000Z"),
         data: event("score", "2026-10-11T02:00:05.000Z"),
       });
+
+      store.appendEvents([event("clock_start", "2026-10-11T02:01:00.000Z")]);
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("a burst of events costs one write, however many arrive within the interval", async () => {
+      liveMatch();
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      for (let i = 0; i < 300; i++) store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
+      expect(eventCreateManyMock.mock.calls[0][0].data).toHaveLength(300);
+    });
+
+    it("flush writes waiting events without waiting for the timer", async () => {
+      liveMatch();
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
+      await store.flush();
+      expect(writtenTypes()).toEqual(["score"]);
+
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops logging once the match's log reaches its cap, counting rows already stored", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      liveMatch();
+      eventCountMock.mockResolvedValue(9_998);
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("score", "a"), event("score", "b"), event("clock_start", "c")].map((e, i) => ({ ...e, at: `2026-10-11T02:00:0${i}.000Z` })));
+      await store.flush();
+      expect(writtenTypes()).toEqual(["score", "score"]);
+
+      store.appendEvents([event("score", "2026-10-11T02:00:09.000Z")]);
+      await store.flush();
+      store.appendEvents([event("score", "2026-10-11T02:00:10.000Z")]);
+      await store.flush();
+
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
+      expect(eventCountMock).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      warnSpy.mockRestore();
+    });
+
+    it("drops events rather than hold more in memory than the cap", async () => {
+      liveMatch();
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      const big = Array.from({ length: 10_000 }, () => event("score", "2026-10-11T02:00:00.000Z"));
+      store.appendEvents(big);
+      store.appendEvents([event("clock_start", "2026-10-11T02:00:01.000Z")]);
+      await store.flush();
+
+      expect(eventCreateManyMock.mock.calls[0][0].data).toHaveLength(10_000);
+      expect(writtenTypes()).not.toContain("clock_start");
     });
 
     it("logs a failed event write and keeps writing later ones", async () => {
       const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-      matchFindUniqueMock.mockResolvedValue({ id: "m1", orgId: "org-1", status: "LIVE", state: DEFAULT_MATCH_STATE });
+      liveMatch();
       eventCreateManyMock.mockRejectedValueOnce(new Error("db down")).mockResolvedValue({ count: 1 });
       const { getMatchStore } = await import("../persistence");
       const store = getMatchStore("org-1", "m1")!;
 
       store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
-      store.appendEvents([event("score", "2026-10-11T02:00:01.000Z")]);
       await expect(store.flush()).resolves.toBeUndefined();
+      store.appendEvents([event("score", "2026-10-11T02:00:01.000Z")]);
+      await store.flush();
 
       expect(eventCreateManyMock).toHaveBeenCalledTimes(2);
       expect(errorSpy).toHaveBeenCalledWith("[relay] failed to persist match events for org:", "org-1", expect.any(Error));

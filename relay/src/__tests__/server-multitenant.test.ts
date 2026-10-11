@@ -37,7 +37,7 @@ jest.mock("@scorehub/db", () => ({
       update: (...a: unknown[]) => matchUpdateMock(...a),
       count: (...a: unknown[]) => matchCountMock(...a),
     },
-    matchEvent: { createMany: (...a: unknown[]) => eventCreateManyMock(...a) },
+    matchEvent: { createMany: (...a: unknown[]) => eventCreateManyMock(...a), count: jest.fn(async () => 0) },
     // Only JWT-based control/action auth is exercised in this file — no
     // ScopedToken flows — so this always misses, falling through to the JWT
     // check in verifyControlSecret/verifyActionSecret (auth.ts).
@@ -309,7 +309,8 @@ describe("match event log (multi-tenant)", () => {
     await request(app).post("/action/score/home?delta=2").set("x-control-secret", token).expect(200);
     await request(app).post("/action/start").set("x-control-secret", token).expect(200);
     await request(app).post("/action/stop").set("x-control-secret", token).expect(200);
-    await new Promise(resolve => setImmediate(resolve));
+    // Event writes are batched on a one-second timer.
+    await new Promise(resolve => setTimeout(resolve, 1200));
 
     const rows = eventCreateManyMock.mock.calls.flatMap(([arg]) => (arg as { data: { matchId: string; type: string; data: object }[] }).data);
     expect(rows.map(r => [r.matchId, r.type])).toEqual([
