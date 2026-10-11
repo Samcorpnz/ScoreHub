@@ -38,9 +38,10 @@ describe("buildResultsCsv", () => {
     expect(dataLine(buildResultsCsv([row({ state: { home: { score: "7" }, visitor: { score: NaN } } })]))).toContain("Rays,,,");
   });
 
-  it("quotes names containing commas, quotes or line breaks", () => {
-    const csv = buildResultsCsv([row({ homeName: 'Sharks, "A" team', visitorName: "Rays\nReserves" })]);
-    expect(csv).toContain('"Sharks, ""A"" team","Rays\nReserves"');
+  it("quotes names containing commas or quotes, and flattens line breaks and tabs", () => {
+    const csv = buildResultsCsv([row({ homeName: 'Sharks, "A" team', visitorName: "Rays\r\nReserves\tB" })]);
+    expect(csv).toContain('"Sharks, ""A"" team",Rays Reserves B,');
+    expect(csv.split("\r\n")).toHaveLength(3);
   });
 
   it("stops a name being read as a spreadsheet formula", () => {
@@ -48,10 +49,19 @@ describe("buildResultsCsv", () => {
     expect(dataLine(csv)).toBe(`'-x,'@cup,"'=HYPERLINK(""http://x"")",'+1,42,39,2026-10-10T01:00:00.000Z,2026-10-10T02:05:00.000Z,m-1`);
   });
 
-  it("catches a formula hidden behind leading whitespace, a control character or a full-width sign", () => {
-    for (const name of [" =1+1", "\t=1+1", "\u00A0@SUM(A1)", "\uFF1D1+1", "\rplain", "  -2+3"]) {
-      const line = buildResultsCsv([row({ homeName: name })]).split("\r\n").slice(1).join("\r\n");
-      expect(line.split(",")[2].replace(/^"/, "").startsWith("'")).toBe(true);
+  it("catches a formula hidden behind leading whitespace or a full-width sign", () => {
+    for (const name of [" =1+1", "\t=1+1", "\r\n=1+1", "\u00A0@SUM(A1)", "\uFF1D1+1", "  -2+3"]) {
+      expect(dataLine(buildResultsCsv([row({ homeName: name })])).split(",")[2].startsWith("'")).toBe(true);
+    }
+  });
+
+  it("defuses a formula wherever a looser parser could start a cell", () => {
+    // Split naively on commas, semicolons, quotes and line breaks: no piece may begin with a formula sign.
+    const hostile = ['Sharks,=1+1', 'Sharks;@SUM(A1)', 'Sharks"=1+1', "Sharks\n=1+1", "Sharks, -2+3", 'a",=cmd'];
+    for (const name of hostile) {
+      const line = dataLine(buildResultsCsv([row({ homeName: name, sport: "x", competition: "y" })]));
+      const pieces = line.split(/[,;"\r\n]/).map(p => p.trimStart());
+      expect(pieces.filter(p => /^[=+\-@]/.test(p))).toEqual([]);
     }
   });
 

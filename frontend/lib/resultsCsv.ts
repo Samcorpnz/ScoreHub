@@ -26,15 +26,18 @@ function score(state: unknown, side: "home" | "visitor"): string {
 }
 
 // Team and competition names are typed in by users and the file is opened in
-// a spreadsheet, so a value that would be read as a formula is prefixed with
-// an apostrophe. Spreadsheets skip leading whitespace before deciding, and
-// some accept the full-width forms of the trigger characters, so both are
-// checked. Quoting follows RFC 4180.
-const FORMULA_START = /^[\s\u00A0\uFEFF]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]|^[\t\r\n]/;
+// a spreadsheet, so anything that could be read as a formula is defused with
+// an apostrophe. Not every reader follows RFC 4180: some split on a line
+// break or a separator even inside quotes, which would turn the middle of a
+// name into the start of a cell. So line breaks and tabs are flattened to a
+// space, and a formula sign is defused wherever a cell could begin — at the
+// start of the value or after a comma, semicolon or quote — allowing for the
+// whitespace spreadsheets skip and the full-width forms some accept.
+const CELL_START_FORMULA = /(^|[,;"])([\s\u00A0\uFEFF]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20])/g;
 
 function cell(value: string): string {
-  const safe = FORMULA_START.test(value) ? `'${value}` : value;
-  return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
+  const safe = value.replaceAll(/[\t\r\n]+/g, " ").replaceAll(CELL_START_FORMULA, "$1'$2");
+  return /[",]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
 export function buildResultsCsv(rows: ResultRow[]): string {
