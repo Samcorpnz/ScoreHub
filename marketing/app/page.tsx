@@ -177,11 +177,10 @@ export default function Home() {
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "baseline",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
                   marginBottom: "0.6rem",
                   gap: "0.5rem",
-                  flexWrap: "wrap",
                 }}
               >
                 <span style={{ fontWeight: 800, fontSize: "1.02rem" }}>{s.name}</span>
