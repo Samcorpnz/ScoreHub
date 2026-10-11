@@ -27,9 +27,13 @@ function score(state: unknown, side: "home" | "visitor"): string {
 
 // Team and competition names are typed in by users and the file is opened in
 // a spreadsheet, so a value that would be read as a formula is prefixed with
-// an apostrophe. Quoting follows RFC 4180.
+// an apostrophe. Spreadsheets skip leading whitespace before deciding, and
+// some accept the full-width forms of the trigger characters, so both are
+// checked. Quoting follows RFC 4180.
+const FORMULA_START = /^[\s\u00A0\uFEFF]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]|^[\t\r\n]/;
+
 function cell(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  const safe = FORMULA_START.test(value) ? `'${value}` : value;
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
