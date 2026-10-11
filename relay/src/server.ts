@@ -911,7 +911,7 @@ export function createServer(options: ServerOptions = {}) {
     res.json(await listSelectableMatches(result, !asBridge));
   });
 
-  app.get("/state", async (req, res) => {
+  app.get("/state", controlRateLimit, async (req, res) => {
     let orgId = typeof req.query.org === "string" ? req.query.org : undefined;
     const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
     const token = typeof req.query.token === "string" ? req.query.token : undefined;
