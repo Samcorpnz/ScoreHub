@@ -5,6 +5,7 @@ export interface TeamState {
 }
 
 export interface MatchState {
+  sport?: string;
   isRunning: boolean;
   clockSeconds: number;
   period: string;

@@ -9,6 +9,7 @@ import {
 } from "@elgato/streamdeck";
 import { relay } from "../relay.js";
 import type { MatchState } from "../types.js";
+import { periodTitle } from "../periodTitle.js";
 
 interface PeriodSettings {
   direction?: "next" | "prev";
@@ -45,7 +46,7 @@ export class PeriodAction extends SingletonAction {
 
   private render(action: KeyAction, state: MatchState, settings: PeriodSettings): void {
     const dir = settings.direction ?? "next";
-    action.setTitle(`QTR ${state.period}\n${dir === "next" ? "▶" : "◀"}`);
+    action.setTitle(`${periodTitle(state)}\n${dir === "next" ? "▶" : "◀"}`);
   }
 
   async onKeyDown(ev: KeyDownEvent): Promise<void> {

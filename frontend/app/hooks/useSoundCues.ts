@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MatchState } from "../types";
+import { getExtraTimePeriod } from "../sport-templates";
 
 const STORAGE_KEY = "scoreboard_sound_cues";
 
@@ -41,6 +42,8 @@ export function useSoundPlayback(state: MatchState, cues: SoundCue[]) {
   const prevClock   = useRef(state.clockSeconds);
   const prevRunning = useRef(state.isRunning);
   const audioCache  = useRef(new Map<string, HTMLAudioElement>());
+  // An "Extra time" cue covers every period past regulation, not just "E"
+  const inExtraTime = getExtraTimePeriod(state) > 0;
 
   useEffect(() => {
     const prev       = prevClock.current;
@@ -53,7 +56,8 @@ export function useSoundPlayback(state: MatchState, cues: SoundCue[]) {
     if (state.clockSeconds === prev) return;
 
     for (const cue of cues) {
-      if (cue.period !== "*" && cue.period !== state.period) continue;
+      const matches = cue.period === "*" || cue.period === state.period || (cue.period === "E" && inExtraTime);
+      if (!matches) continue;
 
       const hit = state.countDown
         ? prev > cue.clockSeconds && state.clockSeconds <= cue.clockSeconds
@@ -69,5 +73,5 @@ export function useSoundPlayback(state: MatchState, cues: SoundCue[]) {
       audio.currentTime = 0;
       audio.play().catch(() => {});
     }
-  }, [state.clockSeconds, state.isRunning, state.period, state.countDown, cues]);
+  }, [state.clockSeconds, state.isRunning, state.period, inExtraTime, state.countDown, cues]);
 }

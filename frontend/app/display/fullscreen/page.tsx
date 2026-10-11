@@ -16,7 +16,7 @@ import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { ClockPanel } from "../../components/ClockPanel";
 import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { TeamState, Possession, formatClockDisplay, formatScore } from "../../types";
-import { getPeriodLabel, getTemplate } from "../../sport-templates";
+import { getActivePowerPlay, getBreakLabel, getPeriodLabel, getPeriodNumber, getPeriodText, getShootout, getTemplate } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
 import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
@@ -116,7 +116,7 @@ export default function FullscreenDisplay() {
 // ─── Layout: Wide (default) ───────────────────────────────────────────────────
 
 function WideLayout({ state, relayUrl }: { readonly state: ReturnType<typeof useMatchState>["state"]; readonly relayUrl: string }) {
-  const { home, visitor, clockSeconds, period, isRunning, hornActive, matchName, possession } = state;
+  const { home, visitor, clockSeconds, isRunning, hornActive, matchName, possession } = state;
   const periodLabel  = getPeriodLabel(state);
   const DisplayStats = getTemplate(state.sport).displayStats;
 
@@ -131,7 +131,7 @@ function WideLayout({ state, relayUrl }: { readonly state: ReturnType<typeof use
           className="flex flex-col items-center justify-center px-12"
           style={{ flexShrink: 0, borderLeft: "1px solid var(--border)", borderRight: "1px solid var(--border)" }}
         >
-          <ClockPanel clockSeconds={clockSeconds} countDown={state.countDown} period={period} periodBreak={state.periodBreak} periodLabel={periodLabel} isRunning={isRunning} hornActive={hornActive} matchName={matchName} clockAnchorMs={state.clockAnchorMs} clockCarryMs={state.clockCarryMs} />
+          <ClockPanel clockSeconds={clockSeconds} countDown={state.countDown} period={getPeriodNumber(state)} periodBreak={state.periodBreak} periodLabel={periodLabel} breakLabel={getBreakLabel(state)} notice={getActivePowerPlay(state)?.label} shootout={getShootout(state)} isRunning={isRunning} hornActive={hornActive} matchName={matchName} clockAnchorMs={state.clockAnchorMs} clockCarryMs={state.clockCarryMs} />
         </div>
 
         {/* Visitor side */}
@@ -195,7 +195,7 @@ function TeamSide({ team, side, possession, relayUrl, scoreText }: { readonly te
 // ─── Layout: Stacked ─────────────────────────────────────────────────────────
 
 function StackedLayout({ state, relayUrl }: { readonly state: ReturnType<typeof useMatchState>["state"]; readonly relayUrl: string }) {
-  const { home, visitor, clockSeconds, period, isRunning, hornActive, matchName } = state;
+  const { home, visitor, clockSeconds, isRunning, hornActive, matchName } = state;
   const periodLabel = getPeriodLabel(state);
   const DisplayStats = getTemplate(state.sport).displayStats;
   return (
@@ -204,7 +204,7 @@ function StackedLayout({ state, relayUrl }: { readonly state: ReturnType<typeof 
         <TeamSide team={home} side="home" possession={state.possession} relayUrl={relayUrl} scoreText={formatScore(state, "home")} />
       </div>
       <div className="flex items-center justify-center py-6" style={{ borderBottom: "1px solid var(--border)" }}>
-        <ClockPanel clockSeconds={clockSeconds} countDown={state.countDown} period={period} periodBreak={state.periodBreak} periodLabel={periodLabel} isRunning={isRunning} hornActive={hornActive} matchName={matchName} clockAnchorMs={state.clockAnchorMs} clockCarryMs={state.clockCarryMs} />
+        <ClockPanel clockSeconds={clockSeconds} countDown={state.countDown} period={getPeriodNumber(state)} periodBreak={state.periodBreak} periodLabel={periodLabel} breakLabel={getBreakLabel(state)} notice={getActivePowerPlay(state)?.label} shootout={getShootout(state)} isRunning={isRunning} hornActive={hornActive} matchName={matchName} clockAnchorMs={state.clockAnchorMs} clockCarryMs={state.clockCarryMs} />
       </div>
       <div className="flex-1 flex items-center justify-center" style={{ borderBottom: DisplayStats ? "1px solid var(--border)" : undefined }}>
         <TeamSide team={visitor} side="visitor" possession={state.possession} relayUrl={relayUrl} scoreText={formatScore(state, "visitor")} />
@@ -221,11 +221,10 @@ function StackedLayout({ state, relayUrl }: { readonly state: ReturnType<typeof 
 // ─── Layout: Minimal ─────────────────────────────────────────────────────────
 
 function MinimalLayout({ state }: { readonly state: ReturnType<typeof useMatchState>["state"] }) {
-  const { home, visitor, clockSeconds, countDown, period, isRunning } = state;
+  const { home, visitor, clockSeconds, countDown, isRunning } = state;
   const homeColor    = home.color    || "#F59E0B";
   const visitorColor = visitor.color || "#818CF8";
   const displayClock = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs });
-  const periodLabel = getPeriodLabel(state);
   return (
     <div className="flex flex-col items-center justify-center h-full gap-8">
       {state.matchName && (
@@ -243,10 +242,7 @@ function MinimalLayout({ state }: { readonly state: ReturnType<typeof useMatchSt
             {formatClockDisplay(displayClock)}
           </p>
           <p className="font-black tracking-widest" style={{ fontSize: "calc(2rem * var(--text-scale, 1))", color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)" }}>
-            {(() => {
-              if (!state.periodBreak) return `${periodLabel} ${period}`;
-              return periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
-            })()}
+            {getPeriodText(state)}
           </p>
         </div>
         <div className="text-center">

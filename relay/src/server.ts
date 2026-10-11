@@ -24,6 +24,7 @@ import {
 } from "./schemas";
 import { applyCricketBall, applyOverComplete, applyInningsChange, applyDeclare, resetCricketState } from "./cricket";
 import { resyncClock } from "./clock";
+import { regulationClock, periodClock } from "./periodClock";
 import { resolveBridgeAccess, listSelectableMatches, BRIDGE_ADDON_REQUIRED_MESSAGE } from "./matchPicker";
 import { captureException } from "./sentry";
 import { logger } from "./logger";
@@ -170,6 +171,7 @@ export function resetMatchState(current: MatchState, defaultClock: number): Matc
     home:    resetTeam(current.home),
     visitor: resetTeam(current.visitor),
     netballStats: undefined,
+    shootout: undefined,
     sportState: resetSportState(current.sportState),
   };
 }
@@ -1171,15 +1173,6 @@ export function createServer(options: ServerOptions = {}) {
     } catch (err) { respondToStateError(res, err); }
   });
 
-  // Default clock duration per sport, mirroring sport-templates.ts in the frontend.
-  const SPORT_DEFAULT_CLOCK: Record<string, number> = {
-    netball: 900, basketball: 600, rugby_union: 0, rugby_league: 0,
-    volleyball: 0, football: 0, handball: 1800, hockey: 900, waterpolo: 480,
-    tennis: 0, touch_rugby: 2400, futsal: 1200, pickleball: 0, badminton: 0,
-    table_tennis: 0, floorball: 1200, squash: 0, lawn_bowls: 0,
-    indoor_cricket: 0, softball: 0, cricket: 0, custom: 600,
-  };
-
   // Sports where scores reset to 0 when a period/set/game ends (e.g. volleyball, tennis).
   const SPORT_RESET_SCORE_ON_PERIOD = new Set<string>([
     "volleyball", "tennis",
@@ -1195,9 +1188,9 @@ export function createServer(options: ServerOptions = {}) {
       const n = Number.parseInt(current.period, 10);
       const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
       // Mirrors the control panel's END button (ScoreTab.tsx) — FIBA: team
-      // fouls reset each quarter, and overtime periods are 5 minutes.
+      // fouls reset each quarter. Extra-time periods get their own length.
       const isBasketball = current.sport === "basketball";
-      const defaultClock = isBasketball && nextPeriod > 4 ? 300 : SPORT_DEFAULT_CLOCK[current.sport] ?? 0;
+      const defaultClock = periodClock(current, nextPeriod);
       const resetScoreOnPeriod = SPORT_RESET_SCORE_ON_PERIOD.has(current.sport);
       const teamReset = { ...(resetScoreOnPeriod && { score: 0 }), ...(isBasketball && { faults: 0 }) };
       const next = await applyManualUpdate(orgId, {
@@ -1537,7 +1530,7 @@ export function createServer(options: ServerOptions = {}) {
         stack.push(current);
         if (stack.length > UNDO_STACK_SIZE) stack.shift();
         undoStacks.set(room, stack);
-        const next = resetMatchState(current, SPORT_DEFAULT_CLOCK[current.sport] ?? 0);
+        const next = resetMatchState(current, regulationClock(current));
         setState(orgId, next, matchId);
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", next);

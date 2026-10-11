@@ -24,6 +24,7 @@ export type {
   GraphicsPlayerStats,
   ScoreAdjustEvent,
   IndoorCricketWicketEvent,
+  ShootoutState,
 } from "@scorehub/types";
 
 import type { MatchState, CricketState } from "@scorehub/types";

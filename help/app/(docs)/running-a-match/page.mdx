@@ -46,11 +46,65 @@ Under the score buttons:
 
 **END** followed by the period name (**END QTR**, **END HALF**, **END SET** and so on) does several
 things at once: stops the clock, moves to the next period, resets the clock to the period length,
-and marks a break so displays show it. For sports scored in sets or games — volleyball, tennis,
+and marks a break so displays show it — **HALF TIME** at the middle of the match, **FULL TIME** after
+the last period, and otherwise the period name and **BREAK**. For sports scored in sets or games — volleyball, tennis,
 pickleball, badminton, table tennis and squash — it also resets both scores to 0–0.
 
 **REOPEN** goes back one period and clears the break. Use it if you ended a period by mistake.
 It doesn't restore scores that were reset — use **UNDO** straight away for that instead.
+
+## Extra time
+
+Sports played in quarters, halves or periods can go to extra time. Ending the last regulation
+period shows **FULL TIME** on displays and sets the clock for extra time. From there:
+
+- If the match is decided, end it from the Settings tab.
+- If it's going to extra time, start the clock. The periods that follow show as **ET 1**, **ET 2**
+  and so on, and **END ET** moves from one to the next.
+
+Each extra-time period starts on the sport's usual length:
+
+| Sport | Each period starts on | Shown as | Usual format |
+| --- | --- | --- | --- |
+| Netball | 7:00 | ET | Two halves, then play on until a two-goal lead |
+| Fast5 netball | 1:00 | ET | One period, then next goal wins |
+| Basketball | 5:00 | OT | Repeated until there's a winner |
+| Handball | 5:00 | ET | Two halves, played twice if needed |
+| Futsal | 5:00 | ET | Two halves |
+| Floorball | 10:00 | ET | One period, first goal wins |
+| Hockey | 7:30 | ET | Two halves — many competitions now go straight to a shoot-out |
+| Water polo | 3:00 | ET | Two halves — many competitions now go straight to a shoot-out |
+| Touch rugby | 2:00 | DROP-OFF | A player leaves each side every period |
+| Football, rugby union | Counts up from 0:00 | ET | Two halves |
+| Rugby league | Counts up from 0:00 | GP | Golden point — first score wins |
+
+Competitions often play something different, so you can set the length for each match: under
+**Clock & Match Controls**, type it into **Extra time — length of each period** as `MM:SS` and
+select **Set**. You can do this at any time before extra time starts. If you change it while an
+extra-time period is waiting to start, the clock moves to the new length too. Sports whose clock
+counts up don't have a length to set.
+
+## Penalty shoot-outs
+
+Football, futsal, handball, hockey, water polo and floorball have a **Start penalties** button
+(**Start shoot-out** for hockey) on the Score tab, under the score cards. Selecting it stops the
+clock and opens a shoot-out card with both teams side by side.
+
+- **✓ Scored** and **✕ Missed** record that team's next attempt.
+- **Remove last** takes back that team's most recent attempt. **UNDO** works too.
+- **Clear shoot-out** removes the tally from the control panel and every display.
+
+The shoot-out is tallied apart from the match score, which stays as it stood at the end of play.
+Displays show the tally where the period normally is — for example **PENALTIES 4 – 3**, with a
+filled dot for each attempt scored and a hollow one for each miss. The stream overlay and scorebug
+show it on one line, such as **PENS 4–3**. ScoreHub doesn't decide the winner or stop you after a
+set number of attempts, so sudden death just carries on. The tally stays on displays until you
+clear it, reset the match or end the match.
+
+The shoot-out is scored from the desktop control panel only — not yet from the phone control page,
+Stream Deck or webhooks.
+
+Sports scored in sets, games, ends or innings don't have extra time.
 
 ## Undo
 

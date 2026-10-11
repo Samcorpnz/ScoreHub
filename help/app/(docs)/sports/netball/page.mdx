@@ -2,18 +2,74 @@ export const metadata = { title: "Netball" };
 
 # Netball
 
-Netball matches run as 4 quarters of 15:00 each on ScoreHub's netball template.
+Netball matches run as 4 quarters of 15:00 each on ScoreHub's netball template, or as 4 quarters
+of 6:00 when you choose the Fast5 format.
 
 ## Match structure
 
 - Periods: 4 × QTR
-- Clock: 15:00 countdown per quarter
+- Clock: 15:00 countdown per quarter (6:00 for Fast5)
 - Timeouts: 1 per team
 
 ## Scoring buttons
 
 - **1** — a standard goal from within the goal circle
-- **2** — a Super Shot, worth double, scored from the outer Super Shot zone (Fast5-style rules)
+- **2** — a Super Shot, worth double, for competitions that play a two-point shot
+
+Fast5 has its own buttons — see [Fast5](#fast5) below.
+
+## Match setup options
+
+When creating the match ([Getting started](/getting-started)), choose the **Format**:
+
+- **Standard** — 7-a-side, 4 quarters of 15:00
+- **Fast5** — 5-a-side, 4 quarters of 6:00, with 1, 2 and 3-point shots and a Power Play
+
+You can change the format afterwards on the **Settings** tab, under **Format**. That's also where
+to set it for a match that was uploaded as a fixture, which starts as Standard. If the match
+hasn't started, the clock moves to the new quarter length with it.
+
+## Fast5
+
+The Fast5 format follows the World Netball Rules of Fast5.
+
+Each team has three score buttons, named for where the shot was taken from:
+
+- **INNER (1)** — a shot from the inner circle
+- **OUTER (2)** — a shot from the outer circle
+- **SUPER (3)** — a super shot, from outside the goal circle
+
+### Power Play
+
+The last 2:00 of every quarter is the Power Play, when outer and super shots are worth double.
+ScoreHub follows the clock: as it reaches 2:00 the buttons change to **1**, **4** and **6**, the
+control panel shows **⚡ POWER PLAY**, and displays flag it next to the clock. At the start of the
+next quarter the buttons go back to 1, 2 and 3. There is no Power Play in extra time.
+
+The value depends on when the shot left the shooter's hands. If a shot taken just before the Power
+Play goes in just after it starts, the button will already have doubled — score it, then take the
+difference off with the minus buttons.
+
+<Callout>
+  Scorers also sound a signal when the Power Play starts. Add a [sound cue](/running-a-match/sound-cues)
+  for **All periods** at `02:00` to play it automatically.
+</Callout>
+
+## Extra time
+
+When you select **END QTR** at the end of the fourth quarter, displays show **FULL TIME** and the
+clock is set for extra time. If the match is over, end it from the Settings tab as usual. If it's
+going to extra time, start the clock — each period after the fourth shows as **ET 1**, **ET 2**
+and so on.
+
+Each extra-time period starts on:
+
+- **7:00** for Standard netball — two halves, then play on until one team leads by two goals
+- **1:00** for Fast5 — one period, then play on until the next goal
+
+Competitions often set their own length. To change it, type the new length under **Clock & Match
+Controls → Extra time** on the Score tab and select **Set**. See
+[Extra time](/running-a-match#extra-time) for more.
 
 ## Running the match
 

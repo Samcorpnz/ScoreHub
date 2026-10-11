@@ -49,14 +49,15 @@ to test it: you get the fixture's starting state, and it stays upcoming until so
 | `clockSeconds` | number | The clock, in whole seconds. |
 | `isRunning` | boolean | Whether the clock is running. |
 | `countDown` | boolean | `true` if the clock counts down, `false` if it counts up. |
-| `period` | string | The current period. Usually a number as text, such as `"2"`. `"E"` is extra time. |
+| `period` | string | The current period. Usually a number as text, such as `"2"`. A number past the sport's last regulation period is extra time — `"5"` is the first extra-time period of a four-quarter match. `"E"` is also extra time. |
 | `periodBreak` | boolean | `true` between periods, after a period has been ended. |
 | `possession` | string | `home`, `visitor`, `both` or `none`. |
 | `hornActive` | boolean | Whether the horn is sounding, when a scoring console reports it. |
 | `inputSource` | string | Where the last update came from. `manual` for the control panel and webhooks. |
 | `home`, `visitor` | object | Each team. See [Team](#team). |
 | `displayTheme` | object | The match's display theme. See [Display theme](#display-theme). |
-| `sportConfig` | object | Match options chosen at setup, such as a best-of-3 or best-of-5 format. Its keys depend on the sport. May be absent. |
+| `sportConfig` | object | Match options, such as a best-of-3 or best-of-5 format, `format: "fast5"` for Fast5 netball, or `extraTimeSeconds` where an extra-time length has been set. Its keys depend on the sport. May be absent. |
+| `shootout` | object | A penalty shoot-out's tally: `home` and `visitor`, each a list with one `true` (scored) or `false` (missed) per attempt, in order. Absent or `null` when there isn't one. |
 | `sportState` | object | Extra state for cricket, softball and indoor cricket. Absent for other sports. See [Sport-specific state](#sport-specific-state). |
 
 The response can include other fields that ScoreHub uses internally, and statistics fields that
@@ -227,8 +228,9 @@ response gives the value after the change.
 - resets the clock to the sport's period length
 - marks a break, so displays show it
 - for volleyball, tennis, pickleball, badminton, table tennis and squash, resets both scores to 0
-- for basketball, resets both teams' fouls to 0, and gives any period after the fourth a 5:00
-  clock for overtime
+- for basketball, resets both teams' fouls to 0
+- for a period after the last regulation one, sets the clock to the match's extra-time length
+  instead — see [Extra time](/running-a-match#extra-time)
 
 In a match set up as best-of-3 or best-of-5, `/action/period/next` and `/action/period/end` do
 nothing once the last set or game has been reached. They return the current values.

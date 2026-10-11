@@ -173,6 +173,13 @@ import type { CricketState } from "./sports/cricket";
 
 export type SportState = IndoorCricketState | SoftballState | CricketState;
 
+// A penalty shoot-out's tally, kept apart from the match score. One entry
+// per attempt in the order taken: true = scored, false = missed or saved.
+export interface ShootoutState {
+  home: boolean[];
+  visitor: boolean[];
+}
+
 export interface MatchState {
   sequenceId: number;
   clockSeconds: number;
@@ -195,6 +202,8 @@ export interface MatchState {
   netballStats?: NetballMatchStats;
   sportState?: SportState;
   sportConfig?: Record<string, unknown>;
+  // Present while a shoot-out is being (or has been) taken; null once cleared
+  shootout?: ShootoutState | null;
   graphicsFeed?: GraphicsFeed;
   displayTheme: DisplayTheme;
 }
