@@ -238,6 +238,7 @@ Every event has these fields:
 | `clock_start`, `clock_stop` | The clock started or stopped. | |
 | `break_start`, `break_end` | A break between periods started or ended. | |
 | `reset` | The match was reset to its starting state. | |
+| `log_full` | The log reached its size limit. Always the last event; nothing after it was logged. | |
 
 Things to know:
 
@@ -250,8 +251,9 @@ Things to know:
 - Events are logged from when this feature was switched on for your account's matches. A match
   scored before then has an empty log.
 - An event can take a second or two to appear after it happens.
-- A match's log holds up to 10,000 events. Later events aren't logged; the match state carries on
-  as normal.
+- A match's log holds up to 10,000 events, far more than a normal match produces. If one fills,
+  its last event is `log_full` and later events aren't logged, so treat that log as incomplete.
+  The match state carries on as normal.
 - An upcoming fixture has an empty log, and reading it doesn't start the match.
 - Errors are the same as for the match state, plus `400` if `since` isn't a whole number of 0 or
   more. An organisation with no live match returns an empty log when no `matchId` is sent.

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { prisma } from "@scorehub/db";
+import { prisma, recordAuditEvent } from "@scorehub/db";
 import type { MatchEvent } from "@scorehub/types";
 import { MatchState, DEFAULT_MATCH_STATE } from "./types";
 import { getOrgAccount, ConcurrentMatchLimitError } from "./entitlements";
@@ -15,7 +15,9 @@ const SAVE_DEBOUNCE_MS = 2000;
 // and a match's log stops growing at the cap, so a client that can score
 // (a control panel, a Control API token, a bridge) can't turn rapid score
 // changes into unbounded database writes or rows. A real match logs a few
-// hundred events; ball-by-ball cricket a couple of thousand.
+// hundred events; ball-by-ball cricket a couple of thousand. Hitting the cap
+// is never silent: the log's last row is a "log_full" marker, so a consumer
+// can tell it is incomplete, and an audit event records it for the org.
 const EVENT_FLUSH_MS = 1000;
 const MAX_EVENTS_PER_MATCH = 10_000;
 
@@ -93,7 +95,6 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
   let pendingEvents: MatchEvent[] = [];
   let eventTimer: NodeJS.Timeout | null = null;
   let storedEvents: number | null = null;
-  let eventCapLogged = false;
   let eventWrites: Promise<void> = Promise.resolve();
 
   async function writeEvents(): Promise<void> {
@@ -102,12 +103,20 @@ export function getMatchStore(orgId: string, matchId?: string): MatchStore | nul
     if (batch.length === 0) return;
     const id = await resolveMatch();
     storedEvents ??= await prisma.matchEvent.count({ where: { matchId: id } });
-    const rows = batch.slice(0, Math.max(0, MAX_EVENTS_PER_MATCH - storedEvents));
-    if (rows.length < batch.length && !eventCapLogged) {
-      eventCapLogged = true;
+    if (storedEvents >= MAX_EVENTS_PER_MATCH) return;
+    // The final slot is kept for the marker, so a full log always ends on it.
+    const room = MAX_EVENTS_PER_MATCH - 1 - storedEvents;
+    const rows = batch.slice(0, room);
+    if (batch.length > room) {
+      rows.push({ ...batch[room], type: "log_full", side: undefined, delta: undefined, fromPeriod: undefined, previous: undefined, correction: undefined });
       console.warn("[relay] match event log is full, further events are not logged:", id);
+      recordAuditEvent({
+        eventType: "match.event_log_full",
+        orgId,
+        message: `Match ${id} reached the ${MAX_EVENTS_PER_MATCH}-event log limit; later events are not logged`,
+        metadata: { matchId: id },
+      });
     }
-    if (rows.length === 0) return;
     await prisma.matchEvent.createMany({
       data: rows.map(e => ({ matchId: id, type: e.type, at: new Date(e.at), data: e as object })),
     });

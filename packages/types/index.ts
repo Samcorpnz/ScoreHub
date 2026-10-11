@@ -42,7 +42,10 @@ export type MatchEventType =
   | "clock_stop"
   | "break_start"
   | "break_end"
-  | "reset";
+  | "reset"
+  // Always the last entry of a log that hit its size limit: what follows it
+  // in the match was not logged.
+  | "log_full";
 
 export interface MatchEvent {
   // Position in the match's log. Assigned when the event is stored, so it is

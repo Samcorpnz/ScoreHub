@@ -6,9 +6,10 @@ const matchCountMock = jest.fn();
 const eventCreateManyMock = jest.fn();
 const eventFindManyMock = jest.fn();
 const eventCountMock = jest.fn();
+const recordAuditEventMock = jest.fn();
 
 jest.mock("@scorehub/db", () => ({
-  recordAuditEvent: jest.fn(),
+  recordAuditEvent: (...a: unknown[]) => recordAuditEventMock(...a),
   prisma: {
     match: {
       findUnique: (...a: unknown[]) => matchFindUniqueMock(...a),
@@ -49,6 +50,7 @@ describe("persistence", () => {
     eventCreateManyMock.mockReset();
     eventFindManyMock.mockReset();
     eventCountMock.mockReset();
+    recordAuditEventMock.mockReset();
     eventCountMock.mockResolvedValue(0);
     getOrgAccountMock.mockReset();
     process.env.DATABASE_URL = "postgres://test";
@@ -371,16 +373,26 @@ describe("persistence", () => {
       expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
     });
 
-    it("stops logging once the match's log reaches its cap, counting rows already stored", async () => {
+    it("ends a full log on a log_full marker, records it once, and logs nothing after", async () => {
       const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
       liveMatch();
-      eventCountMock.mockResolvedValue(9_998);
+      eventCountMock.mockResolvedValue(9_997);
       const { getMatchStore } = await import("../persistence");
       const store = getMatchStore("org-1", "m1")!;
 
-      store.appendEvents([event("score", "a"), event("score", "b"), event("clock_start", "c")].map((e, i) => ({ ...e, at: `2026-10-11T02:00:0${i}.000Z` })));
+      // Room for two events plus the marker; the third event becomes the marker.
+      store.appendEvents([
+        { ...event("score", "2026-10-11T02:00:00.000Z"), side: "home", delta: 1 },
+        event("clock_start", "2026-10-11T02:00:01.000Z"),
+        { ...event("score", "2026-10-11T02:00:02.000Z"), side: "visitor", delta: 3, home: 7, visitor: 9 },
+        event("score", "2026-10-11T02:00:03.000Z"),
+      ]);
       await store.flush();
-      expect(writtenTypes()).toEqual(["score", "score"]);
+      expect(writtenTypes()).toEqual(["score", "clock_start", "log_full"]);
+      const marker = eventCreateManyMock.mock.calls[0][0].data[2].data;
+      expect(marker).toMatchObject({ type: "log_full", at: "2026-10-11T02:00:02.000Z", home: 7, visitor: 9 });
+      expect(marker.side).toBeUndefined();
+      expect(marker.delta).toBeUndefined();
 
       store.appendEvents([event("score", "2026-10-11T02:00:09.000Z")]);
       await store.flush();
@@ -390,7 +402,36 @@ describe("persistence", () => {
       expect(eventCreateManyMock).toHaveBeenCalledTimes(1);
       expect(eventCountMock).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(recordAuditEventMock).toHaveBeenCalledTimes(1);
+      expect(recordAuditEventMock).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: "match.event_log_full", orgId: "org-1", metadata: { matchId: "m1" },
+      }));
       warnSpy.mockRestore();
+    });
+
+    it("fills the log exactly to its limit without a marker when nothing is dropped", async () => {
+      liveMatch();
+      eventCountMock.mockResolvedValue(9_998);
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
+      await store.flush();
+
+      expect(writtenTypes()).toEqual(["score"]);
+      expect(recordAuditEventMock).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing to a log that was already full when the relay started", async () => {
+      liveMatch();
+      eventCountMock.mockResolvedValue(10_000);
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
+      await store.flush();
+
+      expect(eventCreateManyMock).not.toHaveBeenCalled();
     });
 
     it("drops events rather than hold more in memory than the cap", async () => {
@@ -403,7 +444,9 @@ describe("persistence", () => {
       store.appendEvents([event("clock_start", "2026-10-11T02:00:01.000Z")]);
       await store.flush();
 
+      // 9,999 events and the marker: the buffer never held more than the cap.
       expect(eventCreateManyMock.mock.calls[0][0].data).toHaveLength(10_000);
+      expect(writtenTypes().at(-1)).toBe("log_full");
       expect(writtenTypes()).not.toContain("clock_start");
     });
 
