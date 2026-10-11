@@ -23,6 +23,7 @@ const matchFindUniqueMock = jest.fn();
 const matchCreateMock = jest.fn();
 const matchUpdateMock = jest.fn();
 const matchCountMock = jest.fn();
+const eventCreateManyMock = jest.fn();
 
 jest.mock("@scorehub/db", () => ({
   // auth.ts logs auth failures through this; the real one writes an audit row.
@@ -36,6 +37,7 @@ jest.mock("@scorehub/db", () => ({
       update: (...a: unknown[]) => matchUpdateMock(...a),
       count: (...a: unknown[]) => matchCountMock(...a),
     },
+    matchEvent: { createMany: (...a: unknown[]) => eventCreateManyMock(...a), count: jest.fn(async () => 0) },
     // Only JWT-based control/action auth is exercised in this file — no
     // ScopedToken flows — so this always misses, falling through to the JWT
     // check in verifyControlSecret/verifyActionSecret (auth.ts).
@@ -85,6 +87,8 @@ beforeEach(() => {
   matchCreateMock.mockReset();
   matchUpdateMock.mockReset();
   matchCountMock.mockReset();
+  eventCreateManyMock.mockReset();
+  eventCreateManyMock.mockResolvedValue({ count: 0 });
 });
 
 function controlToken(orgId: string, extra: Record<string, unknown> = {}): Promise<string> {
@@ -288,6 +292,31 @@ describe("respondToStateError — unexpected persistence failures (500)", () => 
     const res = await request(app).post("/match").set("x-control-secret", token);
     expect(res.status).toBe(500);
     errorSpy.mockRestore();
+  });
+});
+
+// ─── Event log ────────────────────────────────────────────────────────────
+
+describe("match event log (multi-tenant)", () => {
+  it("writes scoring and clock actions to the match's event log as they happen", async () => {
+    const token = await controlToken("org-events", { matchId: "m-events" });
+    orgFindUniqueMock.mockResolvedValue(proAccount());
+    matchFindUniqueMock.mockResolvedValue({
+      id: "m-events", orgId: "org-events", status: "LIVE",
+      state: { sequenceId: 1, period: "1", clockSeconds: 600, isRunning: false, home: { score: 3 }, visitor: { score: 2 } },
+    });
+
+    await request(app).post("/action/score/home?delta=2").set("x-control-secret", token).expect(200);
+    await request(app).post("/action/start").set("x-control-secret", token).expect(200);
+    await request(app).post("/action/stop").set("x-control-secret", token).expect(200);
+    // Event writes are batched on a one-second timer.
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const rows = eventCreateManyMock.mock.calls.flatMap(([arg]) => (arg as { data: { matchId: string; type: string; data: object }[] }).data);
+    expect(rows.map(r => [r.matchId, r.type])).toEqual([
+      ["m-events", "score"], ["m-events", "clock_start"], ["m-events", "clock_stop"],
+    ]);
+    expect(rows[0].data).toMatchObject({ side: "home", delta: 2, home: 5, visitor: 2, period: "1" });
   });
 });
 

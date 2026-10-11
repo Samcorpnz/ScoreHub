@@ -296,4 +296,53 @@ describe("DashboardPage", () => {
     fireEvent.click(screen.getByText("Sign out"));
     expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/login" });
   });
+  it("offers Export Results on the History tab only, and downloads the filtered results", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const createObjectURL = vi.fn(() => "blob:results");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText("Export Results")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("history"));
+    fireEvent.change(screen.getByPlaceholderText("Search team name…"), { target: { value: "Sharks" } });
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes("/matches/export")
+        ? {
+            ok: true,
+            blob: async () => new Blob(["sport\r\n"]),
+            headers: new Headers({ "Content-Disposition": 'attachment; filename="scorehub-results-2026-10-11.csv"' }),
+          }
+        : { ok: true, json: async () => ({ matches: [] }) },
+    );
+    fireEvent.click(screen.getByText("Export Results"));
+
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith("/api/orgs/org-1/matches/export?q=Sharks");
+    expect((click.mock.instances[0] as unknown as HTMLAnchorElement).download).toBe("scorehub-results-2026-10-11.csv");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:results");
+    click.mockRestore();
+  });
+
+  it("shows the server's message when the results export is refused", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("/matches/export")
+        ? { ok: false, json: async () => ({ error: "This feature requires the Pro or Venue plan — upgrade at /account/billing" }) }
+        : { ok: true, json: async () => ({ matches: [] }) },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("history"));
+    fireEvent.click(screen.getByText("Export Results"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("requires the Pro or Venue plan");
+    expect(screen.getByText("Export Results")).not.toBeDisabled();
+  });
 });

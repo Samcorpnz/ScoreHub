@@ -12,7 +12,7 @@ jest.mock("dompurify", () => () => ({ sanitize: (dirty: string) => dirty }));
 
 import { createServer } from "../server";
 
-// Coverage for the Stream Deck / webhook "action" endpoints
+// Coverage for the Stream Deck / Control API "action" endpoints
 // (/action/toggle, /action/score/:team, /action/period/next, /action/period/prev)
 // that relay.test.ts and capabilities.test.ts don't otherwise exercise, plus
 // a handful of validation/edge-case branches on the upload and /match routes.

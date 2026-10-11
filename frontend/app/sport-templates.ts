@@ -502,7 +502,7 @@ export function getExtraTimePeriod(state: MatchPeriodState): number {
 
 // Length of an extra-time period: what the operator set for this match, else
 // the sport's default, else the same as a regulation period.
-// Mirrored by periodClock in relay/src/periodClock.ts for Stream Deck/webhooks.
+// Mirrored by periodClock in relay/src/periodClock.ts for Stream Deck/the Control API.
 export function getExtraTimeSeconds(state: MatchFormatState): number {
   const template = getMatchTemplate(state);
   const chosen = state.sportConfig?.extraTimeSeconds;
@@ -543,7 +543,7 @@ export function getScoreIncrements(
 // match can run to, or undefined when there's no cap: every other sport
 // (timed sports can go to extra time), and matches with no format recorded
 // (fixtures uploaded in bulk, or created before the option existed).
-// Mirrored by bestOfLength in relay/src/server.ts for Stream Deck/webhooks.
+// Mirrored by bestOfLength in relay/src/server.ts for Stream Deck/the Control API.
 export function getMatchLength(state: Pick<MatchState, "sport" | "sportConfig">): number | undefined {
   const formatField = getTemplate(state.sport).matchConfig?.find(f => f.key === "format");
   const format = String(state.sportConfig?.format ?? "");

@@ -129,7 +129,7 @@ export default function TermsPage() {
           <li>the accuracy of information you provide when registering;</li>
           <li>
             maintaining the confidentiality of your login credentials and any Scoped Tokens issued
-            to your organisation (for bridge or webhook access);
+            to your organisation (for bridge or Control API access);
           </li>
           <li>all activity that occurs under your account or your organisation&apos;s tokens; and</li>
           <li>

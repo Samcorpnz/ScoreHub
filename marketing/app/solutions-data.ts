@@ -83,9 +83,9 @@ export const SOLUTIONS: Solution[] = [
       {
         heading: "Buttons for the people who like buttons",
         paragraphs: [
-          "An Elgato Stream Deck can start and stop the clock, add points and move the period, with each key showing the live value. Anything that can send an HTTP request can do the same through webhooks. Both are included on every plan and work alongside whoever is scoring on screen.",
+          "An Elgato Stream Deck can start and stop the clock, add points and move the period, with each key showing the live value. Anything that can send an HTTP request can do the same through the Control API. Both are included on every plan and work alongside whoever is scoring on screen.",
         ],
-        help: { label: "Stream Deck and webhooks", path: "/running-a-match/stream-deck-and-webhooks" },
+        help: { label: "Stream Deck and the Control API", path: "/running-a-match/stream-deck-and-control-api" },
       },
     ],
     faq: [
@@ -229,9 +229,9 @@ export const SOLUTIONS: Solution[] = [
         heading: "A scorebug that updates itself",
         paragraphs: [
           "The overlay follows the live match, so there's no text source to retype. Score from the mobile panel on a phone, from keyboard shortcuts on the streaming PC, or hand the scoring to someone at the venue while you run the stream.",
-          "On an Elgato Stream Deck, ScoreHub keys start and stop the clock, add points and change the period, and each key shows the live value. Webhooks do the same for anything that can send an HTTP request.",
+          "On an Elgato Stream Deck, ScoreHub keys start and stop the clock, add points and change the period, and each key shows the live value. The Control API does the same for anything that can send an HTTP request.",
         ],
-        help: { label: "Stream Deck and webhooks", path: "/running-a-match/stream-deck-and-webhooks" },
+        help: { label: "Stream Deck and the Control API", path: "/running-a-match/stream-deck-and-control-api" },
       },
       {
         heading: "Broadcast scenes with the Graphics add-on",

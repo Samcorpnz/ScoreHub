@@ -114,6 +114,8 @@ export default function DashboardPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
   const [reopenError, setReopenError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const { data: matches = [], isLoading: loading, mutate: load } = useSWR(
     orgId ? [orgId, tab, sportFilter, competitionFilter, search] : null,
@@ -130,6 +132,37 @@ export default function DashboardPage() {
       setCopied(url);
       setTimeout(() => setCopied(null), 1500);
     });
+  }
+
+  // Downloads the History tab's matches, as currently filtered, as a results
+  // CSV. Fetched rather than linked so a refusal (Free plan) shows its
+  // message here instead of navigating to a JSON error.
+  async function exportResults() {
+    if (!orgId) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      const params = new URLSearchParams();
+      if (sportFilter) params.set("sport", sportFilter);
+      if (competitionFilter) params.set("competition", competitionFilter);
+      if (search.trim()) params.set("q", search.trim());
+      const res = await fetch(`/api/orgs/${orgId}/matches/export?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setExportError(body?.error ?? "Export failed");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "scorehub-results.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Export failed");
+    } finally {
+      setExporting(false);
+    }
   }
 
   // An ended match is read-only; reopening it makes it live again so the
@@ -272,6 +305,16 @@ export default function DashboardPage() {
               {uploadOpen ? "Close Upload" : "Upload Fixtures"}
             </button>
           )}
+          {tab === "history" && (
+            <button
+              onClick={exportResults}
+              disabled={exporting}
+              className="rounded-lg px-3 py-2 text-xs font-bold whitespace-nowrap"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+            >
+              {exporting ? "Exporting…" : "Export Results"}
+            </button>
+          )}
         </div>
 
         {tab === "upcoming" && uploadOpen && orgId && (
@@ -280,6 +323,9 @@ export default function DashboardPage() {
 
         {reopenError && (
           <p role="alert" className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{reopenError}</p>
+        )}
+        {tab === "history" && exportError && (
+          <p role="alert" className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{exportError}</p>
         )}
 
         {loading ? (

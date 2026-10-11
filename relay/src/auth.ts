@@ -67,7 +67,7 @@ export async function verifyBridgeSecret(
   return { orgId: token.orgId, matchId: token.matchId ?? undefined };
 }
 
-// Stream Deck / webhook callers use a long-lived CONTROL ScopedToken (or a
+// Stream Deck / Control API callers use a long-lived CONTROL ScopedToken (or a
 // short-lived control JWT) to authenticate action endpoints without a session.
 export async function verifyActionSecret(
   secret: string | undefined,

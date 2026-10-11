@@ -9,7 +9,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { MatchState, DEFAULT_MATCH_STATE, IndoorCricketState } from "./types";
-import { getMatchStore, allActiveStores, evictMatchStore, peekScheduledState, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
+import { getMatchStore, allActiveStores, evictMatchStore, peekScheduledState, listMatchEvents, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
 import { prisma } from "@scorehub/db";
 import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
 import { getRedisClients, acquireTickLock, closeRedis, publishStateUpdate, subscribeStateUpdates } from "./redis";
@@ -25,6 +25,7 @@ import {
 import { applyCricketBall, applyOverComplete, applyInningsChange, applyDeclare, resetCricketState } from "./cricket";
 import { resyncClock } from "./clock";
 import { regulationClock, periodClock } from "./periodClock";
+import { diffMatchEvents, createMatchEventBuffer, MatchEventCause } from "./matchEvents";
 import { resolveBridgeAccess, listSelectableMatches, BRIDGE_ADDON_REQUIRED_MESSAGE } from "./matchPicker";
 import { captureException } from "./sentry";
 import { logger } from "./logger";
@@ -291,6 +292,8 @@ export function createServer(options: ServerOptions = {}) {
   // relay restart resets to no active scene, same as those. No mutex: last
   // write wins, matching matchStateChange's own concurrency model.
   const sceneStates = new Map<string, GraphicsScenePayload & { updatedAt: string }>();
+  // Legacy mode's event log; with a database it lives in the MatchEvent table.
+  const eventBuffer = createMatchEventBuffer();
 
   // An ENDED match is read-only until it's reopened. The frontend's end and
   // reopen routes write Match.status straight to Postgres, so the relay has
@@ -348,8 +351,22 @@ export function createServer(options: ServerOptions = {}) {
     return getState(orgId, matchId);
   }
 
-  function setState(orgId: string, next: MatchState, matchId?: string): void {
+  // Logs what changed between the room's current state and `next`. Must run
+  // before matchStates is overwritten — the previous state is the baseline.
+  function recordEvents(orgId: string, next: MatchState, matchId?: string, cause?: MatchEventCause): void {
     const room = roomFor(orgId, matchId);
+    const prev = matchStates.get(room)?.state;
+    if (!prev) return;
+    const events = diffMatchEvents(prev, next, new Date(), cause);
+    if (events.length === 0) return;
+    const store = getMatchStore(orgId, matchId);
+    if (store) store.appendEvents(events);
+    else eventBuffer.append(room, events);
+  }
+
+  function setState(orgId: string, next: MatchState, matchId?: string, cause?: MatchEventCause): void {
+    const room = roomFor(orgId, matchId);
+    recordEvents(orgId, next, matchId, cause);
     matchStates.set(room, { orgId, matchId, state: next });
     io.to(room).emit("matchStateChange", next);
     getMatchStore(orgId, matchId)?.save(next);
@@ -978,6 +995,39 @@ export function createServer(options: ServerOptions = {}) {
     }
   });
 
+  // The match's event log (scores, period changes, clock starts/stops) for
+  // consumers that need to know what happened and when, not just the current
+  // state — results import, clip markers for a camera system. `since` is the
+  // `seq` of the last event already held; the response's `next` is the value
+  // to send on the following poll. Same token and add-on as the state route.
+  const EVENTS_PAGE_SIZE = 500;
+  app.get("/api/data-feed/events", dataFeedRateLimit, async (req, res) => {
+    const secret = req.headers["x-data-feed-secret"];
+    const result = await verifyDataFeedSecret(typeof secret === "string" ? secret : undefined, DATA_FEED_SECRET);
+    if (!result) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (!(await orgHasAddOn(result.orgId, "data-feed"))) {
+      res.status(403).json({ error: "This feature requires the data-feed add-on — upgrade at /account/billing" });
+      return;
+    }
+    const since = typeof req.query.since === "string" ? Number(req.query.since) : 0;
+    if (!Number.isSafeInteger(since) || since < 0) {
+      res.status(400).json({ error: "since must be a non-negative integer" });
+      return;
+    }
+    const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
+    try {
+      const events = process.env.DATABASE_URL
+        ? await listMatchEvents(result.orgId, matchId, since, EVENTS_PAGE_SIZE)
+        : eventBuffer.list(roomFor(result.orgId, matchId), since, EVENTS_PAGE_SIZE);
+      res.json({ events, next: events.at(-1)?.seq ?? since });
+    } catch (err) {
+      respondToStateError(res, err);
+    }
+  });
+
   // Public (no secret) — the /display/graphics Browser Source has no
   // session, so it needs a way to know whether to render the ScoreHub-logo
   // upgrade-prompt state versus the live scene tree. Only exposes a
@@ -1066,7 +1116,7 @@ export function createServer(options: ServerOptions = {}) {
     }
   });
 
-  // ─── Action endpoints (Stream Deck / keyboard shortcut webhooks) ────────────
+  // ─── Action endpoints (Stream Deck / Control API) ────────────
   // Atomic verbs rather than raw MatchState patches — safe to fire without
   // knowing current state. Auth: long-lived CONTROL ScopedToken via
   // x-control-secret, or a short-lived operator JWT from the control panel.
@@ -1531,7 +1581,7 @@ export function createServer(options: ServerOptions = {}) {
         if (stack.length > UNDO_STACK_SIZE) stack.shift();
         undoStacks.set(room, stack);
         const next = resetMatchState(current, regulationClock(current));
-        setState(orgId, next, matchId);
+        setState(orgId, next, matchId, "reset");
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", next);
       });
@@ -1613,6 +1663,7 @@ export function createServer(options: ServerOptions = {}) {
           // this snapshot was captured and fast-forward by that whole gap.
           ...(previous.isRunning ? { clockAnchorMs: Date.now() } : {}),
         };
+        recordEvents(orgId, restored, matchId, "undo");
         matchStates.set(room, { orgId, matchId, state: restored });
         io.to(room).emit("matchStateChange", restored);
         getMatchStore(orgId, matchId)?.save(restored);
