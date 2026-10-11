@@ -7,7 +7,7 @@ import path from "path";
 import { createServer } from "../server";
 import { MatchState } from "../types";
 
-// Stream Deck / webhook scoring routes (/action/*) and the socket scoring
+// Stream Deck / Control API scoring routes (/action/*) and the socket scoring
 // handlers that had no direct coverage: /action/toggle, /action/score/:team,
 // /action/period/next|prev, indoorCricket:wicket and undo-after-adjust. These
 // are the scoring/clock paths SA-30 requires CI to guard.

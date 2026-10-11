@@ -19,7 +19,8 @@ on the other tabs. Matches are listed by scheduled time, earliest first; matches
 scheduled come after those, newest first.
 
 <Callout>
-  History doesn't show the final score yet. See the next section for how to find it.
+  History doesn't show the final score yet. See the next section for how to find it, or
+  [export your results](#exporting-results) to get every final score in one file.
 </Callout>
 
 ## Seeing a finished match's final score
@@ -53,11 +54,34 @@ If you need a match or its data removed, email
 
 ## Exporting results
 
-There's no export yet — no CSV or PDF download, and no public results page. For now, record
-results from the display or the control panel at full time.
+On Pro and Venue plans, **Export Results** on the History tab downloads your ended matches as a
+CSV file. Everyone in the organisation can use it.
 
-If you need match data in another system while a match is live, the
-[Data Feed add-on](/billing/data-feed-addon) gives other software a feed of the live match state.
+The file holds the matches History is showing, so set the sport and competition filters or the
+team-name search first to export one competition or one team. With no filters it holds every
+ended match, oldest first.
+
+| Column | Contains |
+| --- | --- |
+| `sport` | The sport code, such as `netball`. |
+| `competition` | The competition or grade, if the match has one. |
+| `home`, `visitor` | The team names. |
+| `homeScore`, `visitorScore` | The final scores. For sports scored in sets or games, the score in the last one played. |
+| `scheduledAt` | The scheduled time, if the match had one, in UTC. |
+| `endedAt` | When the match was ended, in UTC. |
+| `matchId` | The match's ID in ScoreHub. |
+
+The first four columns match the [fixture upload format](/running-a-match/dashboard-and-fixtures#file-format),
+so a results file lines up with the fixture file the matches came from.
+
+A match that's been reopened isn't in the file until it's ended again. A team name that starts
+with `=`, `+`, `-` or `@` has an apostrophe put in front of it, so a spreadsheet doesn't read it
+as a formula.
+
+There's no PDF download and no public results page yet.
+
+If you need match data in another system, the [Data Feed add-on](/billing/data-feed-addon) gives
+other software the live match state and a log of each score and period change as it happens.
 
 ## Who can see History
 

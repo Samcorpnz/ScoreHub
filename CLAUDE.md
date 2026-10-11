@@ -124,7 +124,8 @@ different caller:
 - **Control JWT** — short-lived, minted by the frontend's `/api/control-token` route from the
   logged-in user's session (requires ADMIN/MANAGER/OPERATOR role). Used by the control panel.
 - **CONTROL ScopedToken** — long-lived, DB-backed (hashed with SHA-256, never stored raw), for
-  Stream Deck / webhook callers that can't do an interactive login.
+  Stream Deck / Control API callers that can't do an interactive login. ("Control API" is the
+  product name for the `/action/*` routes; "webhooks" is reserved for outbound notifications.)
 - **BRIDGE ScopedToken** — long-lived, per-org, generated from the control panel's Settings tab;
   authenticates the venue-laptop bridge process.
 

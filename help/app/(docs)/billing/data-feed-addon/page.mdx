@@ -8,7 +8,10 @@ export const metadata = { title: "Data Feed add-on" };
   [Bridge app](/connecting-the-bridge), instead of tapping the score in by hand.
 - **Out** — give third-party graphics software a secure, token-authenticated feed of your live
   match state — score, clock, period, team names, colours and logos — so tools like Singular.live,
-  Chyron or Vizrt can drive their own templates from ScoreHub.
+  Chyron or Vizrt can drive their own templates from ScoreHub. The feed also carries a log of
+  each score, period change and clock start or stop with the time it happened, for software that
+  needs the story of the match and not only the current score, such as a results import or a
+  camera system marking highlights.
 
 | | Monthly | Annual |
 | --- | --- | --- |
@@ -66,7 +69,9 @@ The response includes, among other fields:
 | `possession` | `home`, `visitor` or `none` |
 
 For every field, the limits and the error responses, see the
-[Developer reference](/connecting-the-bridge/developer-reference).
+[Developer reference](/connecting-the-bridge/developer-reference). The log of events is a second
+address that takes the same token — see
+[Match events](/connecting-the-bridge/developer-reference#match-events).
 
 To cut off an integration, select **Revoke** next to its token on the Data Feed card.
 

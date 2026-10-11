@@ -31,6 +31,42 @@ export interface IndoorCricketWicketEvent {
   side: "home" | "visitor";
 }
 
+// One entry in a match's event log — what happened and when, as opposed to
+// MatchState's "what is true right now". The relay derives these by diffing
+// consecutive states (relay/src/matchEvents.ts), so every source of change
+// (control panel, bridge, Stream Deck, undo) is logged the same way.
+export type MatchEventType =
+  | "score"
+  | "period"
+  | "clock_start"
+  | "clock_stop"
+  | "break_start"
+  | "break_end"
+  | "reset";
+
+export interface MatchEvent {
+  // Position in the match's log. Assigned when the event is stored, so it is
+  // what a consumer passes back as `since` to fetch only newer events.
+  seq?: number;
+  type: MatchEventType;
+  at: string; // ISO 8601, relay wall-clock time
+  // Match clock, period and both scores immediately after the event.
+  clockSeconds: number;
+  period: string;
+  home: number;
+  visitor: number;
+  // score events only
+  side?: "home" | "visitor";
+  delta?: number;
+  // period events only: the period just left, and the scores it finished on
+  // (sports that zero the score between sets would otherwise lose them).
+  fromPeriod?: string;
+  previous?: { home: number; visitor: number };
+  // Set when the event came from an Undo, so a consumer can treat it as a
+  // correction to what it already received rather than new play.
+  correction?: boolean;
+}
+
 export type SportType =
   | "netball" | "basketball"
   | "rugby_union" | "rugby_league"

@@ -123,18 +123,18 @@ describe("SettingsTab", () => {
     expect(await screen.findByText("Cannot end")).toBeInTheDocument();
   });
 
-  it("does not render the webhook/bridge admin cards for an OPERATOR role", () => {
+  it("does not render the Control API/bridge admin cards for an OPERATOR role", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", activeOrgId: "org1" } } });
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.queryByText("Stream Deck / Webhooks")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stream Deck / Control API")).not.toBeInTheDocument();
     expect(screen.queryByText("Bridge Devices")).not.toBeInTheDocument();
   });
 
-  it("renders the webhook/bridge admin cards for a MANAGER role with an org", async () => {
+  it("renders the Control API/bridge admin cards for a MANAGER role with an org", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.getByText("Stream Deck / Webhooks")).toBeInTheDocument();
+    expect(screen.getByText("Stream Deck / Control API")).toBeInTheDocument();
     expect(await screen.findByText("Bridge Devices")).toBeInTheDocument();
     expect(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)")).toBeInTheDocument();
   });

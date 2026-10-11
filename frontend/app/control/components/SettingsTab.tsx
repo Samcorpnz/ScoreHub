@@ -41,7 +41,7 @@ function templateClockLabel(clockSeconds: number, countDown: boolean): string {
   return `${direction} ${minutes}:${seconds}`;
 }
 
-function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
+function ControlApiCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
   const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
     [orgId, "tokens", "CONTROL"],
     () => fetchTokensByType(orgId, "CONTROL"),
@@ -103,7 +103,7 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
   ];
 
   return (
-    <Card title="Stream Deck / Webhooks">
+    <Card title="Stream Deck / Control API">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         Control ScoreHub from a Stream Deck or any HTTP client. Install the plugin, generate a token,
         paste it into the Stream Deck property inspector, and choose your match there.
@@ -435,7 +435,7 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
 // long-lived DATA_FEED token against GET /api/data-feed/state and the
 // "data-feed" socket role — see relay/src/auth.ts's verifyDataFeedSecret.
 // Gated behind the data-feed add-on, like BridgeTokensCard above and unlike
-// WebhookCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
+// ControlApiCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
 // [orgId]/tokens 403s a DATA_FEED request for an org without the add-on, so
 // this card checks the same entitlement client-side to show an upgrade
 // prompt instead of a form that would just fail.
@@ -764,7 +764,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
       <Card title="Connection">
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
           Your relay URL. The Bridge app and Stream Deck plugin already use ScoreHub&apos;s by default — you only
-          need this for the webhook endpoints, or if support asks you to set it under <strong>Advanced</strong>.
+          need this for the Control API, or if support asks you to set it under <strong>Advanced</strong>.
         </p>
         <div className="flex gap-2">
           <code data-testid="relay-url" className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
@@ -782,7 +782,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
 
       {(session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER") && orgId && (
         <>
-          <WebhookCard orgId={orgId} matchId={matchId} />
+          <ControlApiCard orgId={orgId} matchId={matchId} />
           <BridgeTokensCard orgId={orgId} />
           <DataFeedTokensCard orgId={orgId} />
         </>

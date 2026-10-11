@@ -1,14 +1,14 @@
-export const metadata = { title: "Developer reference: data feed and webhooks" };
+export const metadata = { title: "Developer reference: data feed and Control API" };
 
-# Developer reference: data feed and webhooks
+# Developer reference: data feed and Control API
 
 This page is for people writing software against ScoreHub. It covers the two supported
 integration points:
 
-- **The data feed** — read a match's live state. Needs the
+- **The data feed** — read a match's live state and its log of events. Needs the
   [Data Feed add-on](/billing/data-feed-addon).
-- **Webhooks** — run the clock and score with HTTP requests. Available on every plan. See
-  [Stream Deck and webhooks](/running-a-match/stream-deck-and-webhooks) for setup.
+- **The Control API** — run the clock and score with HTTP requests. Available on every plan. See
+  [Stream Deck and the Control API](/running-a-match/stream-deck-and-control-api) for setup.
 
 Both are served from the relay URL shown in the **Connection** card on the control panel's
 **Settings** tab. The examples below call it `RELAY_URL`.
@@ -53,7 +53,7 @@ to test it: you get the fixture's starting state, and it stays upcoming until so
 | `periodBreak` | boolean | `true` between periods, after a period has been ended. |
 | `possession` | string | `home`, `visitor`, `both` or `none`. |
 | `hornActive` | boolean | Whether the horn is sounding, when a scoring console reports it. |
-| `inputSource` | string | Where the last update came from. `manual` for the control panel and webhooks. |
+| `inputSource` | string | Where the last update came from. `manual` for the control panel and the Control API. |
 | `home`, `visitor` | object | Each team. See [Team](#team). |
 | `displayTheme` | object | The match's display theme. See [Display theme](#display-theme). |
 | `sportConfig` | object | Match options, such as a best-of-3 or best-of-5 format, `format: "fast5"` for Fast5 netball, or `extraTimeSeconds` where an extra-time length has been set. Its keys depend on the sport. May be absent. |
@@ -191,10 +191,72 @@ If the connection is refused, `connect_error` fires. `match not found` means the
 one of the organisation's. Any other message usually means the token is wrong or revoked, or the
 account has no active Data Feed add-on — check both on the **Settings** tab.
 
-## Webhooks
+### Match events
 
-Every webhook is a `POST` with a control token in an `x-control-secret` header. Generate the token
-on the **Stream Deck / Webhooks** card of the **Settings** tab.
+The match state tells you what is true now. The event log tells you what happened and when: each
+score, period change and clock start or stop, in order. Use it to import a result with its
+period-by-period scores, or to mark the moments in a recording where something happened.
+
+```
+GET RELAY_URL/api/data-feed/events?matchId=MATCH_ID&since=SEQ
+x-data-feed-secret: YOUR_TOKEN
+```
+
+The token, `matchId` and rate limit work the same as for the match state. The response is:
+
+```json
+{
+  "events": [
+    { "seq": 118, "type": "score", "at": "2026-10-17T05:42:09.412Z", "clockSeconds": 431,
+      "period": "2", "home": 14, "visitor": 11, "side": "home", "delta": 1 }
+  ],
+  "next": 118
+}
+```
+
+Events are returned oldest first, up to 500 at a time. To follow a match, send the `next` value
+from each response as `since` on the following request. `since` defaults to `0`, which returns
+the log from the start. When there is nothing new, `events` is empty and `next` is the `since`
+you sent.
+
+Every event has these fields:
+
+| Field | Type | Contains |
+| --- | --- | --- |
+| `seq` | number | The event's position in the log. Always increasing, but not consecutive. |
+| `type` | string | What happened. See the table below. |
+| `at` | string | When it happened, as an ISO 8601 UTC timestamp. |
+| `clockSeconds` | number | The match clock just after the event. |
+| `period` | string | The period just after the event. |
+| `home`, `visitor` | number | Both scores just after the event. |
+| `correction` | boolean | `true` if the event came from **Undo**. Absent otherwise. |
+
+| `type` | Meaning | Extra fields |
+| --- | --- | --- |
+| `score` | A team's score changed. | `side` (`home` or `visitor`) and `delta`, the amount it changed by. |
+| `period` | The period changed. | `fromPeriod`, and `previous` with the `home` and `visitor` scores the earlier period finished on. |
+| `clock_start`, `clock_stop` | The clock started or stopped. | |
+| `break_start`, `break_end` | A break between periods started or ended. | |
+| `reset` | The match was reset to its starting state. | |
+
+Things to know:
+
+- A `score` event with a negative `delta` is a score being taken off, whether by the minus button
+  or by **Undo**. Treat it as a correction to events you already hold.
+- Sports scored in sets or games return to 0–0 for each one. The set's final score is in the
+  `period` event's `previous`, not in a `score` event.
+- For cricket, softball and indoor cricket, `score` events follow the team totals. Ball-by-ball
+  detail is in the match state's [sport-specific state](#sport-specific-state), not in the log.
+- Events are logged from when this feature was switched on for your account's matches. A match
+  scored before then has an empty log.
+- An upcoming fixture has an empty log, and reading it doesn't start the match.
+- Errors are the same as for the match state, plus `400` if `since` isn't a whole number of 0 or
+  more. An organisation with no live match returns an empty log when no `matchId` is sent.
+
+## Control API
+
+Every Control API call is a `POST` with a control token in an `x-control-secret` header. Generate the token
+on the **Stream Deck / Control API** card of the **Settings** tab.
 
 ```
 POST RELAY_URL/action/score/home?delta=2&matchId=MATCH_ID
@@ -235,7 +297,7 @@ response gives the value after the change.
 In a match set up as best-of-3 or best-of-5, `/action/period/next` and `/action/period/end` do
 nothing once the last set or game has been reached. They return the current values.
 
-### Webhook limits and errors
+### Control API limits and errors
 
 Up to **120 requests a minute** from one IP address.
 
@@ -253,10 +315,10 @@ Errors return JSON with an `error` message, for example
 
 ### Things to know
 
-- Webhook calls work alongside whoever is scoring on screen. They don't take
+- Control API calls work alongside whoever is scoring on screen. They don't take
   [control](/running-a-match/sharing-control) from the operator.
-- Score changes made by webhook can be undone from the control panel.
-- Calling a webhook for an upcoming fixture starts it, the same as selecting **Start** on the
+- Score changes made through the Control API can be undone from the control panel.
+- A Control API call for an upcoming fixture starts it, the same as selecting **Start** on the
   dashboard. That's when a `402` can come back on the Free plan.
 - Both tokens are long-lived. Treat them like passwords, and revoke one from its card on the
   **Settings** tab if it leaks.

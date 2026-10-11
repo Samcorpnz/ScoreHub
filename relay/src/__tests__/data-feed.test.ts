@@ -16,6 +16,7 @@ jest.mock("@scorehub/db", () => {
   const accounts = new Map<string, { plan: string; addOns: string[] }>();
   const tokens = new Map<string, { type: string; orgId: string; matchId?: string; revokedAt: Date | null }>();
   const matches = new Map<string, { id: string; orgId: string; state: unknown; status: string; displayToken: string | null }>();
+  const events: { seq: bigint; matchId: string; type: string; at: Date; data: unknown }[] = [];
 
   function hashToken(token: string): string {
     return crypto.createHash("sha256").update(token).digest("hex");
@@ -33,7 +34,14 @@ jest.mock("@scorehub/db", () => {
     __seedMatch(id: string, data: { orgId: string; state?: unknown; status?: string; displayToken?: string | null }) {
       matches.set(id, { id, orgId: data.orgId, state: data.state ?? { sport: "netball" }, status: data.status ?? "LIVE", displayToken: data.displayToken ?? null });
     },
+    __seedEvents(matchId: string, types: string[]) {
+      for (const type of types) {
+        const seq = BigInt(events.length + 1);
+        events.push({ seq, matchId, type, at: new Date(), data: { type, period: "1", home: 0, visitor: 0, clockSeconds: 0 } });
+      }
+    },
     __reset() {
+      events.length = 0;
       orgs.clear();
       accounts.clear();
       tokens.clear();
@@ -53,9 +61,14 @@ jest.mock("@scorehub/db", () => {
       },
       match: {
         findUnique: jest.fn(async ({ where }: { where: { id: string } }) => matches.get(where.id) ?? null),
-        findFirst: jest.fn(async () => null),
+        findFirst: jest.fn(async ({ where }: { where: { orgId: string; status: string } }) =>
+          [...matches.values()].find(m => m.orgId === where.orgId && m.status === where.status) ?? null),
         count: jest.fn(async () => 0),
         update: jest.fn(async ({ where }: { where: { id: string } }) => matches.get(where.id)),
+      },
+      matchEvent: {
+        findMany: jest.fn(async ({ where, take }: { where: { matchId: string; seq: { gt: number } }; take: number }) =>
+          events.filter(e => e.matchId === where.matchId && e.seq > BigInt(where.seq.gt)).slice(0, take)),
       },
     },
   };
@@ -68,9 +81,10 @@ type Db = {
   __seedOrg: (orgId: string, accountId: string, addOns?: string[]) => void;
   __seedToken: (plaintext: string, data: { type: string; orgId: string; matchId?: string; revokedAt?: Date | null }) => void;
   __seedMatch: (id: string, data: { orgId: string; state?: unknown; status?: string; displayToken?: string | null }) => void;
+  __seedEvents: (matchId: string, types: string[]) => void;
   __reset: () => void;
 };
-const { __seedOrg: seedOrg, __seedToken: seedToken, __seedMatch: seedMatch, __reset: resetSeed } = db as unknown as Db;
+const { __seedOrg: seedOrg, __seedToken: seedToken, __seedMatch: seedMatch, __seedEvents: seedEvents, __reset: resetSeed } = db as unknown as Db;
 
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
@@ -202,6 +216,75 @@ describe("GET /api/data-feed/state", () => {
     seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1", revokedAt: new Date() });
     const res = await request(app).get("/api/data-feed/state").set("x-data-feed-secret", "tok-1");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/data-feed/events", () => {
+  const get = (token: string) => request(app).get("/api/data-feed/events").set("x-data-feed-secret", token);
+
+  it("403s for a valid token whose org lacks the data-feed add-on", async () => {
+    seedOrg("org-1", "acc-1", []);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    const res = await get("tok-1");
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/data-feed add-on/);
+  });
+
+  it("returns the token's match log with numeric seqs and the next cursor", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1", matchId: "match-1" });
+    seedMatch("match-1", { orgId: "org-1" });
+    seedMatch("match-2", { orgId: "org-1" });
+    seedEvents("match-1", ["clock_start", "score"]);
+    seedEvents("match-2", ["score"]);
+    seedEvents("match-1", ["clock_stop"]);
+    const res = await get("tok-1");
+    expect(res.status).toBe(200);
+    expect(res.body.events.map((e: { seq: number; type: string }) => [e.seq, e.type])).toEqual([
+      [1, "clock_start"], [2, "score"], [4, "clock_stop"],
+    ]);
+    expect(res.body.next).toBe(4);
+
+    const later = await get("tok-1").query({ since: 2 });
+    expect(later.body.events.map((e: { seq: number }) => e.seq)).toEqual([4]);
+  });
+
+  it("uses the org's live match when the token and query name none", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("match-1", { orgId: "org-1" });
+    seedEvents("match-1", ["score"]);
+    const res = await get("tok-1");
+    expect(res.body.events).toHaveLength(1);
+  });
+
+  it("returns an empty log, and creates nothing, for an org with no live match", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    const res = await get("tok-1").query({ since: 7 });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ events: [], next: 7 });
+  });
+
+  it("does not start an upcoming fixture", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("fixture-1", { orgId: "org-1", status: "SCHEDULED" });
+    const update = (db as unknown as { prisma: { match: { update: jest.Mock } } }).prisma.match.update;
+    update.mockClear();
+    const res = await get("tok-1").query({ matchId: "fixture-1" });
+    expect(res.status).toBe(200);
+    expect(res.body.events).toEqual([]);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("404s for a match in another org", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedMatch("other-1", { orgId: "org-2" });
+    seedEvents("other-1", ["score"]);
+    const res = await get("tok-1").query({ matchId: "other-1" });
+    expect(res.status).toBe(404);
   });
 });
 

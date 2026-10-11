@@ -1,7 +1,7 @@
 import type { MatchState } from "./types";
 
 // What the clock starts a period on, mirroring the frontend's
-// sport-templates.ts (getPeriodClockSeconds) so the Stream Deck/webhook
+// sport-templates.ts (getPeriodClockSeconds) so the Stream Deck/Control API
 // routes and Reset Match agree with the control panel's own buttons.
 
 type FormatState = Pick<MatchState, "sport" | "sportConfig">;

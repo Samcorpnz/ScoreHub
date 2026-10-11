@@ -3,6 +3,8 @@ const matchFindFirstMock = jest.fn();
 const matchCreateMock = jest.fn();
 const matchUpdateMock = jest.fn();
 const matchCountMock = jest.fn();
+const eventCreateManyMock = jest.fn();
+const eventFindManyMock = jest.fn();
 
 jest.mock("@scorehub/db", () => ({
   recordAuditEvent: jest.fn(),
@@ -14,6 +16,10 @@ jest.mock("@scorehub/db", () => ({
       update: (...a: unknown[]) => matchUpdateMock(...a),
       count: (...a: unknown[]) => matchCountMock(...a),
     },
+    matchEvent: {
+      createMany: (...a: unknown[]) => eventCreateManyMock(...a),
+      findMany: (...a: unknown[]) => eventFindManyMock(...a),
+    },
   },
 }));
 
@@ -24,6 +30,7 @@ jest.mock("../entitlements", () => ({
   ConcurrentMatchLimitError: FakeConcurrentMatchLimitError,
 }));
 
+import type { MatchEvent } from "@scorehub/types";
 import { DEFAULT_MATCH_STATE, MatchState } from "../types";
 
 describe("persistence", () => {
@@ -37,6 +44,8 @@ describe("persistence", () => {
     matchCreateMock.mockReset();
     matchUpdateMock.mockReset();
     matchCountMock.mockReset();
+    eventCreateManyMock.mockReset();
+    eventFindManyMock.mockReset();
     getOrgAccountMock.mockReset();
     process.env.DATABASE_URL = "postgres://test";
   });
@@ -295,6 +304,84 @@ describe("persistence", () => {
         expect.any(Error),
       );
       errorSpy.mockRestore();
+    });
+  });
+
+  describe("event log", () => {
+    const event = (type: "score" | "clock_start", at: string): MatchEvent => ({
+      type, at, clockSeconds: 60, period: "1", home: 1, visitor: 0,
+    });
+
+    it("appendEvents writes each batch against the resolved match, in call order", async () => {
+      matchFindUniqueMock.mockResolvedValue({ id: "m1", orgId: "org-1", status: "LIVE", state: DEFAULT_MATCH_STATE });
+      const written: string[] = [];
+      eventCreateManyMock.mockImplementation(async ({ data }: { data: { type: string }[] }) => {
+        written.push(...data.map(d => d.type));
+      });
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("clock_start", "2026-10-11T02:00:00.000Z"), event("score", "2026-10-11T02:00:05.000Z")]);
+      store.appendEvents([event("score", "2026-10-11T02:00:09.000Z")]);
+      store.appendEvents([]);
+      await store.flush();
+
+      expect(written).toEqual(["clock_start", "score", "score"]);
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(2);
+      expect(eventCreateManyMock.mock.calls[0][0].data[1]).toEqual({
+        matchId: "m1",
+        type: "score",
+        at: new Date("2026-10-11T02:00:05.000Z"),
+        data: event("score", "2026-10-11T02:00:05.000Z"),
+      });
+    });
+
+    it("logs a failed event write and keeps writing later ones", async () => {
+      const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+      matchFindUniqueMock.mockResolvedValue({ id: "m1", orgId: "org-1", status: "LIVE", state: DEFAULT_MATCH_STATE });
+      eventCreateManyMock.mockRejectedValueOnce(new Error("db down")).mockResolvedValue({ count: 1 });
+      const { getMatchStore } = await import("../persistence");
+      const store = getMatchStore("org-1", "m1")!;
+
+      store.appendEvents([event("score", "2026-10-11T02:00:00.000Z")]);
+      store.appendEvents([event("score", "2026-10-11T02:00:01.000Z")]);
+      await expect(store.flush()).resolves.toBeUndefined();
+
+      expect(eventCreateManyMock).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith("[relay] failed to persist match events for org:", "org-1", expect.any(Error));
+      errorSpy.mockRestore();
+    });
+
+    it("listMatchEvents returns stored events after `since` with seq as a number", async () => {
+      matchFindUniqueMock.mockResolvedValue({ orgId: "org-1" });
+      eventFindManyMock.mockResolvedValue([{ seq: BigInt(42), data: event("score", "2026-10-11T02:00:00.000Z") }]);
+      const { listMatchEvents } = await import("../persistence");
+
+      await expect(listMatchEvents("org-1", "m1", 41, 500)).resolves.toEqual([
+        { ...event("score", "2026-10-11T02:00:00.000Z"), seq: 42 },
+      ]);
+      expect(eventFindManyMock).toHaveBeenCalledWith({ where: { matchId: "m1", seq: { gt: 41 } }, orderBy: { seq: "asc" }, take: 500 });
+    });
+
+    it("listMatchEvents rejects a match from another org", async () => {
+      matchFindUniqueMock.mockResolvedValue({ orgId: "org-2" });
+      const { listMatchEvents, MatchNotFoundError } = await import("../persistence");
+
+      await expect(listMatchEvents("org-1", "m1", 0, 500)).rejects.toBeInstanceOf(MatchNotFoundError);
+      expect(eventFindManyMock).not.toHaveBeenCalled();
+    });
+
+    it("listMatchEvents without a matchId reads the org's live match and never creates one", async () => {
+      const { listMatchEvents } = await import("../persistence");
+
+      matchFindFirstMock.mockResolvedValueOnce(null);
+      await expect(listMatchEvents("org-1", undefined, 0, 500)).resolves.toEqual([]);
+      expect(matchCreateMock).not.toHaveBeenCalled();
+
+      matchFindFirstMock.mockResolvedValueOnce({ id: "live-1" });
+      eventFindManyMock.mockResolvedValue([]);
+      await listMatchEvents("org-1", undefined, 0, 500);
+      expect(eventFindManyMock).toHaveBeenCalledWith(expect.objectContaining({ where: { matchId: "live-1", seq: { gt: 0 } } }));
     });
   });
 });
