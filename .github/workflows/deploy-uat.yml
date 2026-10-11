@@ -15,7 +15,7 @@ jobs:
   deploy-relay-uat:
     name: Deploy relay (Fly.io UAT)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # No required-reviewer gate here (unlike deploy.yml's production environment) —
     # UAT isn't customer-facing, so pushes to `uat` deploy immediately.
     steps:
@@ -39,7 +39,7 @@ jobs:
   smoke-test-uat:
     name: Post-deploy smoke test (UAT relay)
     needs: deploy-relay-uat
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
       group: smoke-uat
@@ -70,7 +70,7 @@ jobs:
     needs: test
     # workflow_dispatch can be started from any branch; only ever deploy `uat`.
     if: github.ref == 'refs/heads/uat'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     concurrency:
       group: deploy-help-uat
       cancel-in-progress: false

@@ -28,7 +28,7 @@ jobs:
   cancel-superseded:
     name: Cancel superseded deploy runs
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
     steps:
@@ -47,7 +47,7 @@ jobs:
   deploy-relay:
     name: Deploy relay (Fly.io)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Requires manual approval via the "production" GitHub Environment's
     # required reviewers (configure in repo Settings → Environments) before
     # this job is allowed to run, even though it's triggered automatically
@@ -64,7 +64,7 @@ jobs:
   deploy-frontend:
     name: Deploy frontend (Vercel)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -98,7 +98,7 @@ jobs:
   smoke-test:
     name: Post-deploy smoke test
     needs: [deploy-relay, deploy-frontend]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Every run scores +1 then -1 on the one smoke match; two overlapping runs
     # would corrupt each other's baseline, so they queue rather than cancel.
@@ -142,7 +142,7 @@ jobs:
   deploy-marketing:
     name: Deploy marketing site (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same production-environment gate as relay/frontend above — previously
     # this site deployed manually (`cd marketing && npm run build && npx
     # wrangler deploy`) with no CI and no review step at all.
@@ -165,7 +165,7 @@ jobs:
   deploy-help:
     name: Deploy help centre (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     defaults:
       run:
@@ -185,7 +185,7 @@ jobs:
   deploy-downloads:
     name: Deploy downloads redirect (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     defaults:
       run:

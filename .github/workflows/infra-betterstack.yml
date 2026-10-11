@@ -37,7 +37,7 @@ defaults:
 jobs:
   plan:
     name: Terraform plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       has_changes: ${{ steps.plan.outputs.has_changes }}
     steps:
@@ -83,7 +83,7 @@ jobs:
     name: Terraform apply
     needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.has_changes == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Paused for approval by the "production" environment's required reviewers,
     # same as the deploy jobs in deploy.yml (SA-12).
     environment: production

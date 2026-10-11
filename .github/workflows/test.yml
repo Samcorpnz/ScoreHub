@@ -17,7 +17,7 @@ permissions:
 jobs:
   test-relay:
     name: Relay tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: relay
@@ -35,7 +35,7 @@ jobs:
 
   test-bridge:
     name: Bridge (parser) tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: bridge
@@ -52,7 +52,7 @@ jobs:
 
   test-frontend:
     name: Frontend build, lint, typecheck, tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
@@ -76,7 +76,7 @@ jobs:
 
   test-marketing:
     name: Marketing site build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: marketing
@@ -93,7 +93,7 @@ jobs:
 
   test-help:
     name: Help centre build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: help
@@ -133,7 +133,7 @@ jobs:
   # spec) remains on-demand and is not part of this job.
   test-e2e:
     name: E2E (Playwright, docker-compose)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [test-relay, test-frontend]
     continue-on-error: ${{ vars.E2E_CRITICAL_GATE != 'true' }}
     env:
