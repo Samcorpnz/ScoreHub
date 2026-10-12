@@ -45,15 +45,17 @@ export async function listObjects(prefix: string): Promise<{ key: string; lastMo
 export async function deleteObjects(keys: string[]): Promise<void> {
   for (let i = 0; i < keys.length; i += 1000) {
     const batch = keys.slice(i, i + 1000);
-    await client!.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: batch.map(Key => ({ Key })) } }));
+    const res = await client!.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: batch.map(Key => ({ Key })) } }));
+    // DeleteObjects answers 200 even when individual keys fail, listing them here.
+    const failed = res?.Errors ?? [];
+    if (failed.length) {
+      throw new Error(`failed to delete ${failed.length} object(s): ${failed.map(e => `${e.Key} (${e.Code})`).join(", ")}`);
+    }
   }
 }
 
 // Mirrors the local-disk "delete every file starting with X" pattern used for
 // logos, where the uploaded file's extension isn't known at delete time.
 export async function deleteByPrefix(prefix: string): Promise<void> {
-  const listed = await client!.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix }));
-  const keys = (listed.Contents ?? []).map(o => o.Key).filter((k): k is string => Boolean(k));
-  if (keys.length === 0) return;
-  await client!.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys.map(Key => ({ Key })) } }));
+  await deleteObjects((await listObjects(prefix)).map(o => o.key));
 }

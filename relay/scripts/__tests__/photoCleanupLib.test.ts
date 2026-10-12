@@ -38,6 +38,17 @@ describe("planCleanup", () => {
     expect(plan).toEqual({ orphaned: [], kept: 1, skippedRecent: 0, skippedUnrecognised: [] });
   });
 
+  it.each([
+    ["/player-photos/org1/p1.jpg?t=1"],
+    [`${cdn}/player-photos/org1/p1.jpg#frag`],
+    [`${cdn}/player-photos/org1/p1%2Ejpg`],
+    [`${cdn}/assets/../player-photos/org1/p1.jpg`],
+  ])("keeps a photo referenced as %s", photoUrl => {
+    const plan = planCleanup([photo("player-photos/org1/p1.jpg")], [{ id: "p1", orgId: "org1", photoUrl }], now);
+    expect(plan.orphaned).toEqual([]);
+    expect(plan.kept).toBe(1);
+  });
+
   it("flags photos whose player was removed, moved org, has no photo, or uses another file", () => {
     const plan = planCleanup(
       [

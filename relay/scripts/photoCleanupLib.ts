@@ -41,6 +41,17 @@ export interface CleanupPlan {
   skippedUnrecognised: string[];
 }
 
+// The decoded path of a stored photoUrl (absolute CDN url, or relative for
+// local disk), read the way a browser would: no query or fragment, and
+// percent-escapes resolved, so a url that serves a file always matches its key.
+function urlPath(photoUrl: string): string {
+  try {
+    return decodeURIComponent(new URL(photoUrl, "http://relative.invalid").pathname);
+  } catch {
+    return photoUrl.split(/[?#]/)[0];
+  }
+}
+
 // Keys are player-photos/<orgId>/<playerId>.<ext> (see storeImage in
 // src/server.ts). A photo is kept only when its player still exists in that
 // org and the player's photoUrl points at this exact file.
@@ -58,7 +69,7 @@ export function planCleanup(photos: StoredPhoto[], players: RosterPlayer[], now:
     if (!player) reason = "player no longer exists";
     else if (player.orgId !== orgId) reason = "player belongs to another org";
     else if (!player.photoUrl) reason = "player has no photo set";
-    else if (!player.photoUrl.split("?")[0].endsWith(`/${photo.key}`)) reason = "player's photo is a different file";
+    else if (!urlPath(player.photoUrl).endsWith(`/${photo.key}`)) reason = "player's photo is a different file";
 
     if (!reason) { plan.kept++; continue; }
     if (!photo.lastModified || now.getTime() - photo.lastModified.getTime() < MIN_AGE_MS) { plan.skippedRecent++; continue; }
