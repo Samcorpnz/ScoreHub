@@ -6,13 +6,16 @@
 //
 //   # 1. Dry run (read-only): lists what would be deleted, plus the database
 //   #    host and bucket you are pointed at.
-//   DATABASE_URL=<target db> R2_...=<target bucket> npm run photos:cleanup --workspace=relay
+//   DOTENV_CONFIG_PATH=.env.remote npm run photos:cleanup --workspace=relay
 //   # 2. Apply, confirming both from step 1:
-//   DATABASE_URL=... R2_...=... npm run photos:cleanup --workspace=relay -- --apply --confirm-host <host> --confirm-bucket <bucket>
+//   DOTENV_CONFIG_PATH=.env.remote npm run photos:cleanup --workspace=relay -- --apply --confirm-host <host> --confirm-bucket <bucket>
 //
+// DATABASE_URL and the R2_* variables come from the environment or, as with
+// `npm run dev:remote`, from the env file DOTENV_CONFIG_PATH names.
 // The database and the bucket must belong to the same environment. Safe to
 // re-run; photos uploaded in the last hour are skipped (see photoCleanupLib).
 
+import "dotenv/config";
 import { prisma } from "@scorehub/db";
 import { r2Enabled, r2Bucket, listObjects, deleteObjects } from "../src/storage";
 import { describeDatabase } from "./provisionLib";
