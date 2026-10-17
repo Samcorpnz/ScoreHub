@@ -129,33 +129,41 @@ export function ScoreButtons({ score, onAdjust, scoreIncrements, scoreLabels, te
   readonly testIdPrefix?: string;
 }) {
   const compact = scoreIncrements.length > 2;
-  const btnClass = `rounded-xl py-4 font-black flex-1 ${compact ? "text-lg" : "text-xl"}`;
-  const scoreClass = `text-center score-digit ${compact ? "flex-shrink-0 w-14 text-4xl" : "flex-1 text-5xl"}`;
-  const negatives = [...scoreIncrements].reverse();
+  const btnClass = `rounded-xl py-4 font-black ${compact ? "text-lg" : "text-xl"}`;
+  const scoreClass = `text-center score-digit ${compact ? "text-4xl" : "text-5xl"}`;
+  // Buttons and their labels share one grid — −buttons, score, +buttons — so
+  // each label sits under its own + button whatever the button count. The −
+  // buttons mirror the + ones, so they go unlabelled to keep the row quiet.
+  const n = scoreIncrements.length;
+  const columns = `repeat(${n}, minmax(0, 1fr)) ${compact ? "3.5rem" : "minmax(0, 1fr)"} repeat(${n}, minmax(0, 1fr))`;
+  const decrements = [...scoreIncrements].reverse();
+  // Columns are narrow: let "CONV/PEN" wrap after its slash rather than mid-word.
+  const increments = scoreIncrements.map((d, i) => ({ d, label: scoreLabels?.[i]?.replaceAll("/", "/​") }));
+  const labelClass = "text-[10px] font-semibold tracking-wide text-center leading-tight";
 
   return (
-    <div className="space-y-2 mt-3">
-      <div className="flex items-center gap-2">
-        {negatives.map(d => (
-          <button key={-d} className={btnClass}
-            data-testid={testIdPrefix ? `${testIdPrefix}-dec-${d}` : undefined}
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
-            onClick={() => onAdjust(-d)}>−{d}</button>
-        ))}
-        <div className={scoreClass} style={{ color: "var(--accent)" }}>{score}</div>
-        {scoreIncrements.map(d => (
-          <button key={d} className={btnClass}
-            data-testid={testIdPrefix ? `${testIdPrefix}-inc-${d}` : undefined}
-            style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-            onClick={() => onAdjust(d)}>+{d}</button>
-        ))}
-      </div>
+    <div className="grid gap-x-2 gap-y-1 mt-3 items-center" style={{ gridTemplateColumns: columns }}>
+      {decrements.map(d => (
+        <button key={-d} className={btnClass}
+          data-testid={testIdPrefix ? `${testIdPrefix}-dec-${d}` : undefined}
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+          onClick={() => onAdjust(-d)}>−{d}</button>
+      ))}
+      <div className={scoreClass} style={{ color: "var(--accent)" }}>{score}</div>
+      {increments.map(({ d }) => (
+        <button key={d} className={btnClass}
+          data-testid={testIdPrefix ? `${testIdPrefix}-inc-${d}` : undefined}
+          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
+          onClick={() => onAdjust(d)}>+{d}</button>
+      ))}
       {scoreLabels && (
-        <div className="flex justify-around text-xs px-1" style={{ color: "var(--text-dim)" }}>
-          {scoreLabels.map(label => (
-            <span key={label} className="flex-1 text-center">{label}</span>
+        <>
+          {decrements.map(d => <span key={`dec-label-${d}`} aria-hidden />)}
+          <span aria-hidden />
+          {increments.map(({ d, label }) => (
+            <span key={`inc-label-${d}`} className={labelClass} style={{ color: "var(--accent)", opacity: 0.8 }}>{label}</span>
           ))}
-        </div>
+        </>
       )}
     </div>
   );
