@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SPORT_TEMPLATES, getTemplate, getMatchLength, getStructureLabel, getMatchTemplate, getExtraTimePeriod,
   getExtraTimeSeconds, getPeriodClockSeconds, getActivePowerPlay, getScoreIncrements, getPeriodLabel,
-  getPeriodNumber, getBreakLabel, getShootout, getPeriodText,
+  getPeriodNumber, getBreakLabel, getShootout, getPeriodText, isFullTime,
 } from "../sport-templates";
 import { DEFAULT_MATCH_STATE } from "../types";
 import type { MatchState, SportType } from "../types";
@@ -412,5 +412,18 @@ describe("getPeriodText", () => {
     expect(getPeriodText(makeState({ sport: "football", period: "3" }))).toBe("ET 1");
     expect(getPeriodText(makeState({ sport: "netball", period: "E" }))).toBe("EXTRA");
     expect(getPeriodText(makeState({ sport: "volleyball", period: "2" }))).toBe("SET 2");
+  });
+});
+
+describe("full time", () => {
+  it("calls the break after the last regulation period full time, with or without extra time", () => {
+    expect(getBreakLabel({ ...DEFAULT_MATCH_STATE, sport: "custom", period: "3", periodBreak: true } as MatchState)).toBe("FULL TIME");
+    expect(getBreakLabel({ ...DEFAULT_MATCH_STATE, sport: "netball", period: "5", periodBreak: true } as MatchState)).toBe("FULL TIME");
+    expect(getBreakLabel({ ...DEFAULT_MATCH_STATE, sport: "rugby_union", period: "2", periodBreak: true } as MatchState)).toBe("HALF TIME");
+  });
+
+  it("isn't full time once extra time is under way", () => {
+    expect(isFullTime({ sport: "netball", period: "5", periodBreak: false })).toBe(false);
+    expect(isFullTime({ sport: "netball", period: "6", periodBreak: true })).toBe(false);
   });
 });

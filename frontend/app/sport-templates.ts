@@ -600,8 +600,15 @@ export function getShootout(state: Pick<MatchState, "sport" | "sportConfig" | "s
 
 // What's shown in place of the period while state.periodBreak is set. Ending
 // the last regulation period is full time, whether or not extra time follows.
+// Regulation's over: END on the last half/quarter puts the match in a break
+// one period past the template's count. Every sport calls that full time —
+// from there it either finishes, or (where the sport has it) goes to extra time.
+export function isFullTime(state: Pick<MatchState, "sport" | "sportConfig" | "period" | "periodBreak">): boolean {
+  return state.periodBreak && Number.parseInt(state.period, 10) === getMatchTemplate(state).periods + 1;
+}
+
 export function getBreakLabel(state: MatchState): string {
-  if (getExtraTimePeriod(state) === 1) return "FULL TIME";
+  if (isFullTime(state)) return "FULL TIME";
   const label = getPeriodLabel(state);
   // The break before the third of four quarters is half time too
   const { periods } = getMatchTemplate(state);

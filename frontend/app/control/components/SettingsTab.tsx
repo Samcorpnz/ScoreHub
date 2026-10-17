@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
 import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
+import { useEndMatch } from "../lib/useEndMatch";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
 
 interface BridgeToken {
@@ -633,8 +634,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
   const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
   const { data: session } = useSession();
   const orgId = session?.user?.activeOrgId;
-  const [ending, setEnding] = useState(false);
-  const [endError, setEndError] = useState("");
+  const { endMatch: handleEndMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
   function selectFormat(format: string) {
     const sportConfig = { ...state.sportConfig, format };
@@ -642,29 +642,6 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
     // format's opening value; anything else is the operator's to change.
     const untouched = !state.isRunning && state.period === "1" && state.clockSeconds === template.clockSeconds;
     push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
-  }
-
-  async function handleEndMatch() {
-    if (!orgId || !matchId) return;
-    if (!globalThis.confirm("End this match? It will move to History and can't be scored unless you reopen it.")) return;
-    setEnding(true);
-    setEndError("");
-    // An ended match is read-only on the relay, so nothing could stop a
-    // clock that was left running once this goes through.
-    if (state.isRunning) await push({ isRunning: false });
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/end`, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setEndError(body?.error ?? "Couldn't end the match — try again.");
-        setEnding(false);
-        return;
-      }
-      onEnded?.();
-    } catch {
-      setEndError("Couldn't reach the server — try again.");
-      setEnding(false);
-    }
   }
 
   return (

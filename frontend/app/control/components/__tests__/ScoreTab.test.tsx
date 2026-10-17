@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { ScoreTab } from "../ScoreTab";
 import { DEFAULT_MATCH_STATE } from "../../../types";
 import type { MatchState } from "@scorehub/types";
+
+// The full-time panel's End Match uses the session's active org
+vi.mock("next-auth/react", () => ({
+  useSession: () => ({ data: { user: { activeOrgId: "org-1" } } }),
+}));
 
 afterEach(() => {
   cleanup();
@@ -158,6 +163,58 @@ describe("ScoreTab", () => {
     });
   });
 
+  describe("full time", () => {
+    it("ends the last half into full time, keeping fouls and scores", () => {
+      const handlers = makeHandlers();
+      const state = makeState({ sport: "basketball", period: "4", home: { ...makeState().home, score: 80, faults: 4 } });
+      render(<ScoreTab state={state} {...handlers} />);
+      expect(screen.getByTestId("score-end-period")).toHaveTextContent("FULL TIME");
+      fireEvent.click(screen.getByTestId("score-end-period"));
+      const patch = handlers.push.mock.calls[0][0];
+      expect(patch).toMatchObject({ isRunning: false, period: "5", periodBreak: true });
+      expect(patch).not.toHaveProperty("home");
+      expect(patch).not.toHaveProperty("visitor");
+    });
+
+    it("doesn't zero a set sport's scores when its last set ends", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "pickleball", period: "3", home: { ...makeState().home, score: 11 } })} {...handlers} />);
+      fireEvent.click(screen.getByTestId("score-end-period"));
+      expect(handlers.push.mock.calls[0][0]).not.toHaveProperty("home");
+    });
+
+    it("offers only End Match for a sport without extra time, and Space won't start a new period", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "custom", period: "3", periodBreak: true })} {...handlers} matchId="m1" />);
+      expect(screen.getByTestId("score-full-time")).toBeInTheDocument();
+      expect(screen.queryByTestId("score-start-stop")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("score-start-extra-time")).not.toBeInTheDocument();
+      expect(screen.getByTestId("score-end-match")).toBeInTheDocument();
+      fireEvent.keyDown(globalThis.window, { key: " " });
+      expect(handlers.push).not.toHaveBeenCalled();
+    });
+
+    it("starts extra time under the sport's own name", () => {
+      const handlers = makeHandlers();
+      render(<ScoreTab state={makeState({ sport: "rugby_league", period: "3", periodBreak: true })} {...handlers} matchId="m1" />);
+      fireEvent.click(screen.getByTestId("score-start-extra-time"));
+      expect(screen.getByTestId("score-start-extra-time")).toHaveTextContent("GOLDEN POINT");
+      expect(handlers.push).toHaveBeenCalledWith({ isRunning: true });
+    });
+
+    it("ends the match from full time", async () => {
+      const onEnded = vi.fn();
+      vi.stubGlobal("confirm", vi.fn(() => true));
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<ScoreTab state={makeState({ sport: "custom", period: "3", periodBreak: true })} {...makeHandlers()} matchId="m1" onEnded={onEnded} />);
+      fireEvent.click(screen.getByTestId("score-end-match"));
+      await waitFor(() => expect(onEnded).toHaveBeenCalled());
+      expect(fetchMock).toHaveBeenCalledWith("/api/orgs/org-1/matches/m1/end", { method: "POST" });
+      vi.unstubAllGlobals();
+    });
+  });
+
   describe("extra time", () => {
     const netball = (overrides: Partial<MatchState> = {}) =>
       makeState({ sport: "netball", countDown: true, clockSeconds: 900, ...overrides });
@@ -180,7 +237,7 @@ describe("ScoreTab", () => {
 
     it("shows full time once the last quarter has been ended", () => {
       render(<ScoreTab state={netball({ period: "5", periodBreak: true, clockSeconds: 420 })} {...makeHandlers()} />);
-      expect(screen.getByText("FULL TIME")).toBeInTheDocument();
+      expect(screen.getByTestId("score-full-time")).toHaveTextContent("FULL TIME");
     });
 
     it("goes back to a full quarter when the last quarter is reopened", () => {

@@ -6,8 +6,9 @@ import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { parseClock } from "../lib/parseClock";
 import {
   getMatchTemplate, getMatchLength, getActivePowerPlay, getBreakLabel, getExtraTimePeriod, getExtraTimeSeconds,
-  getPeriodClockSeconds, getPeriodLabel, getPeriodNumber, getShootout, ControlPanelProps,
+  getPeriodClockSeconds, getPeriodLabel, getPeriodNumber, getShootout, isFullTime, ControlPanelProps,
 } from "../../sport-templates";
+import { useEndMatch } from "../lib/useEndMatch";
 import { ShootoutAttempts } from "../../components/ClockPanel";
 import { ClockAdjustButtons, NameField, ScoreButtons, SectionLabel, SmallBtn } from "./primitives";
 
@@ -31,6 +32,16 @@ function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn
   return false;
 }
 
+// What each sport calls the play after full time, for the full-time panel's button
+const EXTRA_TIME_NAMES: Record<string, string> = { OT: "OVERTIME", GP: "GOLDEN POINT", "DROP-OFF": "DROP-OFF" };
+
+function endPeriodLabel(isFinalPeriod: boolean, fullTime: boolean, isLastRegulationPeriod: boolean, templatePeriodLabel: string, periodLabel: string): string {
+  if (isFinalPeriod) return `FINAL ${templatePeriodLabel}`;
+  if (fullTime) return "FULL TIME";
+  if (isLastRegulationPeriod) return "⏭  FULL TIME";
+  return `⏭  END ${periodLabel}`;
+}
+
 function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, period: string, matchLength?: number): string {
   if (breakLabel) return breakLabel;
   return matchLength ? `${periodLabel} ${period} of ${matchLength}` : `${periodLabel} ${period}`;
@@ -39,8 +50,12 @@ function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, 
 export function ScoreTab({
   state, push, sendReset, sendUndo,
   sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
-  sendScoreAdjust, sendIndoorCricketWicket,
-}: ControlPanelProps) {
+  sendScoreAdjust, sendIndoorCricketWicket, matchId, onEnded,
+}: ControlPanelProps & {
+  // For the full-time panel's End Match button
+  readonly matchId?: string;
+  readonly onEnded?: () => void;
+}) {
   const [period,     setPeriod]     = useState("");
   const [clockInput, setClockInput] = useState("");
   const [extraTimeInput, setExtraTimeInput] = useState("");
@@ -79,6 +94,12 @@ export function ScoreTab({
   const matchLength = getMatchLength(state);
   const currentPeriod = Number.parseInt(state.period, 10);
   const isFinalPeriod = matchLength !== undefined && !Number.isNaN(currentPeriod) && currentPeriod >= matchLength;
+  // Timed sports: END on the last half/quarter goes to full time, where the
+  // operator either ends the match or (if the sport has it) starts extra time.
+  const isLastRegulationPeriod = matchLength === undefined && !state.periodBreak && currentPeriod === template.periods;
+  const fullTime = isFullTime(state);
+  const hasExtraTime = Boolean(template.extraTime);
+  const { canEnd, endMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
   const isIndoorCricket = state.sport === "indoor_cricket";
   const wicketPenalty = Number(state.sportConfig?.wicketPenalty ?? 5);
@@ -133,6 +154,8 @@ export function ScoreTab({
       }
       if (e.key === " ") {
         e.preventDefault();
+        // At full time there's no next period to start unless the sport has extra time
+        if (!s.isRunning && isFullTime(s) && !getMatchTemplate(s).extraTime) return;
         p({ isRunning: !s.isRunning });
         return;
       }
@@ -169,7 +192,9 @@ export function ScoreTab({
     <div className="space-y-6">
       {/* ── PRIMARY OPERATOR CONTROLS ─────────────────────────────── */}
 
-      {/* Start / Stop — full-width, very tall */}
+      {/* Start / Stop — full-width, very tall. At full time the full-time
+          panel below offers End Match / Start Extra Time instead. */}
+      {!fullTime && (
       <button
         data-testid="score-start-stop"
         className="w-full rounded-2xl py-8 text-3xl font-black tracking-widest uppercase transition-all"
@@ -181,6 +206,39 @@ export function ScoreTab({
       >
         {state.isRunning ? "■  STOP" : "▶  START"}
       </button>
+      )}
+
+      {fullTime && (
+        <div data-testid="score-full-time" className="rounded-2xl p-5 space-y-3"
+          style={{ background: "rgba(251,146,60,0.08)", border: "2px solid rgba(251,146,60,0.4)" }}>
+          <p className="text-center text-2xl font-black tracking-widest" style={{ color: "rgb(251,146,60)" }}>FULL TIME</p>
+          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+            {hasExtraTime
+              ? "End the match, or start extra time if it's needed."
+              : "End the match to lock the result and move it to History."}
+          </p>
+          <div className="flex gap-3">
+            {canEnd && (
+              <button data-testid="score-end-match"
+                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+                style={{ background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }}
+                disabled={ending}
+                onClick={endMatch}>
+                {ending ? "Ending…" : "■  END MATCH"}
+              </button>
+            )}
+            {hasExtraTime && (
+              <button data-testid="score-start-extra-time"
+                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+                style={{ background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }}
+                onClick={() => push({ isRunning: true })}>
+                ▶  START {EXTRA_TIME_NAMES[template.extraTime?.label ?? ""] ?? "EXTRA TIME"}
+              </button>
+            )}
+          </div>
+          {endError && <p className="text-xs font-semibold text-center" style={{ color: "var(--danger)" }}>{endError}</p>}
+        </div>
+      )}
 
       {/* Undo last action */}
       <button
@@ -198,9 +256,21 @@ export function ScoreTab({
           data-testid="score-end-period"
           className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase transition-all"
           style={{ background: "rgba(251,146,60,0.1)", border: "2px solid rgba(251,146,60,0.4)", color: "rgb(251,146,60)", opacity: isFinalPeriod ? 0.4 : 1 }}
-          disabled={isFinalPeriod}
+          disabled={isFinalPeriod || fullTime}
           title={isFinalPeriod ? `This is the last ${template.periodLabel.toLowerCase()} of a best-of-${matchLength} match` : undefined}
           onClick={() => {
+            if (isLastRegulationPeriod) {
+              // Into the full-time break. No foul or score resets — the result
+              // stands. Sports with extra time get its clock ready; the rest
+              // keep the final clock on show.
+              push({
+                isRunning: false,
+                period: String(template.periods + 1),
+                periodBreak: true,
+                ...(hasExtraTime && { clockSeconds: getPeriodClockSeconds(state, template.periods + 1) }),
+              });
+              return;
+            }
             const n = Number.parseInt(state.period, 10);
             const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
             push({
@@ -222,7 +292,7 @@ export function ScoreTab({
             });
           }}
         >
-          {isFinalPeriod ? `FINAL ${template.periodLabel}` : `⏭  END ${periodLabel}`}
+          {endPeriodLabel(isFinalPeriod, fullTime, isLastRegulationPeriod, template.periodLabel, periodLabel)}
         </button>
         <button
           data-testid="score-reopen-period"

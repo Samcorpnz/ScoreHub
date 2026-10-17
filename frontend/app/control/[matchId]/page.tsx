@@ -280,6 +280,8 @@ function ControlPanelInner() {
             sendCricketDeclare={sendCricketDeclare}
             sendScoreAdjust={sendScoreAdjust}
             sendIndoorCricketWicket={sendIndoorCricketWicket}
+            matchId={matchId}
+            onEnded={() => router.push("/dashboard")}
           />
         )}
         {tab === "outputs"  && <OutputsTab matchId={matchId} />}
