@@ -111,22 +111,34 @@ async function confirmSubscriptionChange(
 // Stripe-hosted page. redirect_on_completion "never" + the client-side
 // onComplete callback handles completion in place, so no return_url is
 // needed — the control panel is already a single-page tab-switching UI.
+//
+// Checkout won't take customer_email alongside customer, so the signed-in
+// admin's email goes on the Customer instead, which prefills Checkout's email
+// field. An existing Customer's email is only filled in when it has none, so
+// a billing email changed in the portal isn't overwritten.
 async function createNewCheckoutSession(
   stripe: Stripe,
   account: Account,
   priceId: string,
   request: CheckoutRequest,
   discountEligible: boolean,
+  email: string | undefined,
 ): Promise<NextResponse> {
   const { plan, addOn } = request;
   let customerId = account.stripeCustomerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       name: account.name,
+      ...(email ? { email } : {}),
       metadata: { accountId: account.id },
     });
     customerId = customer.id;
     await prisma.account.update({ where: { id: account.id }, data: { stripeCustomerId: customerId } });
+  } else if (email) {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (!customer.deleted && !customer.email) {
+      await stripe.customers.update(customerId, { email });
+    }
   }
 
   const metadata: Record<string, string> = plan
@@ -220,7 +232,7 @@ export async function POST(req: NextRequest) {
       const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "";
       return await confirmSubscriptionChange(stripe, account, existingSubscriptionId, priceId, discountEligible, origin);
     }
-    return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
+    return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible, session.user.email ?? undefined);
   } catch (err) {
     // A saved subscription/customer id Stripe doesn't recognise means our
     // record and Stripe have drifted apart (an id saved against a different

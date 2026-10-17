@@ -22,6 +22,8 @@ vi.mock("@scorehub/db", () => ({
 const subscriptionsRetrieveMock = vi.fn();
 const subscriptionsUpdateMock = vi.fn();
 const customersCreateMock = vi.fn();
+const customersRetrieveMock = vi.fn();
+const customersUpdateMock = vi.fn();
 const checkoutSessionsCreateMock = vi.fn();
 const portalSessionsCreateMock = vi.fn();
 vi.mock("@/lib/stripe", () => ({
@@ -30,7 +32,11 @@ vi.mock("@/lib/stripe", () => ({
       retrieve: (...a: unknown[]) => subscriptionsRetrieveMock(...a),
       update: (...a: unknown[]) => subscriptionsUpdateMock(...a),
     },
-    customers: { create: (...a: unknown[]) => customersCreateMock(...a) },
+    customers: {
+      create: (...a: unknown[]) => customersCreateMock(...a),
+      retrieve: (...a: unknown[]) => customersRetrieveMock(...a),
+      update: (...a: unknown[]) => customersUpdateMock(...a),
+    },
     checkout: { sessions: { create: (...a: unknown[]) => checkoutSessionsCreateMock(...a) } },
     billingPortal: { sessions: { create: (...a: unknown[]) => portalSessionsCreateMock(...a) } },
   }),
@@ -79,6 +85,8 @@ describe("POST /api/billing/checkout", () => {
       subscriptionsRetrieveMock,
       subscriptionsUpdateMock,
       customersCreateMock,
+      customersRetrieveMock,
+      customersUpdateMock,
       checkoutSessionsCreateMock,
       portalSessionsCreateMock,
       priceIdForPlanMock,
@@ -196,6 +204,46 @@ describe("POST /api/billing/checkout", () => {
       });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ clientSecret: "secret_1" });
+    });
+
+    it("puts the signed-in admin's email on a new Stripe customer so Checkout prefills it", async () => {
+      authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN", email: "admin@club.nz" } });
+      getAccountForOrgMock.mockResolvedValue(baseAccount());
+      customersCreateMock.mockResolvedValue({ id: "cus_new" });
+      checkoutSessionsCreateMock.mockResolvedValue({ client_secret: "secret_1" });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest({ plan: "pro" }));
+
+      expect(customersCreateMock).toHaveBeenCalledWith({
+        name: "Wellington Netball",
+        email: "admin@club.nz",
+        metadata: { accountId: "acc_1" },
+      });
+    });
+
+    it("fills in the email on an existing Stripe customer that has none", async () => {
+      authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN", email: "admin@club.nz" } });
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ stripeCustomerId: "cus_existing" }));
+      customersRetrieveMock.mockResolvedValue({ id: "cus_existing", email: null });
+      checkoutSessionsCreateMock.mockResolvedValue({ client_secret: "secret_1" });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest({ plan: "pro" }));
+
+      expect(customersUpdateMock).toHaveBeenCalledWith("cus_existing", { email: "admin@club.nz" });
+    });
+
+    it("leaves an existing Stripe customer's email alone", async () => {
+      authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN", email: "admin@club.nz" } });
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ stripeCustomerId: "cus_existing" }));
+      customersRetrieveMock.mockResolvedValue({ id: "cus_existing", email: "billing@club.nz" });
+      checkoutSessionsCreateMock.mockResolvedValue({ client_secret: "secret_1" });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest({ plan: "pro" }));
+
+      expect(customersUpdateMock).not.toHaveBeenCalled();
     });
 
     it("reuses an existing Stripe customer id without creating a new one", async () => {

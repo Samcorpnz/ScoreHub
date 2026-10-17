@@ -133,6 +133,10 @@ describe("AccountPage", () => {
       )
     );
     expect(await screen.findByTestId("embedded-checkout-provider")).toBeInTheDocument();
+    // Checkout takes the full page, so the account cards are hidden until Back.
+    expect(screen.queryByText("Plan & Billing")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("← Back"));
+    expect(await screen.findByText("Plan & Billing")).toBeInTheDocument();
   });
 
   it("sends an existing subscriber to Stripe's confirm page for a plan change", async () => {
