@@ -41,11 +41,11 @@ export default function AccountLayout({ children }: { readonly children: React.R
             <span className="text-xs" style={{ color: "var(--text-dim)" }}>{session.user.name}</span>
           )}
           <a
-            href="/control"
+            href="/dashboard"
             className="rounded-lg px-3 py-1.5 text-xs font-bold"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)", textDecoration: "none" }}
           >
-            Control Panel
+            Dashboard
           </a>
           <a
             href="https://help.scorehub.co.nz"

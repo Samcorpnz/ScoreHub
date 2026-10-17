@@ -48,72 +48,97 @@ function parseCheckoutRequest(body: unknown): CheckoutRequest | NextResponse {
 }
 
 // Already has an active subscription for this line (base plan or add-on) —
-// switch it in place (with proration) rather than starting a second Checkout
-// Session, which would create a second subscription and double-bill the
-// customer.
-async function switchExistingSubscription(
+// change it rather than starting a second Checkout Session, which would
+// create a second subscription and double-bill the customer. The change goes
+// through the billing portal's confirm flow: Stripe shows the new price and
+// the prorated amount, the customer confirms (handling 3-D Secure if their
+// bank asks), and only then is the subscription updated. The
+// customer.subscription.updated webhook records the new plan/interval.
+async function confirmSubscriptionChange(
   stripe: Stripe,
   account: Account,
   existingSubscriptionId: string,
   priceId: string,
-  request: CheckoutRequest,
   discountEligible: boolean,
+  origin: string,
 ): Promise<NextResponse> {
-  const { plan, addOn, interval } = request;
+  if (!account.stripeCustomerId) {
+    return NextResponse.json({ error: "no billing account on file" }, { status: 500 });
+  }
   const subscription = await stripe.subscriptions.retrieve(existingSubscriptionId);
   const itemId = subscription.items.data[0]?.id;
   if (!itemId) {
     return NextResponse.json({ error: "existing subscription has no items" }, { status: 500 });
   }
-
-  const updateMetadata: Record<string, string> = plan
-    ? { accountId: account.id, plan }
-    : { accountId: account.id, addOn: addOn! };
-  await stripe.subscriptions.update(existingSubscriptionId, {
-    items: [{ id: itemId, price: priceId }],
-    proration_behavior: "create_prorations",
-    metadata: updateMetadata,
-    ...(discountEligible ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
-  });
-
-  // Reflect the switch immediately; the customer.subscription.updated
-  // webhook will also fire and confirm the same state (idempotent). The
-  // discount is applied directly above (not via Checkout), so mark it used
-  // here rather than waiting on the webhook.
-  if (plan) {
-    await prisma.account.update({
-      where: { id: account.id },
-      data: {
-        plan,
-        billingInterval: interval,
-        ...(discountEligible ? { upgradeDiscountUsedAt: new Date() } : {}),
-      },
-    });
-    return NextResponse.json({ switched: true, plan, interval, discountApplied: discountEligible });
+  if (subscription.items.data[0]?.price.id === priceId) {
+    return NextResponse.json({ error: "You're already on that plan." }, { status: 400 });
   }
-  return NextResponse.json({ switched: true, addOn, interval });
+
+  // The upgrade offer is once per account. Claim it now, in one conditional
+  // update, rather than when the webhook reports the confirmed change —
+  // otherwise several discounted confirm pages could be opened (and each
+  // confirmed) before the first webhook lands. A page opened and then
+  // abandoned uses the offer up, as the old instant switch did.
+  let applyDiscount = false;
+  if (discountEligible) {
+    const claimed = await prisma.account.updateMany({
+      where: { id: account.id, upgradeDiscountUsedAt: null },
+      data: { upgradeDiscountUsedAt: new Date() },
+    });
+    applyDiscount = claimed.count === 1;
+  }
+
+  const portalSession = await stripe.billingPortal.sessions.create({
+    customer: account.stripeCustomerId,
+    return_url: `${origin}/account`,
+    flow_data: {
+      type: "subscription_update_confirm",
+      subscription_update_confirm: {
+        subscription: existingSubscriptionId,
+        items: [{ id: itemId, price: priceId, quantity: 1 }],
+        ...(applyDiscount ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
+      },
+      after_completion: {
+        type: "redirect",
+        redirect: { return_url: `${origin}/account?billing=updated` },
+      },
+    },
+  });
+  return NextResponse.json({ confirmUrl: portalSession.url });
 }
 
 // Embedded mode keeps the customer on /control instead of redirecting to a
 // Stripe-hosted page. redirect_on_completion "never" + the client-side
 // onComplete callback handles completion in place, so no return_url is
 // needed — the control panel is already a single-page tab-switching UI.
+//
+// Checkout won't take customer_email alongside customer, so the signed-in
+// admin's email goes on the Customer instead, which prefills Checkout's email
+// field. An existing Customer's email is only filled in when it has none, so
+// a billing email changed in the portal isn't overwritten.
 async function createNewCheckoutSession(
   stripe: Stripe,
   account: Account,
   priceId: string,
   request: CheckoutRequest,
   discountEligible: boolean,
+  email: string | undefined,
 ): Promise<NextResponse> {
   const { plan, addOn } = request;
   let customerId = account.stripeCustomerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       name: account.name,
+      ...(email ? { email } : {}),
       metadata: { accountId: account.id },
     });
     customerId = customer.id;
     await prisma.account.update({ where: { id: account.id }, data: { stripeCustomerId: customerId } });
+  } else if (email) {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (!customer.deleted && !customer.email) {
+      await stripe.customers.update(customerId, { email });
+    }
   }
 
   const metadata: Record<string, string> = plan
@@ -199,9 +224,34 @@ export async function POST(req: NextRequest) {
   const discountEligible =
     Boolean(plan) && isPlanUpgrade(account.plan, plan!) && !account.upgradeDiscountUsedAt;
 
-  if (hasExistingSubscription && existingSubscriptionId) {
-    return switchExistingSubscription(stripe, account, existingSubscriptionId, priceId, parsed, discountEligible);
+  // A Stripe failure here (a price that doesn't exist in the account the key
+  // belongs to, a network error, …) would otherwise escape as a bodiless 500,
+  // which the billing page can't read and so can't tell the admin about.
+  try {
+    if (hasExistingSubscription && existingSubscriptionId) {
+      const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "";
+      return await confirmSubscriptionChange(stripe, account, existingSubscriptionId, priceId, discountEligible, origin);
+    }
+    return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible, session.user.email ?? undefined);
+  } catch (err) {
+    // A saved subscription/customer id Stripe doesn't recognise means our
+    // record and Stripe have drifted apart (an id saved against a different
+    // Stripe account, or deleted in the dashboard). Retrying won't help.
+    if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === "resource_missing") {
+      console.error("[billing] checkout: saved billing record not found in Stripe:", err);
+      Sentry.captureException(err, {
+        tags: { area: "billing-checkout", stage: "stale-record" },
+        extra: { accountId: account.id, plan, addOn, interval },
+      });
+      return NextResponse.json({
+        error: "Your billing record doesn't match our payment provider, so this can't be changed here. Please contact support.",
+      }, { status: 409 });
+    }
+    console.error("[billing] checkout failed:", err);
+    Sentry.captureException(err, {
+      tags: { area: "billing-checkout", stage: "stripe" },
+      extra: { accountId: account.id, plan, addOn, interval },
+    });
+    return NextResponse.json({ error: "Couldn't start checkout — please try again, or contact support if it keeps happening." }, { status: 502 });
   }
-
-  return createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
 }

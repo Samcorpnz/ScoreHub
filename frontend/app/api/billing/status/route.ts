@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getAccountForOrg } from "@/lib/account";
 import { getStripe } from "@/lib/stripe";
+import * as Sentry from "@sentry/nextjs";
 
 export async function GET() {
   const session = await auth();
@@ -51,13 +52,27 @@ export async function GET() {
     return { invoiceEmail: customer.email, paymentMethod };
   }
 
+  // Each lookup fails on its own: one missing or unreachable Stripe object
+  // (e.g. an id saved against a different Stripe account) shouldn't take the
+  // whole billing page down. The plan itself comes from our own database.
+  let stripeUnavailable = false;
+  async function safely<T>(what: string, lookup: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await lookup();
+    } catch (err) {
+      stripeUnavailable = true;
+      console.error(`[billing] status: couldn't load ${what} for account ${account!.id}:`, err);
+      Sentry.captureException(err, { tags: { area: "billing-status" }, extra: { accountId: account!.id, what } });
+      return fallback;
+    }
+  }
+
+  const noCustomerInfo = { invoiceEmail: null, paymentMethod: null };
   const [subscription, graphicsSubscription, dataFeedSubscription, customerInfo] = await Promise.all([
-    account.stripeSubscriptionId ? summarize(account.stripeSubscriptionId) : Promise.resolve(null),
-    account.graphicsSubscriptionId ? summarize(account.graphicsSubscriptionId) : Promise.resolve(null),
-    account.dataFeedSubscriptionId ? summarize(account.dataFeedSubscriptionId) : Promise.resolve(null),
-    account.stripeCustomerId
-      ? summarizeCustomer(account.stripeCustomerId)
-      : Promise.resolve({ invoiceEmail: null, paymentMethod: null }),
+    account.stripeSubscriptionId ? safely("subscription", () => summarize(account.stripeSubscriptionId!), null) : null,
+    account.graphicsSubscriptionId ? safely("graphics subscription", () => summarize(account.graphicsSubscriptionId!), null) : null,
+    account.dataFeedSubscriptionId ? safely("data feed subscription", () => summarize(account.dataFeedSubscriptionId!), null) : null,
+    account.stripeCustomerId ? safely("customer", () => summarizeCustomer(account.stripeCustomerId!), noCustomerInfo) : noCustomerInfo,
   ]);
 
   return NextResponse.json({
@@ -71,5 +86,6 @@ export async function GET() {
     invoiceEmail: customerInfo.invoiceEmail,
     paymentMethod: customerInfo.paymentMethod,
     upgradeDiscountAvailable: account.upgradeDiscountUsedAt === null,
+    stripeUnavailable,
   });
 }

@@ -138,8 +138,9 @@ export const SPORT_TEMPLATES: SportTemplate[] = [
     countDown: false,
     timeoutsPerTeam: 0,
     defaultPossession: "home",
-    scoreIncrements: [3, 5, 7],
-    scoreLabels: ["PEN/DG", "TRY", "CONV TRY"],
+    // A conversion is its own +2 too, for a try entered before the kick is taken
+    scoreIncrements: [2, 3, 5, 7],
+    scoreLabels: ["CONV", "PEN/DG", "TRY", "CONV TRY"],
     // Knockout rugby plays 2 × 10:00; the clock counts up, so there's no length to set
     extraTime: {},
   },
@@ -153,8 +154,9 @@ export const SPORT_TEMPLATES: SportTemplate[] = [
     countDown: false,
     timeoutsPerTeam: 0,
     defaultPossession: "home",
-    scoreIncrements: [2, 4, 6],
-    scoreLabels: ["CONV/PEN", "TRY", "CONV TRY"],
+    // +1 is a field goal (drop goal)
+    scoreIncrements: [1, 2, 4, 6],
+    scoreLabels: ["FG", "CONV/PEN", "TRY", "CONV TRY"],
     // Golden point, 2 × 5:00 — first score wins. Counts up, so no length to set
     extraTime: { label: "GP" },
   },
@@ -598,8 +600,15 @@ export function getShootout(state: Pick<MatchState, "sport" | "sportConfig" | "s
 
 // What's shown in place of the period while state.periodBreak is set. Ending
 // the last regulation period is full time, whether or not extra time follows.
+// Regulation's over: END on the last half/quarter puts the match in a break
+// one period past the template's count. Every sport calls that full time —
+// from there it either finishes, or (where the sport has it) goes to extra time.
+export function isFullTime(state: Pick<MatchState, "sport" | "sportConfig" | "period" | "periodBreak">): boolean {
+  return state.periodBreak && Number.parseInt(state.period, 10) === getMatchTemplate(state).periods + 1;
+}
+
 export function getBreakLabel(state: MatchState): string {
-  if (getExtraTimePeriod(state) === 1) return "FULL TIME";
+  if (isFullTime(state)) return "FULL TIME";
   const label = getPeriodLabel(state);
   // The break before the third of four quarters is half time too
   const { periods } = getMatchTemplate(state);

@@ -59,6 +59,7 @@ jest.mock("@scorehub/db", () => {
 });
 
 import { createServer } from "../server";
+import { DEFAULT_MATCH_STATE } from "../types";
 import * as db from "@scorehub/db";
 const seed = (db as unknown as { __seed: (orgId: string, accountId: string, plan: string) => void }).__seed;
 const resetSeed = (db as unknown as { __reset: () => void }).__reset;
@@ -78,7 +79,7 @@ beforeAll(done => {
   process.env.DATABASE_URL = "postgresql://fake-for-tests";
   process.env.AUTH_SECRET = AUTH_SECRET;
   uploadDir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-entitlements-test-"));
-  ({ app, httpServer, close: closeServer } = createServer({ bridgeSecret: BRIDGE_SECRET, controlSecret: CONTROL_SECRET, uploadDir, allowedOrigins: ["http://localhost:3000"] }));
+  ({ app, httpServer, close: closeServer } = createServer({ bridgeSecret: BRIDGE_SECRET, controlSecret: CONTROL_SECRET, uploadDir, allowedOrigins: ["http://localhost:3000"], controlRateLimit: 1000 }));
   httpServer.listen(0, () => done());
 });
 
@@ -144,6 +145,89 @@ describe("branding in MatchState patches (SA-32)", () => {
     expect(res.status).toBe(200);
     expect(res.body.home.score).toBe(7);
     expect(findOrg).not.toHaveBeenCalled();
+  });
+});
+
+describe("sport is fixed once a match is set up", () => {
+  async function matchToken(orgId: string, matchId: string): Promise<string> {
+    return new SignJWT({ orgId, role: "ADMIN", matchId })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(AUTH_SECRET));
+  }
+
+  it("drops a sport change for a set-up match but applies the rest of the patch", async () => {
+    seed("org-sport-fixed", "account-sport-fixed", "pro");
+    const { prisma } = db as unknown as { prisma: { match: { create: (q: unknown) => Promise<{ id: string }> } } };
+    const match = await prisma.match.create({ data: { orgId: "org-sport-fixed", state: { ...DEFAULT_MATCH_STATE, sport: "netball" } } });
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await matchToken("org-sport-fixed", match.id))
+      .send({ sport: "rugby_union", matchName: "Final" });
+    expect(res.status).toBe(200);
+    expect(res.body.sport).toBe("netball");
+    expect(res.body.matchName).toBe("Final");
+  });
+
+  it("still lets the org's default room pick a sport", async () => {
+    seed("org-sport-default", "account-sport-default", "pro");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-sport-default"))
+      .send({ sport: "rugby_union" });
+    expect(res.status).toBe(200);
+    expect(res.body.sport).toBe("rugby_union");
+  });
+});
+
+describe("display background image", () => {
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  async function matchToken(orgId: string, matchId: string): Promise<string> {
+    return new SignJWT({ orgId, role: "ADMIN", matchId })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(AUTH_SECRET));
+  }
+  async function newMatch(orgId: string): Promise<string> {
+    const { prisma } = db as unknown as { prisma: { match: { create: (q: unknown) => Promise<{ id: string }> } } };
+    return (await prisma.match.create({ data: { orgId, state: { ...DEFAULT_MATCH_STATE } } })).id;
+  }
+
+  it("blocks a free-tier org from uploading one", async () => {
+    seed("org-bg-free", "account-bg-free", "free");
+    const res = await request(app)
+      .post("/api/display-background")
+      .set("x-control-secret", await controlToken("org-bg-free"))
+      .attach("background", PNG, "bg.png");
+    expect(res.status).toBe(403);
+  });
+
+  it("stores it per match and sets it on that match's theme only", async () => {
+    seed("org-bg-pro", "account-bg-pro", "pro");
+    const [a, b] = [await newMatch("org-bg-pro"), await newMatch("org-bg-pro")];
+    const tokenA = await matchToken("org-bg-pro", a);
+    const res = await request(app).post("/api/display-background").set("x-control-secret", tokenA).attach("background", PNG, "bg.png");
+    expect(res.status).toBe(200);
+    expect(res.body.backgroundImageUrl).toMatch(new RegExp(`^/logos/org-bg-pro/background-${a}\\.png\\?t=`));
+
+    const stateA = await request(app).post("/manual").set("x-control-secret", tokenA).send({});
+    expect(stateA.body.displayTheme.backgroundImageUrl).toBe(res.body.backgroundImageUrl);
+    const stateB = await request(app).post("/manual").set("x-control-secret", await matchToken("org-bg-pro", b)).send({});
+    expect(stateB.body.displayTheme.backgroundImageUrl ?? "").toBe("");
+
+    const removed = await request(app).delete("/api/display-background").set("x-control-secret", tokenA);
+    expect(removed.status).toBe(200);
+    const after = await request(app).post("/manual").set("x-control-secret", tokenA).send({});
+    expect(after.body.displayTheme.backgroundImageUrl).toBe("");
+  });
+
+  it("rejects a panel opacity outside 0–1", async () => {
+    seed("org-bg-opacity", "account-bg-opacity", "pro");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-bg-opacity"))
+      .send({ displayTheme: { panelOpacity: 1.5 } });
+    expect(res.status).toBe(400);
   });
 });
 

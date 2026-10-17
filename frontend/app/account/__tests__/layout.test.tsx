@@ -64,7 +64,7 @@ describe("AccountLayout", () => {
     expect(screen.getByText("Sam Kerins")).toBeInTheDocument();
     expect(screen.getByText("account content")).toBeInTheDocument();
     expect(screen.getByTestId("org-switcher")).toBeInTheDocument();
-    expect(screen.getByText("Control Panel").closest("a")).toHaveAttribute("href", "/control");
+    expect(screen.getByText("Dashboard").closest("a")).toHaveAttribute("href", "/dashboard");
   });
 
   it("signs out and redirects to /login when 'Sign out' is clicked", () => {

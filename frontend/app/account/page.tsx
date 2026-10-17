@@ -104,6 +104,7 @@ export default function AccountPage() {
     invoiceEmail: string | null;
     paymentMethod: { brand: string; last4: string } | null;
     upgradeDiscountAvailable: boolean;
+    stripeUnavailable?: boolean;
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [checkoutSecret, setCheckoutSecret] = useState<string | null>(null);
@@ -120,6 +121,9 @@ export default function AccountPage() {
     "graphics-operator": false,
     "data-feed": false,
   });
+  // Shown under the add-on's own row — the page-level switchNotice sits up by
+  // the plans, out of sight of an add-on button at the bottom of the page.
+  const [addOnNotice, setAddOnNotice] = useState<Partial<Record<AddOnId, { message: string; isError: boolean }>>>({});
 
   const fetchBillingStatus = useCallback(() =>
     fetch("/api/billing/status")
@@ -170,6 +174,19 @@ export default function AccountPage() {
     fetchBillingStatus();
   }, [fetchBillingStatus]);
 
+  // Back from confirming a plan change on Stripe's page. The webhook that
+  // records it usually lands within a second or two, so look again shortly.
+  useEffect(() => {
+    if (new URLSearchParams(globalThis.location.search).get("billing") !== "updated") return;
+    const notice = setTimeout(() => {
+      // Drop the flag so a reload doesn't repeat the notice
+      globalThis.history.replaceState(null, "", "/account");
+      setSwitchNotice("Your plan change is confirmed. It can take a few seconds to show here.");
+    }, 0);
+    const refetch = setTimeout(() => { fetchBillingStatus(); }, 3000);
+    return () => { clearTimeout(notice); clearTimeout(refetch); };
+  }, [fetchBillingStatus]);
+
   async function upgrade(plan: "pro" | "venue") {
     setBillingBusy(true);
     setSwitchNotice(null);
@@ -183,9 +200,10 @@ export default function AccountPage() {
       if (data?.clientSecret) {
         setCheckoutKind("plan");
         setCheckoutSecret(data.clientSecret);
-      } else if (data?.switched) {
-        await fetchBillingStatus();
-        setSwitchNotice(`Switched to the ${data.plan} plan.`);
+      } else if (data?.confirmUrl) {
+        // Already subscribed: Stripe's page shows the change and its prorated
+        // cost for the customer to confirm, then sends them back here.
+        globalThis.location.assign(data.confirmUrl);
       } else {
         setSwitchNotice(data?.error ?? "couldn't start checkout");
       }
@@ -196,23 +214,25 @@ export default function AccountPage() {
 
   async function purchaseAddOn(addOnId: AddOnId) {
     setAddOnBusy(prev => ({ ...prev, [addOnId]: true }));
-    setSwitchNotice(null);
+    setAddOnNotice(prev => ({ ...prev, [addOnId]: undefined }));
+    const notify = (message: string, isError: boolean) => setAddOnNotice(prev => ({ ...prev, [addOnId]: { message, isError } }));
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ addOn: addOnId, interval: addOnInterval[addOnId] }),
       });
-      const data = await res.json();
-      if (data.clientSecret) {
+      const data = await res.json().catch(() => null);
+      if (data?.clientSecret) {
         setCheckoutKind(addOnId);
         setCheckoutSecret(data.clientSecret);
-      } else if (data.switched) {
-        await fetchBillingStatus();
-        setSwitchNotice(`Switched the ${ADD_ONS.find(a => a.id === addOnId)?.name} add-on billing interval.`);
-      } else if (data.error) {
-        setSwitchNotice(data.error);
+      } else if (data?.confirmUrl) {
+        globalThis.location.assign(data.confirmUrl);
+      } else {
+        notify(data?.error ?? "Couldn't start checkout — please try again.", true);
       }
+    } catch {
+      notify("Couldn't reach the server — please try again.", true);
     } finally {
       setAddOnBusy(prev => ({ ...prev, [addOnId]: false }));
     }
@@ -257,6 +277,42 @@ export default function AccountPage() {
     }
   }
 
+  // Checkout takes over the whole page rather than sitting in a card in the
+  // narrow account column: Stripe only switches to its two-column layout
+  // (order summary beside the payment form) when it has the width.
+  if (checkoutSecret) {
+    return (
+      <div className="p-6 w-full">
+        <button
+          className="text-xs font-bold mb-4"
+          style={{ color: "var(--text-secondary)" }}
+          onClick={() => setCheckoutSecret(null)}
+        >
+          ← Back
+        </button>
+        <div className="rounded-xl overflow-hidden" data-testid="checkout-panel">
+          <EmbeddedCheckoutProvider
+            stripe={getStripeClient()}
+            options={{
+              clientSecret: checkoutSecret,
+              onComplete: () => {
+                const previousPlan = billingStatus?.plan;
+                const kind = checkoutKind;
+                const hadAddOn = kind && kind !== "plan" ? (billingStatus?.addOns.includes(kind) ?? false) : false;
+                setCheckoutSecret(null);
+                setCheckoutKind(null);
+                if (kind && kind !== "plan") waitForAddOnChange(kind, hadAddOn);
+                else waitForPlanChange(previousPlan);
+              },
+            }}
+          >
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 w-full max-w-5xl mx-auto space-y-6">
       <Card title="Organization">
@@ -278,145 +334,121 @@ export default function AccountPage() {
           <TeamCard orgId={session.user.activeOrgId} actorRole={session.user.activeRole} actorUserId={session.user.id} />
         )}
 
-      {checkoutSecret ? (
-        <Card title="Upgrade">
-          <button
-            className="text-xs font-bold mb-3"
-            style={{ color: "var(--text-secondary)" }}
-            onClick={() => setCheckoutSecret(null)}
-          >
-            ← Back
-          </button>
-          <EmbeddedCheckoutProvider
-            stripe={getStripeClient()}
-            options={{
-              clientSecret: checkoutSecret,
-              onComplete: () => {
-                const previousPlan = billingStatus?.plan;
-                const kind = checkoutKind;
-                const hadAddOn = kind && kind !== "plan" ? (billingStatus?.addOns.includes(kind) ?? false) : false;
-                setCheckoutSecret(null);
-                setCheckoutKind(null);
-                if (kind && kind !== "plan") waitForAddOnChange(kind, hadAddOn);
-                else waitForPlanChange(previousPlan);
-              },
-            }}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </Card>
-      ) : (
-        <Card title="Plan & Billing">
-          <p className="text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
-            Free allows one live match at a time and no custom branding. Pro and Venue unlock custom logos/theme and
-            concurrent matches across your account.
+      <Card title="Plan & Billing">
+        <p className="text-xs mb-4" style={{ color: "var(--text-secondary)" }}>
+          Free allows one live match at a time and no custom branding. Pro and Venue unlock custom logos/theme and
+          concurrent matches across your account.
+        </p>
+        {!isAdmin && (
+          <p className="text-xs mb-4" style={{ color: "var(--text-dim)" }}>
+            Only an account ADMIN can change billing.
           </p>
-          {!isAdmin && (
-            <p className="text-xs mb-4" style={{ color: "var(--text-dim)" }}>
-              Only an account ADMIN can change billing.
-            </p>
-          )}
-          {finishingUp && <StatusText message="Finishing up your upgrade…" />}
-          {switchNotice && <StatusText message={switchNotice} />}
+        )}
+        {finishingUp && <StatusText message="Finishing up your upgrade…" />}
+        {switchNotice && <StatusText message={switchNotice} />}
+        {billingStatus?.stripeUnavailable && (
+          <div data-testid="billing-stripe-unavailable">
+            <StatusText isError message="Some billing details couldn't be loaded from our payment provider, so they're missing below. If this keeps happening, please contact support." />
+          </div>
+        )}
 
-          {billingStatus && billingStatus.plan !== "free" ? (
-            <SubscriptionPanel
-              billingStatus={billingStatus}
-              billingInterval={billingInterval}
-              setBillingInterval={setBillingInterval}
-              isAdmin={isAdmin}
-              billingBusy={billingBusy}
-              cancelBusy={cancelBusy}
-              onUpgrade={upgrade}
-              onCancel={() => setCancelAtPeriodEnd(false)}
-              onResume={() => setCancelAtPeriodEnd(true)}
-            />
-          ) : (
-            <>
-              {billingStatus?.upgradeDiscountAvailable && (
-                <DiscountBanner className="mb-4" />
-              )}
-              <div className="flex items-center gap-2 mb-4">
-                <SmallBtn label="Monthly" onClick={() => setBillingInterval("month")} active={billingInterval === "month"} />
-                <SmallBtn label="Annual (2 months free)" onClick={() => setBillingInterval("year")} active={billingInterval === "year"} />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {PLANS.map(plan => {
-                  const isCurrentPlan = billingStatus?.plan === plan.id;
-                  const isCurrent = isCurrentPlan && (plan.id === "free" || billingStatus?.billingInterval === billingInterval);
-                  let priceSuffix: string;
-                  if (plan.id === "free") {
-                    priceSuffix = "";
-                  } else if (billingInterval === "month") {
-                    priceSuffix = "/mo";
-                  } else {
-                    priceSuffix = "/yr";
-                  }
-                  let planAction: React.ReactNode;
-                  if (isCurrent) {
-                    planAction = <SmallBtn label="Current plan" onClick={() => {}} active />;
-                  } else if (plan.id !== "free" && isAdmin) {
-                    planAction = (
-                      <SmallBtn
-                        label={billingBusy ? "Loading…" : `Upgrade to ${plan.name}`}
-                        onClick={() => upgrade(plan.id)}
-                        primary
-                      />
-                    );
-                  } else {
-                    planAction = null;
-                  }
-                  return (
-                    <div
-                      key={plan.id}
-                      className="rounded-xl p-4 flex flex-col"
-                      style={{
-                        background: "var(--bg-elevated)",
-                        border: `1px solid ${isCurrent ? "var(--border-accent)" : "var(--border)"}`,
-                      }}
-                    >
-                      <p className="text-xs font-bold tracking-widest uppercase" style={{ color: "var(--text-dim)" }}>
-                        {plan.name}
-                      </p>
-                      <p className="mt-2">
-                        <span className="text-2xl font-black" style={{ color: "var(--accent)" }}>
-                          {billingInterval === "month" ? plan.monthlyPrice : plan.annualPrice}
-                        </span>
-                        <span className="text-xs" style={{ color: "var(--text-dim)" }}>
-                          {priceSuffix}
-                        </span>
-                      </p>
-                      <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{plan.tagline}</p>
-                      <ul className="text-xs mt-3 space-y-1 flex-1" style={{ color: "var(--text-secondary)" }}>
-                        {plan.features.map(f => (
-                          <li key={f}>• {f}</li>
-                        ))}
-                      </ul>
-                      <div className="mt-4">
-                        {planAction}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {isAdmin && billingStatus?.hasStripeCustomer && (
-            <div className="mt-4">
-              <SmallBtn label={billingBusy ? "Loading…" : "Manage billing"} onClick={manageBilling} />
+        {billingStatus && billingStatus.plan !== "free" ? (
+          <SubscriptionPanel
+            billingStatus={billingStatus}
+            billingInterval={billingInterval}
+            setBillingInterval={setBillingInterval}
+            isAdmin={isAdmin}
+            billingBusy={billingBusy}
+            cancelBusy={cancelBusy}
+            onUpgrade={upgrade}
+            onCancel={() => setCancelAtPeriodEnd(false)}
+            onResume={() => setCancelAtPeriodEnd(true)}
+          />
+        ) : (
+          <>
+            {billingStatus?.upgradeDiscountAvailable && (
+              <DiscountBanner className="mb-4" />
+            )}
+            <div className="flex items-center gap-2 mb-4">
+              <SmallBtn label="Monthly" onClick={() => setBillingInterval("month")} active={billingInterval === "month"} />
+              <SmallBtn label="Annual (2 months free)" onClick={() => setBillingInterval("year")} active={billingInterval === "year"} />
             </div>
-          )}
-        </Card>
-      )}
 
-      {!checkoutSecret && billingStatus && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {PLANS.map(plan => {
+                const isCurrentPlan = billingStatus?.plan === plan.id;
+                const isCurrent = isCurrentPlan && (plan.id === "free" || billingStatus?.billingInterval === billingInterval);
+                let priceSuffix: string;
+                if (plan.id === "free") {
+                  priceSuffix = "";
+                } else if (billingInterval === "month") {
+                  priceSuffix = "/mo";
+                } else {
+                  priceSuffix = "/yr";
+                }
+                let planAction: React.ReactNode;
+                if (isCurrent) {
+                  planAction = <SmallBtn label="Current plan" onClick={() => {}} active />;
+                } else if (plan.id !== "free" && isAdmin) {
+                  planAction = (
+                    <SmallBtn
+                      label={billingBusy ? "Loading…" : `Upgrade to ${plan.name}`}
+                      onClick={() => upgrade(plan.id)}
+                      primary
+                    />
+                  );
+                } else {
+                  planAction = null;
+                }
+                return (
+                  <div
+                    key={plan.id}
+                    className="rounded-xl p-4 flex flex-col"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      border: `1px solid ${isCurrent ? "var(--border-accent)" : "var(--border)"}`,
+                    }}
+                  >
+                    <p className="text-xs font-bold tracking-widest uppercase" style={{ color: "var(--text-dim)" }}>
+                      {plan.name}
+                    </p>
+                    <p className="mt-2">
+                      <span className="text-2xl font-black" style={{ color: "var(--accent)" }}>
+                        {billingInterval === "month" ? plan.monthlyPrice : plan.annualPrice}
+                      </span>
+                      <span className="text-xs" style={{ color: "var(--text-dim)" }}>
+                        {priceSuffix}
+                      </span>
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{plan.tagline}</p>
+                    <ul className="text-xs mt-3 space-y-1 flex-1" style={{ color: "var(--text-secondary)" }}>
+                      {plan.features.map(f => (
+                        <li key={f}>• {f}</li>
+                      ))}
+                    </ul>
+                    <div className="mt-4">
+                      {planAction}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {isAdmin && billingStatus?.hasStripeCustomer && (
+          <div className="mt-4">
+            <SmallBtn label={billingBusy ? "Loading…" : "Manage billing"} onClick={manageBilling} />
+          </div>
+        )}
+      </Card>
+
+      {billingStatus && (
         <Card title="Add-ons">
           <div className="space-y-3">
             {ADD_ONS.map(config => (
+              <div key={config.id}>
               <AddOnRow
-                key={config.id}
                 config={config}
                 billingStatus={billingStatus}
                 isAdmin={isAdmin}
@@ -427,6 +459,12 @@ export default function AccountPage() {
                 onCancel={() => setAddOnCancelAtPeriodEnd(config.id, false)}
                 onResume={() => setAddOnCancelAtPeriodEnd(config.id, true)}
               />
+              {addOnNotice[config.id] && (
+                <div data-testid={`addon-notice-${config.id}`}>
+                  <StatusText message={addOnNotice[config.id]!.message} isError={addOnNotice[config.id]!.isError} />
+                </div>
+              )}
+              </div>
             ))}
           </div>
         </Card>

@@ -43,6 +43,7 @@ function makeMatchStateReturn(overrides: Record<string, unknown> = {}) {
   const sendManualUpdate = vi.fn();
   return {
     state: makeState(),
+    stateLoaded: true,
     status: "connected",
     feedStale: false,
     relayUnreachable: false,
@@ -72,6 +73,12 @@ afterEach(() => {
 });
 
 describe("MobileControl", () => {
+  it("shows a loader until the match's state arrives", () => {
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ stateLoaded: false }));
+    render(<MobileControl />);
+    expect(screen.getByTestId("control-loading-match")).toHaveTextContent("Loading match…");
+  });
+
   it("redirects unauthenticated users to the mobile-specific login callback", () => {
     useSessionMock.mockImplementation((opts?: { onUnauthenticated?: () => void }) => {
       opts?.onUnauthenticated?.();
@@ -133,13 +140,13 @@ describe("MobileControl", () => {
     searchParams.current = new URLSearchParams("matchId=m-42");
     render(<MobileControl />);
     expect(useControlTokenMock).toHaveBeenCalledWith("m-42");
-    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/control?matchId=m-42");
+    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/control/m-42");
   });
 
   it("falls back to the org's default match when no matchId is given", () => {
     render(<MobileControl />);
     expect(useControlTokenMock).toHaveBeenCalledWith(undefined);
-    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/control");
+    expect(screen.getByText("Full panel ↗")).toHaveAttribute("href", "/dashboard");
   });
 
   it("shows IN CONTROL when this panel holds the controller lock", () => {

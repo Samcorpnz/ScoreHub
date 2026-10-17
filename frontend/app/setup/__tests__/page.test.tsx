@@ -109,14 +109,17 @@ describe("SetupPage", () => {
     fireEvent.click(screen.getByTestId("setup-submit"));
 
     await waitFor(() =>
-      expect(global.fetch).toHaveBeenCalledWith("/api/orgs/org-1/matches", { method: "POST" })
+      expect(global.fetch).toHaveBeenCalledWith("/api/orgs/org-1/matches", expect.objectContaining({
+        method: "POST",
+        body: expect.stringMatching(/"scheduledAt":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z"/),
+      }))
     );
     await waitFor(() => expect(sendManualUpdateMock).toHaveBeenCalled());
     const payload = sendManualUpdateMock.mock.calls[0][0];
     expect(payload.matchName).toBe("Round 1");
     expect(payload.home.name).toBe("Sharks");
     expect(payload.visitor.name).toBe("Magic");
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control?matchId=match-123"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control/match-123"));
   });
 
   it("shows an upgrade-required message on a 402 response", async () => {

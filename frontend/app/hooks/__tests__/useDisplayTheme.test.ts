@@ -69,4 +69,32 @@ describe("useDisplayTheme", () => {
     );
     expect(result.current.competitionLogoUrl).toBe("");
   });
+
+  it("leaves the panels solid and adds no background image by default", () => {
+    const { result } = renderHook(() => useDisplayTheme(DEFAULT_DISPLAY_THEME));
+    expect(result.current).not.toHaveProperty("--bg-surface");
+    expect(result.current).not.toHaveProperty("backgroundImage");
+  });
+
+  it("makes the panel colours translucent for a panel opacity below 1", () => {
+    const { result } = renderHook(() => useDisplayTheme({ ...DEFAULT_DISPLAY_THEME, panelOpacity: 0.4 }));
+    const style = result.current as unknown as Record<string, string>;
+    expect(style["--bg-surface"]).toBe("rgba(13, 17, 32, 0.4)");
+    expect(style["--bg-elevated"]).toBe("rgba(20, 24, 38, 0.4)");
+  });
+
+  it("covers the display with the background image, resolving a relay-stored path", () => {
+    const { result } = renderHook(() =>
+      useDisplayTheme({ ...DEFAULT_DISPLAY_THEME, backgroundImageUrl: "/logos/org/background-m1.jpg?t=1" }),
+    );
+    expect(result.current.backgroundImage).toBe('url("http://localhost:4000/logos/org/background-m1.jpg?t=1")');
+    expect(result.current.backgroundSize).toBe("cover");
+  });
+
+  it("quotes a background URL so it can't break out of url()", () => {
+    const { result } = renderHook(() =>
+      useDisplayTheme({ ...DEFAULT_DISPLAY_THEME, backgroundImageUrl: 'https://cdn.example.com/a") ; x:(' }),
+    );
+    expect(result.current.backgroundImage).toBe('url("https://cdn.example.com/a\\") ; x:(")');
+  });
 });

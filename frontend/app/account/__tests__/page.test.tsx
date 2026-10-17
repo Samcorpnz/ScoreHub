@@ -133,21 +133,39 @@ describe("AccountPage", () => {
       )
     );
     expect(await screen.findByTestId("embedded-checkout-provider")).toBeInTheDocument();
+    // Checkout takes the full page, so the account cards are hidden until Back.
+    expect(screen.queryByText("Plan & Billing")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("← Back"));
+    expect(await screen.findByText("Plan & Billing")).toBeInTheDocument();
   });
 
-  it("switches plan in place and shows a notice when the checkout responds with 'switched'", async () => {
+  it("sends an existing subscriber to Stripe's confirm page for a plan change", async () => {
     useSessionMock.mockReturnValue(adminSession);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { search: "", assign });
     vi.stubGlobal(
       "fetch",
       mockFetchRouter({
-        "/api/billing/checkout": () => jsonResponse({ switched: true, plan: "pro" }),
+        "/api/billing/checkout": () => jsonResponse({ confirmUrl: "https://billing.stripe.com/p/session/test_1" }),
       })
     );
     renderPage();
 
     fireEvent.click(await screen.findByText("Upgrade to Pro"));
 
-    expect(await screen.findByText("Switched to the pro plan.")).toBeInTheDocument();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.com/p/session/test_1"));
+  });
+
+  it("confirms the change after Stripe sends the customer back", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("location", { search: "?billing=updated", assign: vi.fn() });
+    const replaceState = vi.spyOn(globalThis.history, "replaceState").mockImplementation(() => {});
+    vi.stubGlobal("fetch", mockFetchRouter());
+    renderPage();
+
+    expect(await screen.findByText(/Your plan change is confirmed/)).toBeInTheDocument();
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/account");
+    replaceState.mockRestore();
   });
 
   it("shows the checkout error message when checkout fails to start", async () => {
@@ -237,6 +255,46 @@ describe("AccountPage", () => {
     expect(screen.getByText("Add Graphics Operator")).toBeInTheDocument();
     expect(screen.getByText("Data Feed")).toBeInTheDocument();
     expect(screen.getByText("Add Data Feed")).toBeInTheDocument();
+  });
+
+  it("shows a failed add-on checkout under that add-on, not up by the plans", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro" }),
+        "/api/billing/checkout": () => jsonResponse({ error: "Couldn't start checkout — please try again." }, false),
+      })
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByText("Add Data Feed"));
+    expect(await screen.findByTestId("addon-notice-data-feed")).toHaveTextContent("Couldn't start checkout");
+    expect(screen.queryByTestId("addon-notice-graphics-operator")).not.toBeInTheDocument();
+  });
+
+  it("shows an error under the add-on when the checkout response isn't JSON", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro" }),
+        "/api/billing/checkout": () => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new SyntaxError("no body")) }),
+      })
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByText("Add Graphics Operator"));
+    expect(await screen.findByTestId("addon-notice-graphics-operator")).toHaveTextContent("Couldn't start checkout");
+  });
+
+  it("warns when some billing details couldn't be loaded from Stripe", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("fetch", mockFetchRouter({
+      "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro", stripeUnavailable: true }),
+    }));
+    renderPage();
+    expect(await screen.findByTestId("billing-stripe-unavailable")).toHaveTextContent("couldn't be loaded");
   });
 
   it("shows both add-ons requiring a base plan note when on Free", async () => {

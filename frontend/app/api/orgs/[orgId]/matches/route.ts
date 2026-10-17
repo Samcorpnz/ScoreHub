@@ -3,6 +3,7 @@ import { SignJWT } from "jose";
 import { prisma, MatchStatus } from "@scorehub/db";
 import { auth } from "@/auth";
 import { canRunMatches } from "@/lib/roles";
+import { hasExplicitOffset } from "@/lib/fixtureTime";
 
 // Server-side fetch — needs the relay's address as reachable from this
 // process (e.g. Docker's internal `http://relay:4000`), which can differ
@@ -34,6 +35,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     .setExpirationTime("5m")
     .sign(new TextEncoder().encode(authSecret));
 
+  // Optional match date/time from /setup — a UTC instant (the browser
+  // converts the operator's local time, as fixture imports do).
+  const input = await req.json().catch(() => null) as { scheduledAt?: unknown } | null;
+  let scheduledAt: Date | undefined;
+  if (input?.scheduledAt !== undefined && input.scheduledAt !== null) {
+    if (typeof input.scheduledAt !== "string" || !hasExplicitOffset(input.scheduledAt) || Number.isNaN(Date.parse(input.scheduledAt))) {
+      return NextResponse.json({ error: "scheduledAt must be an ISO date/time with a timezone offset" }, { status: 400 });
+    }
+    scheduledAt = new Date(input.scheduledAt);
+  }
+
   const res = await fetch(`${RELAY_URL}/match`, {
     method: "POST",
     headers: { "x-control-secret": secret },
@@ -41,6 +53,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     return NextResponse.json({ error: body?.error ?? "failed to create match" }, { status: res.status });
+  }
+
+  // The relay creates the row; the date is ours to add. It never writes
+  // scheduledAt itself, so this sticks.
+  if (scheduledAt) {
+    await prisma.match.update({ where: { id: body.id }, data: { scheduledAt } });
   }
 
   return NextResponse.json({ id: body.id });
@@ -84,9 +102,42 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ orgI
     select: {
       id: true, status: true, sport: true, competition: true,
       homeName: true, visitorName: true, scheduledAt: true, createdAt: true, endedAt: true, displayToken: true,
+      state: true,
     },
-    orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }],
+    // Upcoming and live read soonest-first; history reads most recent first
+    orderBy: statuses?.length === 1 && statuses[0] === "ENDED"
+      ? [{ scheduledAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }]
+      : [{ scheduledAt: "asc" }, { createdAt: "desc" }],
   });
 
-  return NextResponse.json({ matches });
+  // The full state carries stats, squads and graphics data the list never
+  // needs — send just enough for a row's score, period and status.
+  return NextResponse.json({
+    matches: matches.map(({ state, ...match }) => ({ ...match, live: liveSummary(state) })),
+  });
+}
+
+type StoredState = {
+  home?: { score?: unknown }; visitor?: { score?: unknown };
+  period?: unknown; periodBreak?: unknown; isRunning?: unknown;
+  clockSeconds?: unknown; countDown?: unknown; sportConfig?: unknown; shootout?: unknown;
+};
+
+// Saved by the relay a couple of seconds after each change, so it can trail
+// the live match slightly. Null for a row with no state saved yet.
+function liveSummary(raw: unknown) {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as StoredState;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    homeScore: num(s.home?.score),
+    visitorScore: num(s.visitor?.score),
+    period: typeof s.period === "string" ? s.period : "1",
+    periodBreak: s.periodBreak === true,
+    isRunning: s.isRunning === true,
+    clockSeconds: num(s.clockSeconds),
+    countDown: s.countDown === true,
+    sportConfig: s.sportConfig && typeof s.sportConfig === "object" ? s.sportConfig : undefined,
+    shootout: s.shootout ?? null,
+  };
 }

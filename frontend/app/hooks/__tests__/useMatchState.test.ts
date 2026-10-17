@@ -63,6 +63,15 @@ describe("useMatchState", () => {
     await waitFor(() => expect(result.current.state.matchName).toBe("Finals"));
   });
 
+  it("reports the state as loaded only once the relay has sent it", async () => {
+    const { result } = renderHook(() => useMatchState({ secret: "s", role: "control" }));
+    expect(result.current.stateLoaded).toBe(false);
+    act(() => fakeSocket.__trigger("connect"));
+    expect(result.current.stateLoaded).toBe(false);
+    act(() => fakeSocket.__trigger("matchStateChange", { ...DEFAULT_MATCH_STATE, sequenceId: 3 }));
+    await waitFor(() => expect(result.current.stateLoaded).toBe(true));
+  });
+
   it("ignores a stale matchStateChange with an older sequenceId", async () => {
     const { result } = renderHook(() => useMatchState({ secret: "s", role: "control" }));
     act(() => fakeSocket.__trigger("matchStateChange", { ...DEFAULT_MATCH_STATE, sequenceId: 5, matchName: "Finals" }));

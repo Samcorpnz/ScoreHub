@@ -119,6 +119,7 @@ export const SPORTS: Sport[] = [
     structure: "2 halves × 40:00",
     clock: "Counts up from 0:00",
     buttons: [
+      { label: "CONV (+2)", desc: "A conversion, after the try's been added." },
       { label: "PEN/DG (+3)", desc: "A penalty goal or drop goal." },
       { label: "TRY (+5)", desc: "An unconverted try." },
       { label: "CONV TRY (+7)", desc: "A try plus a successful conversion." },
@@ -129,7 +130,7 @@ export const SPORTS: Sport[] = [
     sections: [
       {
         heading: "Score buttons that match the game",
-        body: "Three labelled buttons cover the common scoring plays: PEN/DG for three, TRY for five and CONV TRY for seven. If the conversion comes later, add the try first and use the minus and plus buttons to adjust, or undo the last action.",
+        body: "Four labelled buttons cover the scoring plays: CONV for two, PEN/DG for three, TRY for five and CONV TRY for seven. If the conversion comes later, add the try straight away and press CONV when the kick goes over.",
       },
       {
         heading: "You decide when the half ends",
@@ -146,17 +147,18 @@ export const SPORTS: Sport[] = [
     structure: "2 halves × 40:00",
     clock: "Counts up from 0:00",
     buttons: [
+      { label: "FG (+1)", desc: "A field goal (drop goal)." },
       { label: "CONV/PEN (+2)", desc: "A conversion or penalty goal." },
       { label: "TRY (+4)", desc: "An unconverted try." },
       { label: "CONV TRY (+6)", desc: "A try plus a successful conversion." },
     ],
     summary: "Two halves on a count-up clock, with four-point tries and two-point goals.",
     intro:
-      "The rugby league template scores the game the way league is played: four for a try, two for a conversion or penalty goal, and a single button for a converted try.",
+      "The rugby league template scores the game the way league is played: four for a try, two for a conversion or penalty goal, one for a field goal, and a single button for a converted try.",
     sections: [
       {
         heading: "League point values out of the box",
-        body: "CONV/PEN adds two, TRY adds four and CONV TRY adds six. There's no setup to do: pick Rugby League when you create the match and the buttons are already labelled.",
+        body: "FG adds one, CONV/PEN adds two, TRY adds four and CONV TRY adds six. There's no setup to do: pick Rugby League when you create the match and the buttons are already labelled.",
       },
       {
         heading: "A clock that follows the referee",

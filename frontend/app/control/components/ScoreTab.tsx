@@ -6,22 +6,23 @@ import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { parseClock } from "../lib/parseClock";
 import {
   getMatchTemplate, getMatchLength, getActivePowerPlay, getBreakLabel, getExtraTimePeriod, getExtraTimeSeconds,
-  getPeriodClockSeconds, getPeriodLabel, getPeriodNumber, getShootout, ControlPanelProps,
+  getPeriodClockSeconds, getPeriodLabel, getPeriodNumber, getShootout, isFullTime, ControlPanelProps,
 } from "../../sport-templates";
+import { useEndMatch } from "../lib/useEndMatch";
 import { ShootoutAttempts } from "../../components/ClockPanel";
 import { ClockAdjustButtons, NameField, ScoreButtons, SectionLabel, SmallBtn } from "./primitives";
 
 type Side = "home" | "visitor";
 type AdjustFn = (args: { side: Side; delta: number }) => void;
 
-// Keys 1/2/3 → increment[0/1/2]; Q/W/E → negative; mirror on right side (9/0/8, O/P/I).
+// Keys 1/2/3/4 → increment[0/1/2/3]; Q/W/E/R → negative; mirror on right side (9/0/8/7, O/P/I/U).
 // Returns true if the key matched a score-adjust binding (and applied it).
 function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn): boolean {
   const bindings: [string, Side, number, boolean][] = [
-    ["1", "home", 0, false], ["2", "home", 1, false], ["3", "home", 2, false],
-    ["q", "home", 0, true], ["Q", "home", 0, true], ["w", "home", 1, true], ["W", "home", 1, true], ["e", "home", 2, true], ["E", "home", 2, true],
-    ["9", "visitor", 0, false], ["0", "visitor", 1, false], ["8", "visitor", 2, false],
-    ["o", "visitor", 0, true], ["O", "visitor", 0, true], ["p", "visitor", 1, true], ["P", "visitor", 1, true], ["i", "visitor", 2, true], ["I", "visitor", 2, true],
+    ["1", "home", 0, false], ["2", "home", 1, false], ["3", "home", 2, false], ["4", "home", 3, false],
+    ["q", "home", 0, true], ["Q", "home", 0, true], ["w", "home", 1, true], ["W", "home", 1, true], ["e", "home", 2, true], ["E", "home", 2, true], ["r", "home", 3, true], ["R", "home", 3, true],
+    ["9", "visitor", 0, false], ["0", "visitor", 1, false], ["8", "visitor", 2, false], ["7", "visitor", 3, false],
+    ["o", "visitor", 0, true], ["O", "visitor", 0, true], ["p", "visitor", 1, true], ["P", "visitor", 1, true], ["i", "visitor", 2, true], ["I", "visitor", 2, true], ["u", "visitor", 3, true], ["U", "visitor", 3, true],
   ];
   for (const [k, side, idx, negate] of bindings) {
     if (key !== k || inc[idx] === undefined) continue;
@@ -29,6 +30,16 @@ function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn
     return true;
   }
   return false;
+}
+
+// What each sport calls the play after full time, for the full-time panel's button
+const EXTRA_TIME_NAMES: Record<string, string> = { OT: "OVERTIME", GP: "GOLDEN POINT", "DROP-OFF": "DROP-OFF" };
+
+function endPeriodLabel(isFinalPeriod: boolean, fullTime: boolean, isLastRegulationPeriod: boolean, templatePeriodLabel: string, periodLabel: string): string {
+  if (isFinalPeriod) return `FINAL ${templatePeriodLabel}`;
+  if (fullTime) return "FULL TIME";
+  if (isLastRegulationPeriod) return "⏭  FULL TIME";
+  return `⏭  END ${periodLabel}`;
 }
 
 function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, period: string, matchLength?: number): string {
@@ -39,11 +50,12 @@ function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, 
 export function ScoreTab({
   state, push, sendReset, sendUndo,
   sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
-  sendScoreAdjust, sendIndoorCricketWicket,
-}: ControlPanelProps) {
-  const [homeName,   setHomeName]   = useState("");
-  const [visName,    setVisName]    = useState("");
-  const [matchName,  setMatchName]  = useState("");
+  sendScoreAdjust, sendIndoorCricketWicket, matchId, onEnded,
+}: ControlPanelProps & {
+  // For the full-time panel's End Match button
+  readonly matchId?: string;
+  readonly onEnded?: () => void;
+}) {
   const [period,     setPeriod]     = useState("");
   const [clockInput, setClockInput] = useState("");
   const [extraTimeInput, setExtraTimeInput] = useState("");
@@ -82,6 +94,12 @@ export function ScoreTab({
   const matchLength = getMatchLength(state);
   const currentPeriod = Number.parseInt(state.period, 10);
   const isFinalPeriod = matchLength !== undefined && !Number.isNaN(currentPeriod) && currentPeriod >= matchLength;
+  // Timed sports: END on the last half/quarter goes to full time, where the
+  // operator either ends the match or (if the sport has it) starts extra time.
+  const isLastRegulationPeriod = matchLength === undefined && !state.periodBreak && currentPeriod === template.periods;
+  const fullTime = isFullTime(state);
+  const hasExtraTime = Boolean(template.extraTime);
+  const { canEnd, endMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
   const isIndoorCricket = state.sport === "indoor_cricket";
   const wicketPenalty = Number(state.sportConfig?.wicketPenalty ?? 5);
@@ -136,6 +154,8 @@ export function ScoreTab({
       }
       if (e.key === " ") {
         e.preventDefault();
+        // At full time there's no next period to start unless the sport has extra time
+        if (!s.isRunning && isFullTime(s) && !getMatchTemplate(s).extraTime) return;
         p({ isRunning: !s.isRunning });
         return;
       }
@@ -172,7 +192,9 @@ export function ScoreTab({
     <div className="space-y-6">
       {/* ── PRIMARY OPERATOR CONTROLS ─────────────────────────────── */}
 
-      {/* Start / Stop — full-width, very tall */}
+      {/* Start / Stop — full-width, very tall. At full time the full-time
+          panel below offers End Match / Start Extra Time instead. */}
+      {!fullTime && (
       <button
         data-testid="score-start-stop"
         className="w-full rounded-2xl py-8 text-3xl font-black tracking-widest uppercase transition-all"
@@ -184,6 +206,39 @@ export function ScoreTab({
       >
         {state.isRunning ? "■  STOP" : "▶  START"}
       </button>
+      )}
+
+      {fullTime && (
+        <div data-testid="score-full-time" className="rounded-2xl p-5 space-y-3"
+          style={{ background: "rgba(251,146,60,0.08)", border: "2px solid rgba(251,146,60,0.4)" }}>
+          <p className="text-center text-2xl font-black tracking-widest" style={{ color: "rgb(251,146,60)" }}>FULL TIME</p>
+          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+            {hasExtraTime
+              ? "End the match, or start extra time if it's needed."
+              : "End the match to lock the result and move it to History."}
+          </p>
+          <div className="flex gap-3">
+            {canEnd && (
+              <button data-testid="score-end-match"
+                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+                style={{ background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }}
+                disabled={ending}
+                onClick={endMatch}>
+                {ending ? "Ending…" : "■  END MATCH"}
+              </button>
+            )}
+            {hasExtraTime && (
+              <button data-testid="score-start-extra-time"
+                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+                style={{ background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }}
+                onClick={() => push({ isRunning: true })}>
+                ▶  START {EXTRA_TIME_NAMES[template.extraTime?.label ?? ""] ?? "EXTRA TIME"}
+              </button>
+            )}
+          </div>
+          {endError && <p className="text-xs font-semibold text-center" style={{ color: "var(--danger)" }}>{endError}</p>}
+        </div>
+      )}
 
       {/* Undo last action */}
       <button
@@ -201,9 +256,21 @@ export function ScoreTab({
           data-testid="score-end-period"
           className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase transition-all"
           style={{ background: "rgba(251,146,60,0.1)", border: "2px solid rgba(251,146,60,0.4)", color: "rgb(251,146,60)", opacity: isFinalPeriod ? 0.4 : 1 }}
-          disabled={isFinalPeriod}
+          disabled={isFinalPeriod || fullTime}
           title={isFinalPeriod ? `This is the last ${template.periodLabel.toLowerCase()} of a best-of-${matchLength} match` : undefined}
           onClick={() => {
+            if (isLastRegulationPeriod) {
+              // Into the full-time break. No foul or score resets — the result
+              // stands. Sports with extra time get its clock ready; the rest
+              // keep the final clock on show.
+              push({
+                isRunning: false,
+                period: String(template.periods + 1),
+                periodBreak: true,
+                ...(hasExtraTime && { clockSeconds: getPeriodClockSeconds(state, template.periods + 1) }),
+              });
+              return;
+            }
             const n = Number.parseInt(state.period, 10);
             const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
             push({
@@ -225,7 +292,7 @@ export function ScoreTab({
             });
           }}
         >
-          {isFinalPeriod ? `FINAL ${template.periodLabel}` : `⏭  END ${periodLabel}`}
+          {endPeriodLabel(isFinalPeriod, fullTime, isLastRegulationPeriod, template.periodLabel, periodLabel)}
         </button>
         <button
           data-testid="score-reopen-period"
@@ -414,16 +481,16 @@ export function ScoreTab({
         <span className="font-semibold w-full" style={{ color: "var(--text-secondary)" }}>Keyboard shortcuts</span>
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>Space</kbd> Start/Stop</span>
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>⌘Z</kbd> Undo</span>
-        {(["1", "2", "3"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["1", "2", "3", "4"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Home +{scoreIncrements[i]}{scoreLabels?.[i] ? ` (${scoreLabels[i]})` : ""}</span>
         ))}
-        {(["Q", "W", "E"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["Q", "W", "E", "R"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Home −{scoreIncrements[i]}</span>
         ))}
-        {(["9", "0", "8"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["9", "0", "8", "7"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Visitor +{scoreIncrements[i]}{scoreLabels?.[i] ? ` (${scoreLabels[i]})` : ""}</span>
         ))}
-        {(["O", "P", "I"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["O", "P", "I", "U"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Visitor −{scoreIncrements[i]}</span>
         ))}
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>[</kbd><kbd className="px-1.5 py-0.5 rounded font-mono ml-1" style={{ background: "var(--bg-elevated)" }}>]</kbd> Period −/+</span>
@@ -487,18 +554,8 @@ export function ScoreTab({
           </div>
         )}
 
-        {/* Team names */}
+        {/* Period — team and match names live on the Settings tab */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label={`Home team name`} value={homeName} placeholder={state.home.name} onChange={setHomeName}
-            onCommit={() => { push({ home: { ...state.home, name: homeName } }); setHomeName(""); }} />
-          <NameField label={`Visitor team name`} value={visName} placeholder={state.visitor.name} onChange={setVisName}
-            onCommit={() => { push({ visitor: { ...state.visitor, name: visName } }); setVisName(""); }} />
-        </div>
-
-        {/* Match info */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label="Match name" value={matchName} placeholder={state.matchName || "e.g. Round 1"}
-            onChange={setMatchName} onCommit={() => { push({ matchName }); setMatchName(""); }} />
           <NameField label="Period / Quarter" value={period} placeholder={state.period}
             onChange={setPeriod} onCommit={() => { push({ period }); setPeriod(""); }} />
         </div>

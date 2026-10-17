@@ -16,7 +16,7 @@ It has six tabs:
 | **Logos** | Team logos. See [Branding your displays](/displaying-your-score/branding). |
 | **Theme** | Colours, font, text size and competition logo for your displays. |
 | **Audio** | [Sound cues](/running-a-match/sound-cues) that play at set clock times. |
-| **Settings** | Team colours, sport, ending the match, and tokens for Bridge and Stream Deck. |
+| **Settings** | Team names and colours, the match name, match defaults, ending the match, and tokens for Bridge and Stream Deck. |
 
 This page covers the Score tab for most sports. [Cricket](/sports/cricket) and
 [softball](/sports/softball) replace it with their own panels.
@@ -46,21 +46,34 @@ Under the score buttons:
 
 **END** followed by the period name (**END QTR**, **END HALF**, **END SET** and so on) does several
 things at once: stops the clock, moves to the next period, resets the clock to the period length,
-and marks a break so displays show it — **HALF TIME** at the middle of the match, **FULL TIME** after
-the last period, and otherwise the period name and **BREAK**. For sports scored in sets or games — volleyball, tennis,
-pickleball, badminton, table tennis and squash — it also resets both scores to 0–0.
+and marks a break so displays show it — **HALF TIME** at the middle of the match, and otherwise the
+period name and **BREAK**. For sports scored in sets or games — volleyball, tennis, pickleball,
+badminton, table tennis and squash — it also resets both scores to 0–0.
+
+## Full time
+
+On the last period the button reads **FULL TIME**. Pressing it stops the clock and puts the match
+into full time: displays show **FULL TIME**, and the scores, fouls and clock are left as they
+finished. The Score tab then shows a **FULL TIME** panel in place of **START**:
+
+- **END MATCH** — ends the match, locks the result and moves it to **History** on the dashboard.
+  This is the same as **End Match** on the Settings tab.
+- **START EXTRA TIME** — only for sports that have it, and named for the sport (**START
+  OVERTIME** for basketball, **START GOLDEN POINT** for rugby league). See [Extra time](#extra-time).
+
+If you went to full time by mistake, **REOPEN** takes you back into the last period.
 
 **REOPEN** goes back one period and clears the break. Use it if you ended a period by mistake.
 It doesn't restore scores that were reset — use **UNDO** straight away for that instead.
 
 ## Extra time
 
-Sports played in quarters, halves or periods can go to extra time. Ending the last regulation
-period shows **FULL TIME** on displays and sets the clock for extra time. From there:
+Sports played in quarters, halves or periods can go to extra time. Going to [full
+time](#full-time) sets the clock ready for extra time. From there:
 
-- If the match is decided, end it from the Settings tab.
-- If it's going to extra time, start the clock. The periods that follow show as **ET 1**, **ET 2**
-  and so on, and **END ET** moves from one to the next.
+- If the match is decided, select **END MATCH**.
+- If it's going to extra time, select **START EXTRA TIME**. The periods that follow show as
+  **ET 1**, **ET 2** and so on, and **END ET** moves from one to the next.
 
 Each extra-time period starts on the sport's usual length:
 
@@ -121,14 +134,14 @@ same list at the bottom, with the values for the current sport.
 | --- | --- |
 | `Space` | Start / stop the clock |
 | `Ctrl+Z` or `⌘Z` | Undo |
-| `1` `2` `3` | Home: add the first, second or third score value |
-| `Q` `W` `E` | Home: subtract the first, second or third score value |
-| `9` `0` `8` | Visitor: add the first, second or third score value |
-| `O` `P` `I` | Visitor: subtract the first, second or third score value |
+| `1` `2` `3` `4` | Home: add the first, second, third or fourth score value |
+| `Q` `W` `E` `R` | Home: subtract the first, second, third or fourth score value |
+| `9` `0` `8` `7` | Visitor: add the first, second, third or fourth score value |
+| `O` `P` `I` `U` | Visitor: subtract the first, second, third or fourth score value |
 | `[` `]` | Previous / next period |
 
-A sport with a single score value, such as football, only uses `1`, `Q`, `9` and `O`. Sports with
-more than three values (lawn bowls, for example) use the buttons for the fourth.
+A sport with a single score value, such as football, only uses `1`, `Q`, `9` and `O`. Score values
+are numbered left to right, smallest first, so in rugby union `1` is a conversion and `3` a try.
 
 <Callout>
   `[` and `]` only change the period number. They don't stop the clock, reset it, or reset set
@@ -137,8 +150,13 @@ more than three values (lawn bowls, for example) use the buttons for the fourth.
 
 ## Changing names during a match
 
-Under **Clock & Match Controls** you can change the home and visitor team names, the match name,
-and the period number. Type the new value and select **Set**. Displays update immediately.
+Team names and the match name are on the **Settings** tab: each team's card has its name above its
+colour, and **Match Name** has its own card. Each box shows the current name — change it and select
+**Set** (or press Enter). Displays update immediately. A blank name isn't saved, so you can't
+accidentally wipe one.
+
+To change the period number, use **Period / Quarter** under **Clock & Match Controls** on the Score
+tab.
 
 ## Timeouts
 
@@ -165,8 +183,14 @@ It asks you to confirm first, and it can be undone with **UNDO**.
 
 ## Changing sport
 
-On the **Settings** tab, **Sport** changes which sport the match uses. **Apply Template
-Defaults** then puts the match structure back to that sport's defaults: it stops the clock, sets
+A match's sport is set when you set it up and can't be changed once the match exists — the
+**Settings** tab shows it, but doesn't let you switch it. To score a different sport, go back to
+the dashboard and set up a new match.
+
+## Resetting to the sport's defaults
+
+On the **Settings** tab, **Apply Template Defaults** puts the match structure back to its sport's
+defaults: it stops the clock, sets
 the clock time and direction, returns to period 1, sets possession, clears both teams' fouls and
 restores their full timeout allowance. Scores, names and colours aren't touched.
 

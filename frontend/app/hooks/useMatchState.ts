@@ -35,6 +35,10 @@ const TIME_SYNC_SAMPLE_WINDOW = 5;
 
 export function useMatchState(auth?: { secret: string; role: string }) {
   const [state, setState] = useState<MatchState>({ ...DEFAULT_MATCH_STATE });
+  // `state` starts as the blank default; this flips once the relay has sent
+  // the match's real state, so pages can show a loader instead of a match
+  // that looks brand new.
+  const [stateLoaded, setStateLoaded] = useState(false);
   const [socketStatus, setStatus] = useState<ConnectionStatus>("connecting");
   // Set when the relay rejects a display connection for a bad/missing
   // displayToken (see DISPLAY_TOKEN_REQUIRED in relay/src/server.ts) — lets
@@ -194,6 +198,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     socket.on("matchStateChange", (incoming: MatchState) => {
       lastUpdateRef.current = Date.now();
       setFeedStale(false);
+      setStateLoaded(true);
       setState(prev =>
         incoming.sequenceId >= prev.sequenceId ? incoming : prev
       );
@@ -281,7 +286,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
   };
 
   return {
-    state, status, feedStale, relayUnreachable, unauthorized, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
+    state, stateLoaded, status, feedStale, relayUnreachable, unauthorized, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
     sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
     sendScoreAdjust, sendIndoorCricketWicket, estimateServerNow,
   };

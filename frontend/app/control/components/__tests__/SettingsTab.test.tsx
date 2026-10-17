@@ -33,10 +33,11 @@ describe("SettingsTab", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", activeOrgId: undefined } } });
   });
 
-  it("renders team colour, sport, and template sections", () => {
+  it("renders team, match name, sport, and template sections", () => {
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.getByText("Home — Team Colour")).toBeInTheDocument();
-    expect(screen.getByText("Visitor — Team Colour")).toBeInTheDocument();
+    expect(screen.getByText("Home Team")).toBeInTheDocument();
+    expect(screen.getByText("Visitor Team")).toBeInTheDocument();
+    expect(screen.getByText("Match Name")).toBeInTheDocument();
     expect(screen.getByText("Sport")).toBeInTheDocument();
     expect(screen.getByText("Template Defaults — Netball")).toBeInTheDocument();
   });
@@ -55,11 +56,66 @@ describe("SettingsTab", () => {
     expect(push).toHaveBeenCalledWith({ sport: "basketball" });
   });
 
+  it("shows each team's current name and renames it on Set or Enter", () => {
+    const push = vi.fn();
+    const state = { ...makeState(), home: { ...makeState().home, name: "Sharks" }, visitor: { ...makeState().visitor, name: "Magic" } } as MatchState;
+    render(<SettingsTab state={state} push={push} />, { wrapper: swrWrapper });
+
+    const home = screen.getByTestId("settings-home-name");
+    expect(home).toHaveValue("Sharks");
+    fireEvent.change(home, { target: { value: "  Southern Steel " } });
+    fireEvent.click(screen.getByTestId("settings-home-name-set"));
+    expect(push).toHaveBeenCalledWith({ home: expect.objectContaining({ name: "Southern Steel" }) });
+
+    const visitor = screen.getByTestId("settings-visitor-name");
+    fireEvent.change(visitor, { target: { value: "Northern Mystics" } });
+    fireEvent.keyDown(visitor, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith({ visitor: expect.objectContaining({ name: "Northern Mystics" }) });
+  });
+
+  it("ignores a blank or unchanged name instead of wiping it", () => {
+    const push = vi.fn();
+    const state = { ...makeState(), home: { ...makeState().home, name: "Sharks" } } as MatchState;
+    render(<SettingsTab state={state} push={push} />, { wrapper: swrWrapper });
+    const home = screen.getByTestId("settings-home-name");
+
+    fireEvent.change(home, { target: { value: "   " } });
+    fireEvent.click(screen.getByTestId("settings-home-name-set"));
+    expect(home).toHaveValue("Sharks");
+
+    fireEvent.click(screen.getByTestId("settings-home-name-set"));
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("follows a rename made elsewhere until the operator starts typing", () => {
+    const state = { ...makeState(), home: { ...makeState().home, name: "Sharks" } } as MatchState;
+    const { rerender } = render(<SettingsTab state={state} push={vi.fn()} />, { wrapper: swrWrapper });
+    rerender(<SettingsTab state={{ ...state, home: { ...state.home, name: "Steel" } }} push={vi.fn()} />);
+    expect(screen.getByTestId("settings-home-name")).toHaveValue("Steel");
+  });
+
+  it("sets the match name", () => {
+    const push = vi.fn();
+    render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
+    fireEvent.change(screen.getByTestId("settings-match-name"), { target: { value: "Final" } });
+    fireEvent.click(screen.getByTestId("settings-match-name-set"));
+    expect(push).toHaveBeenCalledWith({ matchName: "Final" });
+  });
+
   it("applies template defaults when the button is clicked", () => {
     const push = vi.fn();
     render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByText("Apply Template Defaults"));
-    expect(push).toHaveBeenCalledWith(expect.objectContaining({ sport: "netball", period: "1", isRunning: false }));
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ period: "1", isRunning: false }));
+    expect(push.mock.calls[0][0]).not.toHaveProperty("sport");
+  });
+
+  it("shows a set-up match's sport read-only, with no way to switch it", () => {
+    const push = vi.fn();
+    render(<SettingsTab state={makeState()} push={push} matchId="match1" />, { wrapper: swrWrapper });
+    expect(screen.getByTestId("settings-sport")).toHaveTextContent("Netball");
+    expect(screen.queryByText("Basketball")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "set up a new match" })).toHaveAttribute("href", "/setup");
   });
 
   it("switches a netball match to Fast5, bringing an untouched clock along", () => {

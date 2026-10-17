@@ -30,9 +30,10 @@ function MobileControlInner() {
   // than the match its displays are showing (SA-144).
   const matchId = useSearchParams().get("matchId") ?? undefined;
   const matchQuery = matchId ? `?matchId=${encodeURIComponent(matchId)}` : "";
+  const fullPanelHref = matchId ? `/control/${encodeURIComponent(matchId)}` : "/dashboard";
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
+    state, stateLoaded, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
     controllerStatus, takeControl, estimateServerNow,
   } = useMatchState({
     secret: controlToken,
@@ -83,6 +84,23 @@ function MobileControlInner() {
   };
   const inControl    = controllerStatus === "granted";
 
+  // Same as the full panel: don't show the blank default state as if it
+  // were this match while the relay's copy is still on its way.
+  if (!stateLoaded) {
+    return (
+      <div data-testid="control-loading-match" role="status" aria-live="polite" style={{
+        height: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 16, background: "var(--bg-base)",
+      }}>
+        <div className="h-8 w-8 rounded-full border-2 animate-spin"
+          style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} aria-hidden />
+        <div style={{ fontSize: 14, color: "var(--text-dim)" }}>
+          {relayUnreachable ? "Can't reach the scoring server — retrying…" : "Loading match…"}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       height: "100dvh",
@@ -115,7 +133,7 @@ function MobileControlInner() {
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <ConnectionBadge status={status} feedStale={feedStale} relayUnreachable={relayUnreachable} />
-          <a href={`/control${matchQuery}`} style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
+          <a href={fullPanelHref} style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
             Full panel ↗
           </a>
         </div>
@@ -131,7 +149,7 @@ function MobileControlInner() {
           }}
         >
           This match has ended, so it can&apos;t be changed.{" "}
-          <a href={`/control${matchQuery}`} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
+          <a href={fullPanelHref} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
         </div>
       )}
 

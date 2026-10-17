@@ -107,6 +107,9 @@ export interface DisplayTheme {
   font: string;
   textScale: number;
   competitionLogoUrl: string;
+  // Mirrors @scorehub/types — set from the control panel, carried through as-is
+  backgroundImageUrl?: string;
+  panelOpacity?: number;
 }
 
 export const DEFAULT_DISPLAY_THEME: DisplayTheme = {

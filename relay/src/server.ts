@@ -508,6 +508,23 @@ export function createServer(options: ServerOptions = {}) {
     return rest;
   }
 
+  // A match's sport is fixed when it's set up — switching it mid-game would
+  // reinterpret the score, periods and sportState under different rules.
+  // Changing sport means setting up a new match, so drop a sport change from
+  // any patch aimed at a real match. The legacy single room (no matchId) has
+  // no setup flow, so it keeps letting the operator pick a sport.
+  async function withoutSportChange(
+    orgId: string,
+    patch: Partial<MatchState>,
+    matchId?: string,
+  ): Promise<Partial<MatchState>> {
+    if (!matchId || patch.sport === undefined) return patch;
+    const current = await getState(orgId, matchId);
+    if (patch.sport === current.sport) return patch;
+    const { sport: _sport, ...rest } = patch;
+    return rest;
+  }
+
   // Tick the clock every second for every loaded org that's running and
   // not currently being driven by a connected bridge. acquireTickLock
   // ensures only one relay instance advances a given org's clock when
@@ -585,6 +602,7 @@ export function createServer(options: ServerOptions = {}) {
       return;
     }
     (req as any).orgId = result.orgId;
+    (req as any).matchId = result.matchId;
     next();
   }
 
@@ -715,6 +733,74 @@ export function createServer(options: ServerOptions = {}) {
     }
     const state = await getState(orgId);
     await applyManualUpdate(orgId, { displayTheme: { ...state.displayTheme, competitionLogoUrl: "" } });
+    res.json({ status: "removed" });
+  });
+
+  // ─── Display background image ────────────────────────────────────────────────
+  // Same Pro gate and validation as the competition logo, but stored per match
+  // (the theme it's set on is per match), so replacing one match's background
+  // doesn't swap the image out from under another match's displays.
+
+  function backgroundTarget(req: express.Request): { orgId: string; matchId?: string; segment: string } {
+    const orgId = (req as any).orgId as string;
+    const matchId = (req as any).matchId as string | undefined;
+    // Match ids are generated (cuid/uuid), but they become part of a storage key
+    const safeId = matchId && /^[A-Za-z0-9_-]{1,64}$/.test(matchId) ? matchId : "org";
+    return { orgId, matchId, segment: `background-${safeId}` };
+  }
+
+  async function removeStoredBackground(orgId: string, segment: string): Promise<void> {
+    if (r2Enabled) {
+      await deleteByPrefix(`logos/${orgId}/${segment}.`);
+      return;
+    }
+    const dir = path.join(UPLOAD_DIR, orgId);
+    if (fs.existsSync(dir)) {
+      fs.readdirSync(dir).filter(f => f.startsWith(`${segment}.`)).forEach(f => fs.unlinkSync(path.join(dir, f)));
+    }
+  }
+
+  const backgroundUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: imageFileFilter,
+  });
+
+  app.post("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), backgroundUpload.single("background"), async (req, res) => {
+    if (!req.file) { res.status(400).json({ error: "no file uploaded" }); return; }
+    const { orgId, matchId, segment } = backgroundTarget(req);
+    let buffer: Buffer;
+    try {
+      buffer = validateImageUpload(req.file.mimetype, req.file.buffer);
+    } catch (err) {
+      if (err instanceof UploadValidationError) { res.status(400).json({ error: err.message }); return; }
+      throw err;
+    }
+    const ext = path.extname(req.file.originalname).toLowerCase() || ".png";
+    // A new upload may have a different extension than the last one
+    await removeStoredBackground(orgId, segment);
+    const storedUrl = await storeImage("logos", orgId, segment, ext, req.file.mimetype, buffer);
+    const backgroundImageUrl = `${storedUrl}?t=${Date.now()}`;
+    const state = await getState(orgId, matchId);
+    try {
+      await applyManualUpdate(orgId, { displayTheme: { ...state.displayTheme, backgroundImageUrl } }, matchId);
+    } catch (err) {
+      respondToStateError(res, err);
+      return;
+    }
+    res.json({ backgroundImageUrl });
+  });
+
+  app.delete("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), async (req, res) => {
+    const { orgId, matchId, segment } = backgroundTarget(req);
+    await removeStoredBackground(orgId, segment);
+    const state = await getState(orgId, matchId);
+    try {
+      await applyManualUpdate(orgId, { displayTheme: { ...state.displayTheme, backgroundImageUrl: "" } }, matchId);
+    } catch (err) {
+      respondToStateError(res, err);
+      return;
+    }
     res.json({ status: "removed" });
   });
 
@@ -1128,7 +1214,8 @@ export function createServer(options: ServerOptions = {}) {
       return;
     }
     try {
-      const patch = await withoutUnentitledBranding(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const branded = await withoutUnentitledBranding(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const patch = await withoutSportChange(result.orgId, branded, result.matchId);
       const next = await applyManualUpdate(result.orgId, patch, result.matchId);
       res.json(next);
     } catch (err) {
@@ -1577,7 +1664,8 @@ export function createServer(options: ServerOptions = {}) {
           return;
         }
         const { clientEventMs, ...rawFields } = parsed.data;
-        const patch = await withoutUnentitledBranding(orgId, rawFields as Partial<MatchState>, matchId);
+        const branded = await withoutUnentitledBranding(orgId, rawFields as Partial<MatchState>, matchId);
+        const patch = await withoutSportChange(orgId, branded, matchId);
         await applyManualUpdate(orgId, patch, matchId, clientEventMs);
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", patch);

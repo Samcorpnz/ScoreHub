@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ControlPanelProps } from "../../sport-templates";
 import type { CricketBatter, CricketBowler, CricketFormat, CricketInningsState, CricketState, WicketType } from "../../types";
-import { Card, NameField, SectionLabel, SmallBtn } from "./primitives";
+import { Card, SectionLabel, SmallBtn } from "./primitives";
 
 const OVERS_PER_INNINGS: Record<CricketFormat, number> = { t20: 20, odi: 50, test: 90 };
 const WICKET_TYPES: WicketType[] = ["bowled", "caught", "lbw", "run_out", "stumped", "hit_wicket", "obstructed_field", "handled_ball"];
@@ -55,9 +55,6 @@ function oversLabel(inn: CricketInningsState): string {
 export function CricketTab({
   state, push, sendReset, sendUndo, sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
 }: ControlPanelProps) {
-  const [homeName, setHomeName] = useState("");
-  const [visName, setVisName] = useState("");
-  const [matchName, setMatchName] = useState("");
   const [modifier, setModifier] = useState<Modifier>("none");
   const [wicketOpen, setWicketOpen] = useState(false);
   const [wicketType, setWicketType] = useState<WicketType>("bowled");
@@ -303,18 +300,6 @@ export function CricketTab({
           onClick={sendUndo}>
           ↩ UNDO  <span style={{ fontSize: 10, opacity: 0.6 }}>⌘Z</span>
         </button>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label="Home team name" value={homeName} placeholder={state.home.name} onChange={setHomeName}
-            onCommit={() => { push({ home: { ...state.home, name: homeName } }); setHomeName(""); }} />
-          <NameField label="Visitor team name" value={visName} placeholder={state.visitor.name} onChange={setVisName}
-            onCommit={() => { push({ visitor: { ...state.visitor, name: visName } }); setVisName(""); }} />
-        </div>
-
-        <div className="grid grid-cols-1 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label="Match name" value={matchName} placeholder={state.matchName || "e.g. Round 1"}
-            onChange={setMatchName} onCommit={() => { push({ matchName }); setMatchName(""); }} />
-        </div>
 
         <div className="pt-4" style={{ borderTop: "1px solid var(--border)" }}>
           <button data-testid="score-reset-match" className="w-full rounded-lg py-2 text-sm font-bold tracking-wide uppercase"

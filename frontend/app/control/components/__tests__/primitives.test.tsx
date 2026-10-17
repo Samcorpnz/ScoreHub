@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
-import { LogoUploadCard } from "../primitives";
+import { LogoUploadCard, ScoreButtons } from "../primitives";
 
 afterEach(cleanup);
 
@@ -100,5 +100,39 @@ describe("LogoUploadCard", () => {
     await waitFor(() => expect(screen.getByTestId("t-upload-button")).toBeDisabled());
     resolveUpload();
     await waitFor(() => expect(screen.getByTestId("t-upload-button")).not.toBeDisabled());
+  });
+});
+
+describe("ScoreButtons", () => {
+  // The grid's children are the −buttons, the score and the +buttons, then one
+  // label cell per column in the same order — so a cell's label is exactly one
+  // row below it, in the same column.
+  it("puts each label in the same grid column as its + button", () => {
+    const { container } = render(
+      <ScoreButtons score={12} onAdjust={vi.fn()} scoreIncrements={[3, 5, 7]} scoreLabels={["PEN/DG", "TRY", "CONV TRY"]} testIdPrefix="t" />
+    );
+    const cells = Array.from(container.firstElementChild!.children);
+    const row = 3 * 2 + 1;
+    expect(cells).toHaveLength(row * 2);
+    const labelUnder = (testId: string) => cells[cells.indexOf(screen.getByTestId(testId)) + row].textContent;
+    // A zero-width space after the slash lets it wrap there, not mid-word
+    expect(labelUnder("t-inc-3")).toBe("PEN/\u200bDG");
+    expect(labelUnder("t-inc-5")).toBe("TRY");
+    expect(labelUnder("t-inc-7")).toBe("CONV TRY");
+    // −buttons mirror the + ones and stay unlabelled
+    expect(labelUnder("t-dec-3")).toBe("");
+  });
+
+  it("renders no label row for a sport without labels", () => {
+    const { container } = render(<ScoreButtons score={0} onAdjust={vi.fn()} scoreIncrements={[1]} />);
+    expect(container.firstElementChild!.children).toHaveLength(3);
+  });
+
+  it("adjusts by the button's value", () => {
+    const onAdjust = vi.fn();
+    render(<ScoreButtons score={0} onAdjust={onAdjust} scoreIncrements={[1, 2]} testIdPrefix="t" />);
+    fireEvent.click(screen.getByTestId("t-inc-2"));
+    fireEvent.click(screen.getByTestId("t-dec-1"));
+    expect(onAdjust.mock.calls).toEqual([[2], [-1]]);
   });
 });

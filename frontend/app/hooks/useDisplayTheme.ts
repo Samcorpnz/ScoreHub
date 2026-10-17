@@ -1,5 +1,16 @@
 import { useEffect, useRef } from "react";
 import { DisplayTheme, DEFAULT_DISPLAY_THEME } from "../types";
+import { RELAY_URL } from "../control/lib/relay";
+
+// Display panels are painted with --bg-surface / --bg-elevated (globals.css);
+// these are their RGB values, so panel opacity can be applied to them.
+const PANEL_SURFACE_RGB = "13, 17, 32";
+const PANEL_ELEVATED_RGB = "20, 24, 38";
+
+// Uploads stored on the relay's own disk come back as a /logos/… path
+export function resolveDisplayAssetUrl(url: string): string {
+  return url.startsWith("/logos/") ? `${RELAY_URL}${url}` : url;
+}
 
 export type DisplayThemeStyle = React.CSSProperties & {
   "--accent": string;
@@ -9,6 +20,11 @@ export type DisplayThemeStyle = React.CSSProperties & {
   "--text-scale": string;
   textScale: number;
   competitionLogoUrl: string;
+  // Pages that must stay transparent for OBS/vMix (overlay, score bug,
+  // graphics) destructure these out alongside backgroundColor.
+  backgroundImage?: string;
+  backgroundSize?: string;
+  backgroundPosition?: string;
 };
 
 export function useDisplayTheme(theme: DisplayTheme | undefined): DisplayThemeStyle {
@@ -29,6 +45,8 @@ export function useDisplayTheme(theme: DisplayTheme | undefined): DisplayThemeSt
   const backgroundColor = t.backgroundColor || DEFAULT_DISPLAY_THEME.backgroundColor;
 
   const textScale = t.textScale ?? 1;
+  const panelOpacity = Math.min(1, Math.max(0, t.panelOpacity ?? 1));
+  const backgroundImageUrl = t.backgroundImageUrl || "";
 
   // CSS custom properties override — applied inline on the root wrapper element
   return {
@@ -42,5 +60,15 @@ export function useDisplayTheme(theme: DisplayTheme | undefined): DisplayThemeSt
     "--text-scale":     String(textScale),
     textScale,
     competitionLogoUrl: t.competitionLogoUrl || "",
+    ...(panelOpacity < 1 && {
+      "--bg-surface":  `rgba(${PANEL_SURFACE_RGB}, ${panelOpacity})`,
+      "--bg-elevated": `rgba(${PANEL_ELEVATED_RGB}, ${panelOpacity})`,
+    }),
+    ...(backgroundImageUrl && {
+      // JSON.stringify quotes and escapes the URL for CSS url("…")
+      backgroundImage: `url(${JSON.stringify(resolveDisplayAssetUrl(backgroundImageUrl))})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    }),
   } as DisplayThemeStyle;
 }

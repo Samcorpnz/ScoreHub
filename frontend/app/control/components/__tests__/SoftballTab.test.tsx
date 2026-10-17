@@ -201,28 +201,6 @@ describe("SoftballTab", () => {
     expect(screen.queryByText("Mercy rule eligible")).not.toBeInTheDocument();
   });
 
-  it("commits home and visitor team name changes", () => {
-    const handlers = makeHandlers();
-    render(<SoftballTab state={makeState()} {...handlers} />);
-    const homeInput = screen.getByPlaceholderText("Home");
-    fireEvent.change(homeInput, { target: { value: "Sharks" } });
-    fireEvent.click(homeInput.parentElement!.querySelector("button")!);
-    expect(handlers.push).toHaveBeenCalledWith({ home: expect.objectContaining({ name: "Sharks" }) });
-
-    const visInput = screen.getByPlaceholderText("Visitor");
-    fireEvent.change(visInput, { target: { value: "Eagles" } });
-    fireEvent.click(visInput.parentElement!.querySelector("button")!);
-    expect(handlers.push).toHaveBeenCalledWith({ visitor: expect.objectContaining({ name: "Eagles" }) });
-  });
-
-  it("commits a match name change", () => {
-    const handlers = makeHandlers();
-    render(<SoftballTab state={makeState()} {...handlers} />);
-    const input = screen.getByPlaceholderText("e.g. Round 1");
-    fireEvent.change(input, { target: { value: "Final" } });
-    fireEvent.click(input.parentElement!.querySelector("button")!);
-    expect(handlers.push).toHaveBeenCalledWith({ matchName: "Final" });
-  });
 
   it("renders the format label as a disabled-effect small button", () => {
     const handlers = makeHandlers();

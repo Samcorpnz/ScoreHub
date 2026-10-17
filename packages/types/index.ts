@@ -183,6 +183,12 @@ export interface DisplayTheme {
   font: string;
   textScale: number;
   competitionLogoUrl: string;
+  // Full-screen/basic/advanced displays only — the overlay, score bug and
+  // graphics outputs stay transparent for OBS/vMix compositing. Optional
+  // because matches saved before they existed don't carry them.
+  backgroundImageUrl?: string;
+  // Opacity of the score panels (0–1), so a background image shows through
+  panelOpacity?: number;
 }
 
 export const DEFAULT_DISPLAY_THEME: DisplayTheme = {
@@ -191,6 +197,8 @@ export const DEFAULT_DISPLAY_THEME: DisplayTheme = {
   font: "",
   textScale: 1,
   competitionLogoUrl: "",
+  backgroundImageUrl: "",
+  panelOpacity: 1,
 };
 
 export type { IndoorCricketState } from "./sports/indoor_cricket";

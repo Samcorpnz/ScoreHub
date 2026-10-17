@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
 import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
+import { useEndMatch } from "../lib/useEndMatch";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
 
 interface BridgeToken {
@@ -576,6 +577,50 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
   );
 }
 
+// A text field showing the setting's current value. Set (or Enter) saves a
+// real change only: a blank or unchanged value is dropped rather than
+// wiping the name. Until the operator types, it follows the live value, so
+// a rename from another panel shows up here.
+function TextSetting({ label, value, placeholder, onSave, testId }: {
+  readonly label: string;
+  readonly value: string;
+  readonly placeholder?: string;
+  readonly onSave: (value: string) => void;
+  readonly testId: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  function save() {
+    const next = draft?.trim();
+    if (next && next !== value) onSave(next);
+    setDraft(null);
+  }
+  return (
+    <div className="mb-4">
+      <p className="text-xs mb-1" style={{ color: "var(--text-dim)" }}>{label}</p>
+      <div className="flex gap-2">
+        <input
+          data-testid={testId}
+          aria-label={label}
+          className="flex-1 min-w-0 rounded-lg px-3 py-2 text-sm font-semibold"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)", outline: "none" }}
+          value={draft ?? value}
+          placeholder={placeholder}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && save()}
+        />
+        <button
+          data-testid={`${testId}-set`}
+          className="rounded-lg px-3 py-2 text-xs font-bold"
+          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
+          onClick={save}
+        >
+          Set
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsTab({ state, push, matchId, onEnded }: {
   readonly state: MatchState;
   readonly push: (p: Partial<MatchState>) => void | Promise<void>;
@@ -589,8 +634,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
   const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
   const { data: session } = useSession();
   const orgId = session?.user?.activeOrgId;
-  const [ending, setEnding] = useState(false);
-  const [endError, setEndError] = useState("");
+  const { endMatch: handleEndMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
   function selectFormat(format: string) {
     const sportConfig = { ...state.sportConfig, format };
@@ -600,33 +644,13 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
     push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
   }
 
-  async function handleEndMatch() {
-    if (!orgId || !matchId) return;
-    if (!globalThis.confirm("End this match? It will move to History and can't be scored unless you reopen it.")) return;
-    setEnding(true);
-    setEndError("");
-    // An ended match is read-only on the relay, so nothing could stop a
-    // clock that was left running once this goes through.
-    if (state.isRunning) await push({ isRunning: false });
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/end`, { method: "POST" });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setEndError(body?.error ?? "Couldn't end the match — try again.");
-        setEnding(false);
-        return;
-      }
-      onEnded?.();
-    } catch {
-      setEndError("Couldn't reach the server — try again.");
-      setEnding(false);
-    }
-  }
-
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-      {/* Team colours */}
-      <Card title="Home — Team Colour">
+      {/* Teams — name and colour */}
+      <Card title="Home Team">
+        <TextSetting label="Name" value={state.home.name} placeholder="Home" testId="settings-home-name"
+          onSave={name => push({ home: { ...state.home, name } })} />
+        <p className="text-xs mb-1" style={{ color: "var(--text-dim)" }}>Colour</p>
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
           Used for score text, colour strips, logos, and possession indicators across all displays.
         </p>
@@ -646,7 +670,10 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
         </div>
       </Card>
 
-      <Card title="Visitor — Team Colour">
+      <Card title="Visitor Team">
+        <TextSetting label="Name" value={state.visitor.name} placeholder="Visitor" testId="settings-visitor-name"
+          onSave={name => push({ visitor: { ...state.visitor, name } })} />
+        <p className="text-xs mb-1" style={{ color: "var(--text-dim)" }}>Colour</p>
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
           Used for score text, colour strips, logos, and possession indicators across all displays.
         </p>
@@ -666,7 +693,22 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
         </div>
       </Card>
 
-      {/* Sport selector */}
+      <Card title="Match Name">
+        <TextSetting label="Name" value={state.matchName} placeholder="e.g. Round 1"
+          testId="settings-match-name" onSave={matchName => push({ matchName })} />
+      </Card>
+
+      {/* Sport — fixed once a match is set up (the relay drops a sport change
+          for a real match); only the legacy single room picks it here */}
+      {matchId ? (
+        <Card title="Sport">
+          <div data-testid="settings-sport" className="text-sm font-semibold" style={{ color: "var(--accent)" }}>{template.label}</div>
+          <p className="text-xs mt-2" style={{ color: "var(--text-secondary)" }}>
+            A match&apos;s sport can&apos;t be changed once it&apos;s set up. To score a different sport,{" "}
+            <a href="/setup" style={{ color: "var(--accent)" }}>set up a new match</a>.
+          </p>
+        </Card>
+      ) : (
       <Card title="Sport">
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>Select sport to update display labels and preview match defaults.</p>
         <div className="grid grid-cols-2 gap-2">
@@ -686,6 +728,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
           ))}
         </div>
       </Card>
+      )}
 
       {/* Format — for fixtures, which don't pass through /setup's options */}
       {formatField && (
@@ -725,7 +768,6 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
           className="w-full rounded-lg px-4 py-2.5 text-sm font-semibold"
           style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
           onClick={() => push({
-            sport: template.sport,
             clockSeconds: template.clockSeconds,
             countDown: template.countDown,
             period: "1",
