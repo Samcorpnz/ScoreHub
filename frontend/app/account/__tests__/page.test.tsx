@@ -284,6 +284,15 @@ describe("AccountPage", () => {
     expect(await screen.findByTestId("addon-notice-graphics-operator")).toHaveTextContent("Couldn't start checkout");
   });
 
+  it("warns when some billing details couldn't be loaded from Stripe", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("fetch", mockFetchRouter({
+      "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro", stripeUnavailable: true }),
+    }));
+    renderPage();
+    expect(await screen.findByTestId("billing-stripe-unavailable")).toHaveTextContent("couldn't be loaded");
+  });
+
   it("shows both add-ons requiring a base plan note when on Free", async () => {
     useSessionMock.mockReturnValue(adminSession);
     vi.stubGlobal("fetch", mockFetchRouter());

@@ -222,6 +222,19 @@ export async function POST(req: NextRequest) {
     }
     return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
   } catch (err) {
+    // A saved subscription/customer id Stripe doesn't recognise means our
+    // record and Stripe have drifted apart (an id saved against a different
+    // Stripe account, or deleted in the dashboard). Retrying won't help.
+    if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === "resource_missing") {
+      console.error("[billing] checkout: saved billing record not found in Stripe:", err);
+      Sentry.captureException(err, {
+        tags: { area: "billing-checkout", stage: "stale-record" },
+        extra: { accountId: account.id, plan, addOn, interval },
+      });
+      return NextResponse.json({
+        error: "Your billing record doesn't match our payment provider, so this can't be changed here. Please contact support.",
+      }, { status: 409 });
+    }
     console.error("[billing] checkout failed:", err);
     Sentry.captureException(err, {
       tags: { area: "billing-checkout", stage: "stripe" },

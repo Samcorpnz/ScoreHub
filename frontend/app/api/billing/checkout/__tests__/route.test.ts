@@ -358,6 +358,20 @@ describe("POST /api/billing/checkout", () => {
       expect(portalSessionsCreateMock).not.toHaveBeenCalled();
     });
 
+    it("says the billing record doesn't match Stripe when its saved subscription isn't found", async () => {
+      const Stripe = (await import("stripe")).default;
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_live_id" }));
+      subscriptionsRetrieveMock.mockRejectedValue(new Stripe.errors.StripeInvalidRequestError({
+        type: "invalid_request_error", code: "resource_missing", message: "No such subscription: 'sub_live_id'",
+      }));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { POST } = await import("../route");
+      const res = await POST(requestFrom({ plan: "venue" }));
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/billing record doesn't match/);
+    });
+
     it("500s when the existing subscription has no items to change", async () => {
       getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
       subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [] } });

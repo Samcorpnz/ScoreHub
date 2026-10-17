@@ -104,6 +104,7 @@ export default function AccountPage() {
     invoiceEmail: string | null;
     paymentMethod: { brand: string; last4: string } | null;
     upgradeDiscountAvailable: boolean;
+    stripeUnavailable?: boolean;
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [checkoutSecret, setCheckoutSecret] = useState<string | null>(null);
@@ -337,6 +338,11 @@ export default function AccountPage() {
           )}
           {finishingUp && <StatusText message="Finishing up your upgrade…" />}
           {switchNotice && <StatusText message={switchNotice} />}
+          {billingStatus?.stripeUnavailable && (
+            <div data-testid="billing-stripe-unavailable">
+              <StatusText isError message="Some billing details couldn't be loaded from our payment provider, so they're missing below. If this keeps happening, please contact support." />
+            </div>
+          )}
 
           {billingStatus && billingStatus.plan !== "free" ? (
             <SubscriptionPanel

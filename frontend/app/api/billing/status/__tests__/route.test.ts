@@ -93,7 +93,20 @@ describe("GET /api/billing/status", () => {
       invoiceEmail: null,
       paymentMethod: null,
       upgradeDiscountAvailable: true,
+      stripeUnavailable: false,
     });
+  });
+
+  it("still answers, flagging the gap, when a saved Stripe id isn't found", async () => {
+    getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeSubscriptionId: "sub_other_account", stripeCustomerId: "cus_other" }));
+    subscriptionsRetrieveMock.mockRejectedValue(new Error("No such subscription: 'sub_other_account'"));
+    customersRetrieveMock.mockRejectedValue(new Error("No such customer: 'cus_other'"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { GET } = await import("../route");
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ plan: "pro", subscription: null, invoiceEmail: null, stripeUnavailable: true });
   });
 
   it("summarizes the base subscription when stripeSubscriptionId is set", async () => {
