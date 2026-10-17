@@ -74,6 +74,20 @@ async function confirmSubscriptionChange(
     return NextResponse.json({ error: "You're already on that plan." }, { status: 400 });
   }
 
+  // The upgrade offer is once per account. Claim it now, in one conditional
+  // update, rather than when the webhook reports the confirmed change —
+  // otherwise several discounted confirm pages could be opened (and each
+  // confirmed) before the first webhook lands. A page opened and then
+  // abandoned uses the offer up, as the old instant switch did.
+  let applyDiscount = false;
+  if (discountEligible) {
+    const claimed = await prisma.account.updateMany({
+      where: { id: account.id, upgradeDiscountUsedAt: null },
+      data: { upgradeDiscountUsedAt: new Date() },
+    });
+    applyDiscount = claimed.count === 1;
+  }
+
   const portalSession = await stripe.billingPortal.sessions.create({
     customer: account.stripeCustomerId,
     return_url: `${origin}/account`,
@@ -82,7 +96,7 @@ async function confirmSubscriptionChange(
       subscription_update_confirm: {
         subscription: existingSubscriptionId,
         items: [{ id: itemId, price: priceId, quantity: 1 }],
-        ...(discountEligible ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
+        ...(applyDiscount ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
       },
       after_completion: {
         type: "redirect",

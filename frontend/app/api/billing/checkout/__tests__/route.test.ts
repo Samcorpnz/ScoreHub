@@ -9,8 +9,14 @@ const getAccountForOrgMock = vi.fn();
 vi.mock("@/lib/account", () => ({ getAccountForOrg: (...a: unknown[]) => getAccountForOrgMock(...a) }));
 
 const accountUpdateMock = vi.fn();
+const accountUpdateManyMock = vi.fn();
 vi.mock("@scorehub/db", () => ({
-  prisma: { account: { update: (...a: unknown[]) => accountUpdateMock(...a) } },
+  prisma: {
+    account: {
+      update: (...a: unknown[]) => accountUpdateMock(...a),
+      updateMany: (...a: unknown[]) => accountUpdateManyMock(...a),
+    },
+  },
 }));
 
 const subscriptionsRetrieveMock = vi.fn();
@@ -69,6 +75,7 @@ describe("POST /api/billing/checkout", () => {
       authMock,
       getAccountForOrgMock,
       accountUpdateMock,
+      accountUpdateManyMock,
       subscriptionsRetrieveMock,
       subscriptionsUpdateMock,
       customersCreateMock,
@@ -298,16 +305,33 @@ describe("POST /api/billing/checkout", () => {
       expect(await res.json()).toEqual({ confirmUrl: "https://billing.stripe.com/p/session/test_1" });
     });
 
-    it("offers the upgrade discount on the confirm page when the account hasn't used it", async () => {
+    it("claims the upgrade discount and offers it on the confirm page when the account hasn't used it", async () => {
       getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
       subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1", price: { id: "price_pro_year" } }] } });
+      accountUpdateManyMock.mockResolvedValue({ count: 1 });
 
       const { POST } = await import("../route");
       await POST(requestFrom({ plan: "venue", interval: "year" }));
 
+      expect(accountUpdateManyMock).toHaveBeenCalledWith({
+        where: { id: "acc_1", upgradeDiscountUsedAt: null },
+        data: { upgradeDiscountUsedAt: expect.any(Date) },
+      });
       expect(portalSessionsCreateMock).toHaveBeenCalledWith(
         confirmFlow("sub_existing", "si_1", "price_pro_month", { discounts: [{ coupon: "UPGRADE20" }] }),
       );
+    });
+
+    it("leaves the discount off a second confirm page opened before the first change lands", async () => {
+      // Account row read before the first claim committed still looks eligible
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
+      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1", price: { id: "price_pro_year" } }] } });
+      accountUpdateManyMock.mockResolvedValue({ count: 0 });
+
+      const { POST } = await import("../route");
+      await POST(requestFrom({ plan: "venue", interval: "year" }));
+
+      expect(portalSessionsCreateMock).toHaveBeenCalledWith(confirmFlow("sub_existing", "si_1", "price_pro_month"));
     });
 
     it("confirms an add-on's interval change against that add-on's own subscription", async () => {
