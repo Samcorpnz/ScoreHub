@@ -109,7 +109,10 @@ describe("SetupPage", () => {
     fireEvent.click(screen.getByTestId("setup-submit"));
 
     await waitFor(() =>
-      expect(global.fetch).toHaveBeenCalledWith("/api/orgs/org-1/matches", { method: "POST" })
+      expect(global.fetch).toHaveBeenCalledWith("/api/orgs/org-1/matches", expect.objectContaining({
+        method: "POST",
+        body: expect.stringMatching(/"scheduledAt":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z"/),
+      }))
     );
     await waitFor(() => expect(sendManualUpdateMock).toHaveBeenCalled());
     const payload = sendManualUpdateMock.mock.calls[0][0];

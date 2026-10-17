@@ -6,15 +6,22 @@ const authMock = vi.fn();
 vi.mock("@/auth", () => ({ auth: () => authMock() }));
 
 const matchFindManyMock = vi.fn();
+const matchUpdateMock = vi.fn();
 vi.mock("@scorehub/db", () => ({
   prisma: {
-    match: { findMany: (...a: unknown[]) => matchFindManyMock(...a) },
+    match: {
+      findMany: (...a: unknown[]) => matchFindManyMock(...a),
+      update: (...a: unknown[]) => matchUpdateMock(...a),
+    },
   },
   MatchStatus: {},
 }));
 
-function makePostRequest() {
-  return new NextRequest("http://localhost/api/orgs/org-1/matches", { method: "POST" });
+function makePostRequest(body?: unknown) {
+  return new NextRequest("http://localhost/api/orgs/org-1/matches", {
+    method: "POST",
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
 }
 
 function makeGetRequest(qs = "") {
@@ -30,6 +37,7 @@ describe("/api/orgs/[orgId]/matches", () => {
     vi.resetModules();
     authMock.mockReset();
     matchFindManyMock.mockReset();
+    matchUpdateMock.mockReset();
     authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN" } });
     process.env.AUTH_SECRET = "test-secret";
   });
@@ -116,6 +124,26 @@ describe("/api/orgs/[orgId]/matches", () => {
       );
     });
 
+    it("saves the match's date and time on the new row", async () => {
+      global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "match-1" }) });
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({ scheduledAt: "2026-10-17T06:30:00.000Z" }), { params });
+      expect(res.status).toBe(200);
+      expect(matchUpdateMock).toHaveBeenCalledWith({
+        where: { id: "match-1" },
+        data: { scheduledAt: new Date("2026-10-17T06:30:00.000Z") },
+      });
+    });
+
+    it("rejects a date and time without a timezone, before creating anything", async () => {
+      const fetchMock = vi.fn();
+      global.fetch = fetchMock;
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({ scheduledAt: "2026-10-17T19:30" }), { params });
+      expect(res.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("uses RELAY_INTERNAL_URL over NEXT_PUBLIC_RELAY_URL when both are set", async () => {
       process.env.RELAY_INTERNAL_URL = "http://relay:4000";
       process.env.NEXT_PUBLIC_RELAY_URL = "https://public-relay.example.com";
@@ -147,15 +175,42 @@ describe("/api/orgs/[orgId]/matches", () => {
     });
 
     it("returns all matches for the org with no filters", async () => {
-      const matches = [{ id: "m1", status: "LIVE" }];
-      matchFindManyMock.mockResolvedValue(matches);
+      matchFindManyMock.mockResolvedValue([{ id: "m1", status: "LIVE", state: null }]);
       const { GET } = await import("../route");
       const res = await GET(makeGetRequest(), { params });
       expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ matches });
+      expect(await res.json()).toEqual({ matches: [{ id: "m1", status: "LIVE", live: null }] });
       expect(matchFindManyMock).toHaveBeenCalledWith(
         expect.objectContaining({ where: { orgId: "org-1" } }),
       );
+    });
+
+    it("sends each row a small live summary instead of its whole saved state", async () => {
+      matchFindManyMock.mockResolvedValue([{
+        id: "m1", status: "LIVE",
+        state: {
+          home: { score: 14, players: ["x"] }, visitor: { score: 11 }, period: "2", periodBreak: false,
+          isRunning: true, clockSeconds: 412, countDown: true, netballStats: { big: true },
+        },
+      }]);
+      const { GET } = await import("../route");
+      const body = await (await GET(makeGetRequest(), { params })).json();
+      expect(body.matches[0]).toEqual({
+        id: "m1", status: "LIVE",
+        live: {
+          homeScore: 14, visitorScore: 11, period: "2", periodBreak: false, isRunning: true,
+          clockSeconds: 412, countDown: true, shootout: null,
+        },
+      });
+    });
+
+    it("lists history most recent first", async () => {
+      matchFindManyMock.mockResolvedValue([]);
+      const { GET } = await import("../route");
+      await GET(makeGetRequest("?status=ended"), { params });
+      expect(matchFindManyMock).toHaveBeenCalledWith(expect.objectContaining({
+        orderBy: [{ scheduledAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+      }));
     });
 
     it("filters by a comma-separated, case-insensitive status list, dropping invalid values", async () => {

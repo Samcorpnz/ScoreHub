@@ -7,6 +7,7 @@ import { SPORT_TEMPLATES, getTemplate, getMatchTemplate } from "../sport-templat
 import type { SportType, CricketInningsState } from "../types";
 import { useControlToken } from "../hooks/useControlToken";
 import { useMatchState } from "../hooks/useMatchState";
+import { localFixtureTimeToUtc, localTimeZoneLabel } from "@/lib/fixtureTime";
 import { CricketSquadSetup, emptySquad } from "../control/components/CricketSquadSetup";
 import { PlanBadge } from "../components/PlanBadge";
 import { OrgSwitcher } from "../components/OrgSwitcher";
@@ -33,6 +34,8 @@ export default function SetupPage() {
   const [matchName, setMatchName] = useState("");
   const [homeName, setHomeName] = useState("");
   const [visitorName, setVisitorName] = useState("");
+  // When the match is played, in the operator's own timezone — defaults to now
+  const [matchTime, setMatchTime] = useState(nowForDateTimeInput);
   const [sportConfig, setSportConfig] = useState<Record<string, string>>(() => defaultSportConfig("netball"));
   const [state, setState] = useState<SetupState>("form");
   const [message, setMessage] = useState("");
@@ -44,6 +47,7 @@ export default function SetupPage() {
     matchName: matchName.trim() ? "" : "Match name is required",
     homeName: homeName.trim() ? "" : "Home team name is required",
     visitorName: visitorName.trim() ? "" : "Visitor team name is required",
+    matchTime: localFixtureTimeToUtc(matchTime) ? "" : "Date and time are required",
   };
   const formValid = !Object.values(formErrors).some(Boolean);
   const touch = (field: string) => setTouched((t) => ({ ...t, [field]: true }));
@@ -110,7 +114,11 @@ export default function SetupPage() {
     if (!orgId) return;
     setState("provisioning");
     try {
-      const res = await fetch(`/api/orgs/${orgId}/matches`, { method: "POST" });
+      const res = await fetch(`/api/orgs/${orgId}/matches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledAt: localFixtureTimeToUtc(matchTime) }),
+      });
       const body = await res.json().catch(() => ({}));
       if (res.status === 402) {
         setState("upgrade-required");
@@ -275,6 +283,11 @@ export default function SetupPage() {
                 label="Visitor team" placeholder="e.g. Visitor" value={visitorName} onChange={setVisitorName} testId="setup-visitor-name"
                 error={touched.visitorName ? formErrors.visitorName : ""} onBlur={() => touch("visitorName")}
               />
+              <SetupField
+                label={`Date & time (${localTimeZoneLabel()})`} placeholder="" type="datetime-local"
+                value={matchTime} onChange={setMatchTime} testId="setup-match-time"
+                error={touched.matchTime ? formErrors.matchTime : ""} onBlur={() => touch("matchTime")}
+              />
             </div>
 
             <button
@@ -312,21 +325,31 @@ export default function SetupPage() {
   );
 }
 
-function SetupField({ label, placeholder, value, onChange, testId, error, onBlur }: {
+// "2026-10-17T19:30" in local time, the format a datetime-local input takes
+function nowForDateTimeInput(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function SetupField({ label, placeholder, value, onChange, testId, error, onBlur, type = "text" }: {
   readonly label: string; readonly placeholder: string; readonly value: string; readonly onChange: (v: string) => void; readonly testId?: string;
-  readonly error?: string; readonly onBlur?: () => void;
+  readonly error?: string; readonly onBlur?: () => void; readonly type?: "text" | "datetime-local";
 }) {
   return (
     <div>
       <p className="text-xs mb-1" style={{ color: "var(--text-dim)" }}>{label}</p>
       <input
         data-testid={testId}
+        type={type}
         className="w-full rounded-lg px-3 py-2 text-sm font-semibold"
         style={{
           background: "var(--bg-elevated)",
           border: `1px solid ${error ? "var(--danger)" : "var(--border)"}`,
           color: "var(--text-primary)",
           outline: "none",
+          // Light picker icons on the dark field
+          colorScheme: "dark",
         }}
         placeholder={placeholder}
         value={value}

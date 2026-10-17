@@ -8,6 +8,7 @@ import { PlanBadge } from "../components/PlanBadge";
 import { OrgSwitcher } from "../components/OrgSwitcher";
 import { SPORT_TEMPLATES } from "../sport-templates";
 import { formatFixtureTime, localFixtureTimeToUtc, localTimeZoneLabel } from "@/lib/fixtureTime";
+import { summariseMatch, type LiveSummary, type StatusTone } from "./matchSummary";
 
 // A match row stores the sport's id (e.g. "rugby_union"); show its name.
 // An id with no template (e.g. a typo in a CSV import) is shown as-is.
@@ -31,7 +32,15 @@ interface MatchRow {
   createdAt: string;
   endedAt: string | null;
   displayToken: string | null;
+  live: LiveSummary | null;
 }
+
+const STATUS_TONE: Record<StatusTone, { color: string; background: string; border: string }> = {
+  live:  { color: "#22C55E", background: "rgba(34,197,94,0.12)", border: "rgba(34,197,94,0.35)" },
+  break: { color: "rgb(251,146,60)", background: "rgba(251,146,60,0.12)", border: "rgba(251,146,60,0.35)" },
+  idle:  { color: "var(--text-secondary)", background: "var(--bg-elevated)", border: "var(--border)" },
+  done:  { color: "var(--text-dim)", background: "var(--bg-elevated)", border: "var(--border)" },
+};
 
 const TAB_STATUS: Record<TabKey, MatchStatus> = {
   upcoming: "SCHEDULED",
@@ -126,6 +135,8 @@ export default function DashboardPage() {
   const { data: matches = [], isLoading: loading, mutate: load } = useSWR(
     orgId ? [orgId, tab, sportFilter, competitionFilter, search] : null,
     () => fetchMatches(orgId as string, tab, sportFilter, competitionFilter, search),
+    // Live rows carry scores and periods, so keep them current
+    { refreshInterval: tab === "live" ? 10_000 : 0 },
   );
 
   const competitions = useMemo(
@@ -349,19 +360,36 @@ export default function DashboardPage() {
               const details = [
                 m.sport && sportLabel(m.sport),
                 m.competition,
-                m.scheduledAt && formatFixtureTime(m.scheduledAt),
                 m.status === "ENDED" && m.endedAt && `ended ${formatFixtureTime(m.endedAt)}`,
               ].filter(Boolean).join(" · ");
+              // Matches made before the date was collected fall back to when they were created
+              const when = formatFixtureTime(m.scheduledAt ?? m.createdAt);
+              const summary = summariseMatch(m.status, m.sport, m.live);
+              const tone = STATUS_TONE[summary.tone];
               return (
                 <div
                   key={m.id}
-                  className="rounded-xl p-4 flex items-center justify-between gap-4"
+                  data-testid={`match-row-${m.id}`}
+                  className="rounded-xl p-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
                   style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1 basis-56">
                     <p className="text-sm font-bold truncate">{title}</p>
+                    <p data-testid="match-when" className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>{when}</p>
                     {details && (
                       <p className="text-xs truncate" style={{ color: "var(--text-dim)" }}>{details}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span data-testid="match-status" className="rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase whitespace-nowrap"
+                      style={{ color: tone.color, background: tone.background, border: `1px solid ${tone.border}` }}>
+                      {summary.status}
+                    </span>
+                    {summary.score && (
+                      <span data-testid="match-score" className="text-lg font-black tabular-nums whitespace-nowrap">{summary.score}</span>
+                    )}
+                    {summary.period && (
+                      <span data-testid="match-period" className="text-xs font-bold whitespace-nowrap" style={{ color: "var(--text-dim)" }}>{summary.period}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -384,7 +412,6 @@ export default function DashboardPage() {
                       </a>
                     ) : (
                       <>
-                        <span className="text-xs font-bold px-3" style={{ color: "var(--text-dim)" }}>Ended</span>
                         {canRunMatches && (
                           <button
                             data-testid={`reopen-match-${m.id}`}

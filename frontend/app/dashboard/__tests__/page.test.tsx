@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, within, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import DashboardPage from "../page";
 
@@ -38,6 +38,7 @@ const authedSession = {
 function matchRow(overrides: Partial<{
   id: string; status: "SCHEDULED" | "LIVE" | "ENDED"; sport: string | null; competition: string | null;
   homeName: string | null; visitorName: string | null; scheduledAt: string | null; createdAt: string; endedAt: string | null;
+  live: Record<string, unknown> | null;
 }> = {}) {
   return {
     id: "match-1",
@@ -49,6 +50,7 @@ function matchRow(overrides: Partial<{
     scheduledAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     endedAt: null,
+    live: null,
     ...overrides,
   };
 }
@@ -98,8 +100,34 @@ describe("DashboardPage", () => {
     renderPage();
     expect(await screen.findByText("Rugby Union")).toBeInTheDocument();
     expect(screen.queryByText("rugby_union")).not.toBeInTheDocument();
-    // No sport and no competition: no stray "—" line under the title
-    expect(screen.getByText("Home v Visitor").nextElementSibling).toBeNull();
+    // No sport and no competition: no stray "—" placeholder for them
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  });
+
+  it("shows a live match's status, score, period and date", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [
+      matchRow({
+        scheduledAt: "2026-10-17T06:30:00.000Z",
+        live: { homeScore: 14, visitorScore: 11, period: "2", periodBreak: false, isRunning: true, clockSeconds: 412, countDown: true },
+      }),
+    ] }) }));
+    renderPage();
+
+    const row = await screen.findByTestId("match-row-match-1");
+    expect(within(row).getByTestId("match-status")).toHaveTextContent("In play");
+    expect(within(row).getByTestId("match-score")).toHaveTextContent("14 – 11");
+    expect(within(row).getByTestId("match-period")).toHaveTextContent("QTR 2");
+    expect(within(row).getByTestId("match-when")).toHaveTextContent(/2026/);
+  });
+
+  it("falls back to when an older match was created for its date", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [
+      matchRow({ scheduledAt: null, createdAt: "2025-03-09T02:00:00.000Z" }),
+    ] }) }));
+    renderPage();
+    expect(await screen.findByTestId("match-when")).toHaveTextContent(/2025/);
   });
 
   it("shows 'No matches here yet.' when the list is empty", async () => {
@@ -146,7 +174,7 @@ describe("DashboardPage", () => {
       })
     );
     renderPage();
-    expect(await screen.findByText("Ended")).toBeInTheDocument();
+    expect(await screen.findByText("Final")).toBeInTheDocument();
     expect(screen.queryByText("Copy display link")).not.toBeInTheDocument();
   });
 
@@ -268,7 +296,7 @@ describe("DashboardPage", () => {
     useSessionMock.mockReturnValue({ ...operatorSession, data: { user: { ...operatorSession.data.user, activeRole: "VIEWER" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [matchRow({ id: "ended-1", status: "ENDED" })] }) }));
     renderPage();
-    expect(await screen.findByText("Ended")).toBeInTheDocument();
+    expect(await screen.findByText("Final")).toBeInTheDocument();
     expect(screen.queryByText("Reopen")).not.toBeInTheDocument();
   });
 
