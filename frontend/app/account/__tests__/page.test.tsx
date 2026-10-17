@@ -135,19 +135,33 @@ describe("AccountPage", () => {
     expect(await screen.findByTestId("embedded-checkout-provider")).toBeInTheDocument();
   });
 
-  it("switches plan in place and shows a notice when the checkout responds with 'switched'", async () => {
+  it("sends an existing subscriber to Stripe's confirm page for a plan change", async () => {
     useSessionMock.mockReturnValue(adminSession);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { search: "", assign });
     vi.stubGlobal(
       "fetch",
       mockFetchRouter({
-        "/api/billing/checkout": () => jsonResponse({ switched: true, plan: "pro" }),
+        "/api/billing/checkout": () => jsonResponse({ confirmUrl: "https://billing.stripe.com/p/session/test_1" }),
       })
     );
     renderPage();
 
     fireEvent.click(await screen.findByText("Upgrade to Pro"));
 
-    expect(await screen.findByText("Switched to the pro plan.")).toBeInTheDocument();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.com/p/session/test_1"));
+  });
+
+  it("confirms the change after Stripe sends the customer back", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("location", { search: "?billing=updated", assign: vi.fn() });
+    const replaceState = vi.spyOn(globalThis.history, "replaceState").mockImplementation(() => {});
+    vi.stubGlobal("fetch", mockFetchRouter());
+    renderPage();
+
+    expect(await screen.findByText(/Your plan change is confirmed/)).toBeInTheDocument();
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/account");
+    replaceState.mockRestore();
   });
 
   it("shows the checkout error message when checkout fails to start", async () => {

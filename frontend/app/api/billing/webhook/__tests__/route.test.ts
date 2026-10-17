@@ -45,6 +45,7 @@ const addOnForPriceIdMock = vi.fn();
 vi.mock("@/lib/plans", () => ({
   planForPriceId: (...a: unknown[]) => planForPriceIdMock(...a),
   addOnForPriceId: (...a: unknown[]) => addOnForPriceIdMock(...a),
+  UPGRADE_DISCOUNT_COUPON_ID: "UPGRADE20",
   ADDON_SUBSCRIPTION_FIELD: {
     "graphics-operator": "graphicsSubscriptionId",
     "data-feed": "dataFeedSubscriptionId",
@@ -396,6 +397,53 @@ describe("POST /api/billing/webhook", () => {
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
         data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year" },
+      });
+    });
+
+    it("marks the upgrade discount used when a confirmed plan change carries the coupon", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          discounts: ["di_1"],
+          items: { data: [{ price: { id: "price_venue", recurring: { interval: "year" } } }] },
+        }),
+      );
+      planForPriceIdMock.mockReturnValue("venue");
+      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", plan: "pro", upgradeDiscountUsedAt: null });
+      subscriptionsRetrieveMock.mockResolvedValue({ discounts: [{ id: "di_1", source: { type: "coupon", coupon: { id: "UPGRADE20" } } }] });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(subscriptionsRetrieveMock).toHaveBeenCalledWith("sub_1", { expand: ["discounts"] });
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year", upgradeDiscountUsedAt: expect.any(Date) },
+      });
+    });
+
+    it("leaves the discount unused for a change with some other coupon", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          discounts: ["di_2"],
+          items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
+        }),
+      );
+      planForPriceIdMock.mockReturnValue("venue");
+      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", plan: "pro", upgradeDiscountUsedAt: null });
+      subscriptionsRetrieveMock.mockResolvedValue({ discounts: [{ id: "di_2", source: { type: "coupon", coupon: "PROMO10" } }] });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month" },
       });
     });
 

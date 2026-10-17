@@ -173,6 +173,19 @@ export default function AccountPage() {
     fetchBillingStatus();
   }, [fetchBillingStatus]);
 
+  // Back from confirming a plan change on Stripe's page. The webhook that
+  // records it usually lands within a second or two, so look again shortly.
+  useEffect(() => {
+    if (new URLSearchParams(globalThis.location.search).get("billing") !== "updated") return;
+    const notice = setTimeout(() => {
+      // Drop the flag so a reload doesn't repeat the notice
+      globalThis.history.replaceState(null, "", "/account");
+      setSwitchNotice("Your plan change is confirmed. It can take a few seconds to show here.");
+    }, 0);
+    const refetch = setTimeout(() => { fetchBillingStatus(); }, 3000);
+    return () => { clearTimeout(notice); clearTimeout(refetch); };
+  }, [fetchBillingStatus]);
+
   async function upgrade(plan: "pro" | "venue") {
     setBillingBusy(true);
     setSwitchNotice(null);
@@ -186,9 +199,10 @@ export default function AccountPage() {
       if (data?.clientSecret) {
         setCheckoutKind("plan");
         setCheckoutSecret(data.clientSecret);
-      } else if (data?.switched) {
-        await fetchBillingStatus();
-        setSwitchNotice(`Switched to the ${data.plan} plan.`);
+      } else if (data?.confirmUrl) {
+        // Already subscribed: Stripe's page shows the change and its prorated
+        // cost for the customer to confirm, then sends them back here.
+        globalThis.location.assign(data.confirmUrl);
       } else {
         setSwitchNotice(data?.error ?? "couldn't start checkout");
       }
@@ -211,9 +225,8 @@ export default function AccountPage() {
       if (data?.clientSecret) {
         setCheckoutKind(addOnId);
         setCheckoutSecret(data.clientSecret);
-      } else if (data?.switched) {
-        await fetchBillingStatus();
-        notify(`Switched the ${ADD_ONS.find(a => a.id === addOnId)?.name} add-on billing interval.`, false);
+      } else if (data?.confirmUrl) {
+        globalThis.location.assign(data.confirmUrl);
       } else {
         notify(data?.error ?? "Couldn't start checkout — please try again.", true);
       }

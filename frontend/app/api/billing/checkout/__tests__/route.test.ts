@@ -17,6 +17,7 @@ const subscriptionsRetrieveMock = vi.fn();
 const subscriptionsUpdateMock = vi.fn();
 const customersCreateMock = vi.fn();
 const checkoutSessionsCreateMock = vi.fn();
+const portalSessionsCreateMock = vi.fn();
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
     subscriptions: {
@@ -25,6 +26,7 @@ vi.mock("@/lib/stripe", () => ({
     },
     customers: { create: (...a: unknown[]) => customersCreateMock(...a) },
     checkout: { sessions: { create: (...a: unknown[]) => checkoutSessionsCreateMock(...a) } },
+    billingPortal: { sessions: { create: (...a: unknown[]) => portalSessionsCreateMock(...a) } },
   }),
 }));
 
@@ -71,6 +73,7 @@ describe("POST /api/billing/checkout", () => {
       subscriptionsUpdateMock,
       customersCreateMock,
       checkoutSessionsCreateMock,
+      portalSessionsCreateMock,
       priceIdForPlanMock,
       priceIdForAddOnMock,
     ]) {
@@ -255,109 +258,88 @@ describe("POST /api/billing/checkout", () => {
     });
   });
 
-  describe("switching an existing subscription", () => {
-    it("switches the base plan in place via a subscription item update", async () => {
-      getAccountForOrgMock.mockResolvedValue(
-        baseAccount({
-          plan: "pro",
-          stripeSubscriptionId: "sub_existing",
-          upgradeDiscountUsedAt: new Date("2026-01-01"),
-        }),
-      );
-      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1" }] } });
-
-      const { POST } = await import("../route");
-      const res = await POST(makeRequest({ plan: "venue", interval: "year" }));
-
-      expect(subscriptionsUpdateMock).toHaveBeenCalledWith("sub_existing", {
-        items: [{ id: "si_1", price: "price_pro_month" }],
-        proration_behavior: "create_prorations",
-        metadata: { accountId: "acc_1", plan: "venue" },
+  describe("changing an existing subscription", () => {
+    // Plan and add-on changes go to Stripe's billing-portal confirm page
+    // rather than updating the subscription directly, so the customer sees
+    // the new price and prorated amount and confirms it themselves.
+    const confirmFlow = (subscription: string, item: string, price: string, extra: Record<string, unknown> = {}) => ({
+      customer: "cus_1",
+      return_url: "http://localhost:3000/account",
+      flow_data: {
+        type: "subscription_update_confirm",
+        subscription_update_confirm: { subscription, items: [{ id: item, price, quantity: 1 }], ...extra },
+        after_completion: { type: "redirect", redirect: { return_url: "http://localhost:3000/account?billing=updated" } },
+      },
+    });
+    function requestFrom(body: unknown) {
+      return new NextRequest("http://localhost/api/billing/checkout", {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { origin: "http://localhost:3000" },
       });
-      expect(accountUpdateMock).toHaveBeenCalledWith({
-        where: { id: "acc_1" },
-        data: { plan: "venue", billingInterval: "year" },
-      });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ switched: true, plan: "venue", interval: "year", discountApplied: false });
+    }
+
+    beforeEach(() => {
+      portalSessionsCreateMock.mockResolvedValue({ url: "https://billing.stripe.com/p/session/test_1" });
     });
 
-    it("applies the upgrade discount when the account hasn't used it yet", async () => {
+    it("sends a base-plan change to Stripe's confirm page instead of changing it directly", async () => {
       getAccountForOrgMock.mockResolvedValue(
-        baseAccount({ plan: "pro", stripeSubscriptionId: "sub_existing" }),
+        baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing", upgradeDiscountUsedAt: new Date("2026-01-01") }),
       );
-      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1" }] } });
+      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1", price: { id: "price_venue_year" } }] } });
 
       const { POST } = await import("../route");
-      const res = await POST(makeRequest({ plan: "venue", interval: "year" }));
+      const res = await POST(requestFrom({ plan: "venue", interval: "year" }));
 
-      expect(subscriptionsUpdateMock).toHaveBeenCalledWith("sub_existing", {
-        items: [{ id: "si_1", price: "price_pro_month" }],
-        proration_behavior: "create_prorations",
-        metadata: { accountId: "acc_1", plan: "venue" },
-        discounts: [{ coupon: "UPGRADE20" }],
-      });
-      expect(accountUpdateMock).toHaveBeenCalledWith({
-        where: { id: "acc_1" },
-        data: { plan: "venue", billingInterval: "year", upgradeDiscountUsedAt: expect.any(Date) },
-      });
-      expect(res.status).toBe(200);
-      expect(await res.json()).toEqual({ switched: true, plan: "venue", interval: "year", discountApplied: true });
-    });
-
-    it("switches an existing add-on subscription without touching Account.plan", async () => {
-      getAccountForOrgMock.mockResolvedValue(
-        baseAccount({
-          plan: "pro",
-          addOns: ["graphics-operator"],
-          graphicsSubscriptionId: "sub_graphics",
-        }),
-      );
-      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_2" }] } });
-
-      const { POST } = await import("../route");
-      const res = await POST(makeRequest({ addOn: "graphics-operator", interval: "year" }));
-
-      expect(subscriptionsUpdateMock).toHaveBeenCalledWith("sub_graphics", {
-        items: [{ id: "si_2", price: "price_graphics_month" }],
-        proration_behavior: "create_prorations",
-        metadata: { accountId: "acc_1", addOn: "graphics-operator" },
-      });
+      expect(portalSessionsCreateMock).toHaveBeenCalledWith(confirmFlow("sub_existing", "si_1", "price_pro_month"));
+      expect(subscriptionsUpdateMock).not.toHaveBeenCalled();
       expect(accountUpdateMock).not.toHaveBeenCalled();
-      expect(await res.json()).toEqual({ switched: true, addOn: "graphics-operator", interval: "year" });
+      expect(await res.json()).toEqual({ confirmUrl: "https://billing.stripe.com/p/session/test_1" });
     });
 
-    it("switches an existing data-feed add-on subscription using its own dedicated field", async () => {
-      priceIdForAddOnMock.mockReturnValue("price_data_feed_month");
-      getAccountForOrgMock.mockResolvedValue(
-        baseAccount({
-          plan: "venue",
-          addOns: ["data-feed"],
-          dataFeedSubscriptionId: "sub_datafeed",
-        }),
-      );
-      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_3" }] } });
+    it("offers the upgrade discount on the confirm page when the account hasn't used it", async () => {
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
+      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1", price: { id: "price_pro_year" } }] } });
 
       const { POST } = await import("../route");
-      const res = await POST(makeRequest({ addOn: "data-feed", interval: "year" }));
+      await POST(requestFrom({ plan: "venue", interval: "year" }));
 
-      expect(subscriptionsUpdateMock).toHaveBeenCalledWith("sub_datafeed", {
-        items: [{ id: "si_3", price: "price_data_feed_month" }],
-        proration_behavior: "create_prorations",
-        metadata: { accountId: "acc_1", addOn: "data-feed" },
-      });
-      expect(accountUpdateMock).not.toHaveBeenCalled();
-      expect(await res.json()).toEqual({ switched: true, addOn: "data-feed", interval: "year" });
+      expect(portalSessionsCreateMock).toHaveBeenCalledWith(
+        confirmFlow("sub_existing", "si_1", "price_pro_month", { discounts: [{ coupon: "UPGRADE20" }] }),
+      );
     });
 
-    it("500s when the existing subscription has no items to switch", async () => {
+    it("confirms an add-on's interval change against that add-on's own subscription", async () => {
+      priceIdForAddOnMock.mockReturnValue("price_data_feed_year");
       getAccountForOrgMock.mockResolvedValue(
-        baseAccount({ plan: "pro", stripeSubscriptionId: "sub_existing" }),
+        baseAccount({ plan: "venue", stripeCustomerId: "cus_1", addOns: ["data-feed"], dataFeedSubscriptionId: "sub_datafeed" }),
       );
+      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_3", price: { id: "price_data_feed_month" } }] } });
+
+      const { POST } = await import("../route");
+      await POST(requestFrom({ addOn: "data-feed", interval: "year" }));
+
+      expect(subscriptionsRetrieveMock).toHaveBeenCalledWith("sub_datafeed");
+      expect(portalSessionsCreateMock).toHaveBeenCalledWith(confirmFlow("sub_datafeed", "si_3", "price_data_feed_year"));
+    });
+
+    it("400s when the subscription is already on that price", async () => {
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
+      subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [{ id: "si_1", price: { id: "price_pro_month" } }] } });
+
+      const { POST } = await import("../route");
+      const res = await POST(requestFrom({ plan: "pro" }));
+      expect(res.status).toBe(400);
+      expect(portalSessionsCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("500s when the existing subscription has no items to change", async () => {
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
       subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [] } });
 
       const { POST } = await import("../route");
-      const res = await POST(makeRequest({ plan: "venue" }));
+      const res = await POST(requestFrom({ plan: "venue" }));
       expect(res.status).toBe(500);
     });
 

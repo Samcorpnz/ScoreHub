@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@scorehub/db";
 import { getStripe } from "@/lib/stripe";
-import { planForPriceId, addOnForPriceId, ADDON_SUBSCRIPTION_FIELD, AddOn, PaidPlan } from "@/lib/plans";
+import { planForPriceId, addOnForPriceId, ADDON_SUBSCRIPTION_FIELD, AddOn, PaidPlan, UPGRADE_DISCOUNT_COUPON_ID } from "@/lib/plans";
 import {
   sendPaymentFailedEmail,
   sendPaymentActionRequiredEmail,
@@ -187,12 +187,14 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
   const interval = subscription.items.data[0]?.price.recurring?.interval ?? null;
   const paid = keepsPaidAccess(subscription.status);
   const nextPlan = paid ? (plan ?? account.plan) : "free";
+  const discountUsed = !account.upgradeDiscountUsedAt && await hasUpgradeDiscount(subscription);
   await prisma.account.update({
     where: { id: account.id },
     data: {
       stripeSubscriptionId: subscription.id,
       plan: nextPlan,
       billingInterval: paid ? interval : null,
+      ...(discountUsed ? { upgradeDiscountUsedAt: new Date() } : {}),
     },
   });
   // Add-ons require an active paid plan — if the base plan just lapsed,
@@ -202,6 +204,21 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
     await cancelActiveAddOnSubscriptions(account);
     if (isPaidPlan(account.plan)) await sendSubscriptionEndedEmailToAdmins(account.id, account.plan);
   }
+}
+
+// A plan change confirmed in the billing portal can carry the one-time
+// upgrade coupon (see confirmSubscriptionChange in the checkout route). The
+// portal can't stamp our metadata, so look for the coupon itself. Event
+// payloads list discounts as bare ids, hence the expanded re-fetch — only
+// done when the subscription has a discount at all.
+async function hasUpgradeDiscount(subscription: Stripe.Subscription): Promise<boolean> {
+  if (!subscription.discounts?.length) return false;
+  const expanded = await getStripe().subscriptions.retrieve(subscription.id, { expand: ["discounts"] });
+  return expanded.discounts.some(d => {
+    if (typeof d === "string") return false;
+    const coupon = d.source?.coupon;
+    return (typeof coupon === "string" ? coupon : coupon?.id) === UPGRADE_DISCOUNT_COUPON_ID;
+  });
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {

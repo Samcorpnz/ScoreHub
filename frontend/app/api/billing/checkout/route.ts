@@ -48,50 +48,49 @@ function parseCheckoutRequest(body: unknown): CheckoutRequest | NextResponse {
 }
 
 // Already has an active subscription for this line (base plan or add-on) —
-// switch it in place (with proration) rather than starting a second Checkout
-// Session, which would create a second subscription and double-bill the
-// customer.
-async function switchExistingSubscription(
+// change it rather than starting a second Checkout Session, which would
+// create a second subscription and double-bill the customer. The change goes
+// through the billing portal's confirm flow: Stripe shows the new price and
+// the prorated amount, the customer confirms (handling 3-D Secure if their
+// bank asks), and only then is the subscription updated. The
+// customer.subscription.updated webhook records the new plan/interval.
+async function confirmSubscriptionChange(
   stripe: Stripe,
   account: Account,
   existingSubscriptionId: string,
   priceId: string,
-  request: CheckoutRequest,
   discountEligible: boolean,
+  origin: string,
 ): Promise<NextResponse> {
-  const { plan, addOn, interval } = request;
+  if (!account.stripeCustomerId) {
+    return NextResponse.json({ error: "no billing account on file" }, { status: 500 });
+  }
   const subscription = await stripe.subscriptions.retrieve(existingSubscriptionId);
   const itemId = subscription.items.data[0]?.id;
   if (!itemId) {
     return NextResponse.json({ error: "existing subscription has no items" }, { status: 500 });
   }
-
-  const updateMetadata: Record<string, string> = plan
-    ? { accountId: account.id, plan }
-    : { accountId: account.id, addOn: addOn! };
-  await stripe.subscriptions.update(existingSubscriptionId, {
-    items: [{ id: itemId, price: priceId }],
-    proration_behavior: "create_prorations",
-    metadata: updateMetadata,
-    ...(discountEligible ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
-  });
-
-  // Reflect the switch immediately; the customer.subscription.updated
-  // webhook will also fire and confirm the same state (idempotent). The
-  // discount is applied directly above (not via Checkout), so mark it used
-  // here rather than waiting on the webhook.
-  if (plan) {
-    await prisma.account.update({
-      where: { id: account.id },
-      data: {
-        plan,
-        billingInterval: interval,
-        ...(discountEligible ? { upgradeDiscountUsedAt: new Date() } : {}),
-      },
-    });
-    return NextResponse.json({ switched: true, plan, interval, discountApplied: discountEligible });
+  if (subscription.items.data[0]?.price.id === priceId) {
+    return NextResponse.json({ error: "You're already on that plan." }, { status: 400 });
   }
-  return NextResponse.json({ switched: true, addOn, interval });
+
+  const portalSession = await stripe.billingPortal.sessions.create({
+    customer: account.stripeCustomerId,
+    return_url: `${origin}/account`,
+    flow_data: {
+      type: "subscription_update_confirm",
+      subscription_update_confirm: {
+        subscription: existingSubscriptionId,
+        items: [{ id: itemId, price: priceId, quantity: 1 }],
+        ...(discountEligible ? { discounts: [{ coupon: UPGRADE_DISCOUNT_COUPON_ID }] } : {}),
+      },
+      after_completion: {
+        type: "redirect",
+        redirect: { return_url: `${origin}/account?billing=updated` },
+      },
+    },
+  });
+  return NextResponse.json({ confirmUrl: portalSession.url });
 }
 
 // Embedded mode keeps the customer on /control instead of redirecting to a
@@ -204,7 +203,8 @@ export async function POST(req: NextRequest) {
   // which the billing page can't read and so can't tell the admin about.
   try {
     if (hasExistingSubscription && existingSubscriptionId) {
-      return await switchExistingSubscription(stripe, account, existingSubscriptionId, priceId, parsed, discountEligible);
+      const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "";
+      return await confirmSubscriptionChange(stripe, account, existingSubscriptionId, priceId, discountEligible, origin);
     }
     return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
   } catch (err) {
