@@ -111,12 +111,25 @@ function ControlPanelInner() {
         style={{ background: "var(--bg-surface)", borderBottom: "1px solid var(--border)" }}
       >
         <div className="flex items-center gap-4">
-          <span className="font-black text-lg tracking-tight">
+          <a href="/dashboard" className="font-black text-lg tracking-tight" style={{ color: "inherit", textDecoration: "none" }}>
             Score<span style={{ color: "var(--accent)" }}>Hub</span>
-          </span>
+          </a>
           <span className="text-xs px-2 py-1 rounded font-bold tracking-widest uppercase" style={{ background: "var(--bg-elevated)", color: "var(--text-dim)" }}>
             Control
           </span>
+          <a
+            href="/dashboard"
+            data-testid="back-to-dashboard"
+            className="rounded-lg px-3 py-1.5 text-xs font-bold"
+            style={{
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              color: "var(--text-secondary)",
+              textDecoration: "none",
+            }}
+          >
+            ← Dashboard
+          </a>
         </div>
         <div className="flex items-center gap-4">
           {controllerStatus === "granted" && (
@@ -229,7 +242,8 @@ function ControlPanelInner() {
       )}
 
       {/* Tab nav */}
-      <div role="tablist" aria-label="Control panel sections" className="flex px-6 pt-4 gap-1" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div style={{ borderBottom: "1px solid var(--border)" }}>
+      <div role="tablist" aria-label="Control panel sections" className="flex px-6 pt-4 gap-1 max-w-5xl mx-auto">
         {(["score", "outputs", "logos", "theme", "audio", "settings"] as Tab[]).map(t => (
           <button
             key={t}
@@ -250,9 +264,10 @@ function ControlPanelInner() {
           </button>
         ))}
       </div>
+      </div>
 
       {/* Tab content */}
-      <div className="p-6 max-w-5xl" role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
+      <div className="p-6 max-w-5xl mx-auto" role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === "score"    && (
           <ScoreTab
             state={state}
