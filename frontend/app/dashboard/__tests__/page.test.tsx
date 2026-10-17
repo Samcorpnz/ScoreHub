@@ -89,6 +89,19 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Open Control →").closest("a")).toHaveAttribute("href", "/control/match-1");
   });
 
+  it("shows each match's sport by name rather than its id", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [
+      matchRow({ id: "m-rugby", sport: "rugby_union", competition: null, homeName: "Test", visitorName: "Rugby" }),
+      matchRow({ id: "m-bare", sport: null, competition: null, homeName: "Home", visitorName: "Visitor" }),
+    ] }) }));
+    renderPage();
+    expect(await screen.findByText("Rugby Union")).toBeInTheDocument();
+    expect(screen.queryByText("rugby_union")).not.toBeInTheDocument();
+    // No sport and no competition: no stray "—" line under the title
+    expect(screen.getByText("Home v Visitor").nextElementSibling).toBeNull();
+  });
+
   it("shows 'No matches here yet.' when the list is empty", async () => {
     useSessionMock.mockReturnValue(authedSession);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));

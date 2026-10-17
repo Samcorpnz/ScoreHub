@@ -9,6 +9,12 @@ import { OrgSwitcher } from "../components/OrgSwitcher";
 import { SPORT_TEMPLATES } from "../sport-templates";
 import { formatFixtureTime, localFixtureTimeToUtc, localTimeZoneLabel } from "@/lib/fixtureTime";
 
+// A match row stores the sport's id (e.g. "rugby_union"); show its name.
+// An id with no template (e.g. a typo in a CSV import) is shown as-is.
+function sportLabel(sport: string): string {
+  return SPORT_TEMPLATES.find(t => t.sport === sport)?.label ?? sport;
+}
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? (globalThis.window !== undefined ? globalThis.location.origin : "");
 
 type MatchStatus = "SCHEDULED" | "LIVE" | "ENDED";
@@ -340,6 +346,12 @@ export default function DashboardPage() {
               const displayUrl = `${SITE_URL}/display/fullscreen?org=${orgId}&matchId=${m.id}${tokenParam}`;
               const clickable = m.status !== "ENDED";
               const controlLinkLabel = m.status === "LIVE" ? "Open Control →" : "Start →";
+              const details = [
+                m.sport && sportLabel(m.sport),
+                m.competition,
+                m.scheduledAt && formatFixtureTime(m.scheduledAt),
+                m.status === "ENDED" && m.endedAt && `ended ${formatFixtureTime(m.endedAt)}`,
+              ].filter(Boolean).join(" · ");
               return (
                 <div
                   key={m.id}
@@ -348,11 +360,9 @@ export default function DashboardPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-bold truncate">{title}</p>
-                    <p className="text-xs truncate" style={{ color: "var(--text-dim)" }}>
-                      {m.sport ?? "—"}{m.competition ? ` · ${m.competition}` : ""}
-                      {m.scheduledAt ? ` · ${formatFixtureTime(m.scheduledAt)}` : ""}
-                      {m.status === "ENDED" && m.endedAt ? ` · ended ${formatFixtureTime(m.endedAt)}` : ""}
-                    </p>
+                    {details && (
+                      <p className="text-xs truncate" style={{ color: "var(--text-dim)" }}>{details}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {clickable && (
@@ -463,7 +473,7 @@ function FixtureUpload({ orgId, onDone }: { readonly orgId: string; readonly onD
           <div className="space-y-1 mb-3 max-h-48 overflow-y-auto">
             {rows.map(r => (
               <div key={`${r.sport}-${r.home}-${r.visitor}-${r.scheduledAt ?? ""}`} className="text-xs flex gap-2" style={{ color: "var(--text-secondary)" }}>
-                <span>{r.sport}</span>
+                <span>{sportLabel(r.sport)}</span>
                 <span>·</span>
                 <span>{r.home} v {r.visitor}</span>
                 {r.competition && <span>· {r.competition}</span>}
