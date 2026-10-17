@@ -41,6 +41,19 @@ variable "deep_health_secret" {
   sensitive   = true
 }
 
+variable "deep_health_check_frequency_seconds" {
+  description = <<-EOT
+    How often Better Stack polls relay's GET /health/deep. Kept far slower
+    than check_frequency_seconds because every poll runs a Postgres query:
+    at 30s Neon's free-tier compute never reaches its ~5-minute idle
+    suspend, so the database runs 24/7 and burns the monthly compute-hours
+    allowance. At 1800s each poll wakes it for roughly 5 minutes, about a
+    sixth of always-on.
+  EOT
+  type        = number
+  default     = 1800
+}
+
 # SA-111 — marketing/help/downloads Workers + uat status page
 
 variable "marketing_url" {

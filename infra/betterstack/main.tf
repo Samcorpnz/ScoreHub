@@ -62,7 +62,7 @@ resource "betteruptime_monitor" "relay_deep_health" {
   monitor_type        = "status"
   url                 = "${var.relay_health_url}/deep"
   pronounceable_name  = "ScoreHub relay (deep)"
-  check_frequency     = var.check_frequency_seconds
+  check_frequency     = var.deep_health_check_frequency_seconds
   request_timeout     = 15
   recovery_period     = 60
   confirmation_period = 60
