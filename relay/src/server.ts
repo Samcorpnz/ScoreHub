@@ -60,6 +60,26 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+// Neon's free tier suspends Postgres after ~5 min idle, and the first query
+// after that (compute wake + Prisma reconnect) can blow a 3s budget or fail
+// outright. Retry once with a longer budget so a cold start reads as "ok" while
+// a genuinely unreachable database still reports "error". Worst case
+// (3s + 10s) stays inside Better Stack's 15s request timeout (infra/betterstack).
+export async function probeWithRetry(
+  probe: () => Promise<unknown>,
+  timeoutsMs: number[] = [3000, 10000],
+): Promise<"ok" | "error"> {
+  for (const ms of timeoutsMs) {
+    try {
+      await withTimeout(probe(), ms);
+      return "ok";
+    } catch {
+      // fall through to the next, longer attempt
+    }
+  }
+  return "error";
+}
+
 // Constant-time secret/token compare — same approach as auth.ts's
 // secretsEqual, duplicated here (not imported) because it's used against a
 // plaintext Match.displayToken column, not a hashed ScopedToken lookup.
@@ -874,7 +894,7 @@ export function createServer(options: ServerOptions = {}) {
     const [postgres, redis] = await Promise.all([
       !process.env.DATABASE_URL
         ? Promise.resolve("skipped" as const)
-        : withTimeout(prisma.$queryRaw`SELECT 1`, 3000).then(() => "ok" as const).catch(() => "error" as const),
+        : probeWithRetry(() => prisma.$queryRaw`SELECT 1`),
       (() => {
         const redisClients = getRedisClients();
         return !redisClients
