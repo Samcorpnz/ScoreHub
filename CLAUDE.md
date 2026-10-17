@@ -146,14 +146,19 @@ Prisma schema (`packages/db/prisma/schema.prisma`): `Account` → `Org` (hierarc
 
 ## Billing (Stripe)
 
-Two entirely separate Stripe accounts, not live/test modes of one account — a test-mode API key
-authenticates against a different `acct_...` ID than the live key, so anything set up in one
-(products, prices, webhook endpoints) does not exist in the other and has to be replicated by
-hand:
+Two entirely separate Stripe accounts, not live/test modes of one account: the live account and a
+Stripe **Sandbox**, which is its own isolated account. A sandbox API key authenticates against a
+different `acct_...` ID than the live key, so anything set up in one (products, prices, the
+`UPGRADE20` coupon, webhook endpoints, customer portal settings) does not exist in the other and
+has to be replicated by hand:
 
 - **Live** — `acct_1Tl1p7HOooda4q8p` (`sk_live_51Tl1p7...`), used by `frontend/.env.vercel.production`.
-- **Test** — `acct_1Tl1swHwavOcrAr0` (`sk_test_51Tl1sw...`), used by `frontend/.env.local` and
-  `frontend/.env.vercel.preview`.
+- **Sandbox** — `acct_1Tl1swHwavOcrAr0` (`sk_test_51Tl1sw...`), used by `frontend/.env.local` and
+  `frontend/.env.vercel.preview` (all Preview deployments, including UAT).
+
+Changes to an existing subscription (plan or add-on, monthly ↔ annual) go through the billing
+portal's `subscription_update_confirm` flow, so each account's customer portal must allow plan
+switching with the Pro and Venue products listed.
 
 Catalog: `ScoreHub Pro` ($89/mo, $890/yr), `ScoreHub Venue` ($349/mo, $3,490/yr), and the
 `ScoreHub Graphics` add-on ($29/mo, $290/yr — requires an active Pro or Venue plan; see
