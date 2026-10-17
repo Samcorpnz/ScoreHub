@@ -235,6 +235,16 @@ describe("POST /api/billing/checkout", () => {
       );
     });
 
+    it("returns a readable error, not a bodiless 500, when Stripe rejects the checkout", async () => {
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_existing" }));
+      checkoutSessionsCreateMock.mockRejectedValue(new Error("No such price: 'price_x'"));
+
+      const { POST } = await import("../route");
+      const res = await POST(makeRequest({ addOn: "graphics-operator" }));
+      expect(res.status).toBe(502);
+      expect((await res.json()).error).toMatch(/Couldn't start checkout/);
+    });
+
     it("500s when Stripe doesn't return a client_secret", async () => {
       getAccountForOrgMock.mockResolvedValue(baseAccount({ stripeCustomerId: "cus_existing" }));
       checkoutSessionsCreateMock.mockResolvedValue({ client_secret: null });

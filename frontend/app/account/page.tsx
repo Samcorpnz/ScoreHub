@@ -120,6 +120,9 @@ export default function AccountPage() {
     "graphics-operator": false,
     "data-feed": false,
   });
+  // Shown under the add-on's own row — the page-level switchNotice sits up by
+  // the plans, out of sight of an add-on button at the bottom of the page.
+  const [addOnNotice, setAddOnNotice] = useState<Partial<Record<AddOnId, { message: string; isError: boolean }>>>({});
 
   const fetchBillingStatus = useCallback(() =>
     fetch("/api/billing/status")
@@ -196,23 +199,26 @@ export default function AccountPage() {
 
   async function purchaseAddOn(addOnId: AddOnId) {
     setAddOnBusy(prev => ({ ...prev, [addOnId]: true }));
-    setSwitchNotice(null);
+    setAddOnNotice(prev => ({ ...prev, [addOnId]: undefined }));
+    const notify = (message: string, isError: boolean) => setAddOnNotice(prev => ({ ...prev, [addOnId]: { message, isError } }));
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ addOn: addOnId, interval: addOnInterval[addOnId] }),
       });
-      const data = await res.json();
-      if (data.clientSecret) {
+      const data = await res.json().catch(() => null);
+      if (data?.clientSecret) {
         setCheckoutKind(addOnId);
         setCheckoutSecret(data.clientSecret);
-      } else if (data.switched) {
+      } else if (data?.switched) {
         await fetchBillingStatus();
-        setSwitchNotice(`Switched the ${ADD_ONS.find(a => a.id === addOnId)?.name} add-on billing interval.`);
-      } else if (data.error) {
-        setSwitchNotice(data.error);
+        notify(`Switched the ${ADD_ONS.find(a => a.id === addOnId)?.name} add-on billing interval.`, false);
+      } else {
+        notify(data?.error ?? "Couldn't start checkout — please try again.", true);
       }
+    } catch {
+      notify("Couldn't reach the server — please try again.", true);
     } finally {
       setAddOnBusy(prev => ({ ...prev, [addOnId]: false }));
     }
@@ -415,8 +421,8 @@ export default function AccountPage() {
         <Card title="Add-ons">
           <div className="space-y-3">
             {ADD_ONS.map(config => (
+              <div key={config.id}>
               <AddOnRow
-                key={config.id}
                 config={config}
                 billingStatus={billingStatus}
                 isAdmin={isAdmin}
@@ -427,6 +433,12 @@ export default function AccountPage() {
                 onCancel={() => setAddOnCancelAtPeriodEnd(config.id, false)}
                 onResume={() => setAddOnCancelAtPeriodEnd(config.id, true)}
               />
+              {addOnNotice[config.id] && (
+                <div data-testid={`addon-notice-${config.id}`}>
+                  <StatusText message={addOnNotice[config.id]!.message} isError={addOnNotice[config.id]!.isError} />
+                </div>
+              )}
+              </div>
             ))}
           </div>
         </Card>

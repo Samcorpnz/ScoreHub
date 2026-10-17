@@ -199,9 +199,20 @@ export async function POST(req: NextRequest) {
   const discountEligible =
     Boolean(plan) && isPlanUpgrade(account.plan, plan!) && !account.upgradeDiscountUsedAt;
 
-  if (hasExistingSubscription && existingSubscriptionId) {
-    return switchExistingSubscription(stripe, account, existingSubscriptionId, priceId, parsed, discountEligible);
+  // A Stripe failure here (a price that doesn't exist in the account the key
+  // belongs to, a network error, …) would otherwise escape as a bodiless 500,
+  // which the billing page can't read and so can't tell the admin about.
+  try {
+    if (hasExistingSubscription && existingSubscriptionId) {
+      return await switchExistingSubscription(stripe, account, existingSubscriptionId, priceId, parsed, discountEligible);
+    }
+    return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
+  } catch (err) {
+    console.error("[billing] checkout failed:", err);
+    Sentry.captureException(err, {
+      tags: { area: "billing-checkout", stage: "stripe" },
+      extra: { accountId: account.id, plan, addOn, interval },
+    });
+    return NextResponse.json({ error: "Couldn't start checkout — please try again, or contact support if it keeps happening." }, { status: 502 });
   }
-
-  return createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible);
 }

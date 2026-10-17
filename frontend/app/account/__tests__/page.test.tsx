@@ -239,6 +239,37 @@ describe("AccountPage", () => {
     expect(screen.getByText("Add Data Feed")).toBeInTheDocument();
   });
 
+  it("shows a failed add-on checkout under that add-on, not up by the plans", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro" }),
+        "/api/billing/checkout": () => jsonResponse({ error: "Couldn't start checkout — please try again." }, false),
+      })
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByText("Add Data Feed"));
+    expect(await screen.findByTestId("addon-notice-data-feed")).toHaveTextContent("Couldn't start checkout");
+    expect(screen.queryByTestId("addon-notice-graphics-operator")).not.toBeInTheDocument();
+  });
+
+  it("shows an error under the add-on when the checkout response isn't JSON", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal(
+      "fetch",
+      mockFetchRouter({
+        "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro" }),
+        "/api/billing/checkout": () => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new SyntaxError("no body")) }),
+      })
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByText("Add Graphics Operator"));
+    expect(await screen.findByTestId("addon-notice-graphics-operator")).toHaveTextContent("Couldn't start checkout");
+  });
+
   it("shows both add-ons requiring a base plan note when on Free", async () => {
     useSessionMock.mockReturnValue(adminSession);
     vi.stubGlobal("fetch", mockFetchRouter());
