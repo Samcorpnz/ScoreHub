@@ -59,7 +59,16 @@ describe("SettingsTab", () => {
     const push = vi.fn();
     render(<SettingsTab state={makeState()} push={push} />, { wrapper: swrWrapper });
     fireEvent.click(screen.getByText("Apply Template Defaults"));
-    expect(push).toHaveBeenCalledWith(expect.objectContaining({ sport: "netball", period: "1", isRunning: false }));
+    expect(push).toHaveBeenCalledWith(expect.objectContaining({ period: "1", isRunning: false }));
+    expect(push.mock.calls[0][0]).not.toHaveProperty("sport");
+  });
+
+  it("shows a set-up match's sport read-only, with no way to switch it", () => {
+    const push = vi.fn();
+    render(<SettingsTab state={makeState()} push={push} matchId="match1" />, { wrapper: swrWrapper });
+    expect(screen.getByTestId("settings-sport")).toHaveTextContent("Netball");
+    expect(screen.queryByText("Basketball")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "set up a new match" })).toHaveAttribute("href", "/setup");
   });
 
   it("switches a netball match to Fast5, bringing an untouched clock along", () => {

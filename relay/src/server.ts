@@ -508,6 +508,23 @@ export function createServer(options: ServerOptions = {}) {
     return rest;
   }
 
+  // A match's sport is fixed when it's set up — switching it mid-game would
+  // reinterpret the score, periods and sportState under different rules.
+  // Changing sport means setting up a new match, so drop a sport change from
+  // any patch aimed at a real match. The legacy single room (no matchId) has
+  // no setup flow, so it keeps letting the operator pick a sport.
+  async function withoutSportChange(
+    orgId: string,
+    patch: Partial<MatchState>,
+    matchId?: string,
+  ): Promise<Partial<MatchState>> {
+    if (!matchId || patch.sport === undefined) return patch;
+    const current = await getState(orgId, matchId);
+    if (patch.sport === current.sport) return patch;
+    const { sport: _sport, ...rest } = patch;
+    return rest;
+  }
+
   // Tick the clock every second for every loaded org that's running and
   // not currently being driven by a connected bridge. acquireTickLock
   // ensures only one relay instance advances a given org's clock when
@@ -1128,7 +1145,8 @@ export function createServer(options: ServerOptions = {}) {
       return;
     }
     try {
-      const patch = await withoutUnentitledBranding(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const branded = await withoutUnentitledBranding(result.orgId, parsed.data as Partial<MatchState>, result.matchId);
+      const patch = await withoutSportChange(result.orgId, branded, result.matchId);
       const next = await applyManualUpdate(result.orgId, patch, result.matchId);
       res.json(next);
     } catch (err) {
@@ -1577,7 +1595,8 @@ export function createServer(options: ServerOptions = {}) {
           return;
         }
         const { clientEventMs, ...rawFields } = parsed.data;
-        const patch = await withoutUnentitledBranding(orgId, rawFields as Partial<MatchState>, matchId);
+        const branded = await withoutUnentitledBranding(orgId, rawFields as Partial<MatchState>, matchId);
+        const patch = await withoutSportChange(orgId, branded, matchId);
         await applyManualUpdate(orgId, patch, matchId, clientEventMs);
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", patch);

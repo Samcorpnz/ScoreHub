@@ -59,6 +59,7 @@ jest.mock("@scorehub/db", () => {
 });
 
 import { createServer } from "../server";
+import { DEFAULT_MATCH_STATE } from "../types";
 import * as db from "@scorehub/db";
 const seed = (db as unknown as { __seed: (orgId: string, accountId: string, plan: string) => void }).__seed;
 const resetSeed = (db as unknown as { __reset: () => void }).__reset;
@@ -144,6 +145,38 @@ describe("branding in MatchState patches (SA-32)", () => {
     expect(res.status).toBe(200);
     expect(res.body.home.score).toBe(7);
     expect(findOrg).not.toHaveBeenCalled();
+  });
+});
+
+describe("sport is fixed once a match is set up", () => {
+  async function matchToken(orgId: string, matchId: string): Promise<string> {
+    return new SignJWT({ orgId, role: "ADMIN", matchId })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(AUTH_SECRET));
+  }
+
+  it("drops a sport change for a set-up match but applies the rest of the patch", async () => {
+    seed("org-sport-fixed", "account-sport-fixed", "pro");
+    const { prisma } = db as unknown as { prisma: { match: { create: (q: unknown) => Promise<{ id: string }> } } };
+    const match = await prisma.match.create({ data: { orgId: "org-sport-fixed", state: { ...DEFAULT_MATCH_STATE, sport: "netball" } } });
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await matchToken("org-sport-fixed", match.id))
+      .send({ sport: "rugby_union", matchName: "Final" });
+    expect(res.status).toBe(200);
+    expect(res.body.sport).toBe("netball");
+    expect(res.body.matchName).toBe("Final");
+  });
+
+  it("still lets the org's default room pick a sport", async () => {
+    seed("org-sport-default", "account-sport-default", "pro");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-sport-default"))
+      .send({ sport: "rugby_union" });
+    expect(res.status).toBe(200);
+    expect(res.body.sport).toBe("rugby_union");
   });
 });
 
