@@ -43,6 +43,7 @@ function makeMatchStateReturn(overrides: Record<string, unknown> = {}) {
   const sendManualUpdate = vi.fn();
   return {
     state: makeState(),
+    stateLoaded: true,
     status: "connected",
     feedStale: false,
     relayUnreachable: false,
@@ -72,6 +73,12 @@ afterEach(() => {
 });
 
 describe("MobileControl", () => {
+  it("shows a loader until the match's state arrives", () => {
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ stateLoaded: false }));
+    render(<MobileControl />);
+    expect(screen.getByTestId("control-loading-match")).toHaveTextContent("Loading match…");
+  });
+
   it("redirects unauthenticated users to the mobile-specific login callback", () => {
     useSessionMock.mockImplementation((opts?: { onUnauthenticated?: () => void }) => {
       opts?.onUnauthenticated?.();

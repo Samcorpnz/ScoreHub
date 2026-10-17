@@ -33,7 +33,7 @@ function MobileControlInner() {
   const fullPanelHref = matchId ? `/control/${encodeURIComponent(matchId)}` : "/dashboard";
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
+    state, stateLoaded, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
     controllerStatus, takeControl, estimateServerNow,
   } = useMatchState({
     secret: controlToken,
@@ -83,6 +83,23 @@ function MobileControlInner() {
     return `${getPeriodLabel(at)} ${getPeriodNumber(at)}`;
   };
   const inControl    = controllerStatus === "granted";
+
+  // Same as the full panel: don't show the blank default state as if it
+  // were this match while the relay's copy is still on its way.
+  if (!stateLoaded) {
+    return (
+      <div data-testid="control-loading-match" role="status" aria-live="polite" style={{
+        height: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 16, background: "var(--bg-base)",
+      }}>
+        <div className="h-8 w-8 rounded-full border-2 animate-spin"
+          style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} aria-hidden />
+        <div style={{ fontSize: 14, color: "var(--text-dim)" }}>
+          {relayUnreachable ? "Can't reach the scoring server — retrying…" : "Loading match…"}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{

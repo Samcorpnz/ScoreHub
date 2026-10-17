@@ -34,7 +34,7 @@ function ControlPanelInner() {
   const { matchId } = useParams<{ matchId: string }>();
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
+    state, stateLoaded, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, controllerStatus, takeControl,
     sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
     sendScoreAdjust, sendIndoorCricketWicket, estimateServerNow,
   } = useMatchState({ secret: controlToken, role: "control" });
@@ -85,13 +85,7 @@ function ControlPanelInner() {
     sendManualUpdate("isRunning" in patch ? { ...patch, clientEventMs: estimateServerNow() } : patch);
 
   // Show nothing while checking auth — prevents flash of content
-  if (authStatus === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-base)" }}>
-        <div className="text-sm" style={{ color: "var(--text-dim)" }}>Loading…</div>
-      </div>
-    );
-  }
+  if (authStatus === "loading") return <ControlLoading message="Loading…" />;
 
   if (session?.user?.activeRole === "VIEWER") {
     return (
@@ -100,6 +94,18 @@ function ControlPanelInner() {
           Your account doesn&apos;t have control access for this organization.
         </div>
       </div>
+    );
+  }
+
+  // Until the relay sends this match's state, `state` is a blank default —
+  // rendering it would look like a brand-new match (0–0, default names) and
+  // invite edits against the wrong values.
+  if (!stateLoaded) {
+    return (
+      <ControlLoading
+        message={relayUnreachable ? "Can't reach the scoring server — retrying…" : "Loading match…"}
+        testId="control-loading-match"
+      />
     );
   }
 
@@ -301,6 +307,17 @@ function ControlPanelInner() {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function ControlLoading({ message, testId }: { readonly message: string; readonly testId?: string }) {
+  return (
+    <div data-testid={testId} role="status" aria-live="polite"
+      className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: "var(--bg-base)" }}>
+      <div className="h-8 w-8 rounded-full border-2 animate-spin"
+        style={{ borderColor: "var(--border)", borderTopColor: "var(--accent)" }} aria-hidden />
+      <div className="text-sm" style={{ color: "var(--text-dim)" }}>{message}</div>
     </div>
   );
 }

@@ -82,6 +82,7 @@ function makeState(overrides: Partial<MatchState> = {}): MatchState {
 function makeMatchStateReturn(overrides: Record<string, unknown> = {}) {
   return {
     state: makeState(),
+    stateLoaded: true,
     status: "connected",
     feedStale: false,
     relayUnreachable: false,
@@ -139,6 +140,21 @@ describe("ControlPanel", () => {
     render(<ControlPanel />);
     expect(screen.getByText(/doesn't have control access/)).toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+  });
+
+  it("shows a loader, not a blank new-looking match, until the match's state arrives", () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", name: "Sam Operator" } }, status: "authenticated" });
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ stateLoaded: false }));
+    render(<ControlPanel />);
+    expect(screen.getByTestId("control-loading-match")).toHaveTextContent("Loading match…");
+    expect(screen.queryByTestId("score-tab")).not.toBeInTheDocument();
+  });
+
+  it("says so when the relay can't be reached while loading", () => {
+    useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR" } }, status: "authenticated" });
+    useMatchStateMock.mockReturnValue(makeMatchStateReturn({ stateLoaded: false, relayUnreachable: true }));
+    render(<ControlPanel />);
+    expect(screen.getByTestId("control-loading-match")).toHaveTextContent("Can't reach the scoring server");
   });
 
   it("renders the score tab by default for an authenticated operator", () => {
