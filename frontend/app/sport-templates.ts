@@ -138,8 +138,9 @@ export const SPORT_TEMPLATES: SportTemplate[] = [
     countDown: false,
     timeoutsPerTeam: 0,
     defaultPossession: "home",
-    scoreIncrements: [3, 5, 7],
-    scoreLabels: ["PEN/DG", "TRY", "CONV TRY"],
+    // A conversion is its own +2 too, for a try entered before the kick is taken
+    scoreIncrements: [2, 3, 5, 7],
+    scoreLabels: ["CONV", "PEN/DG", "TRY", "CONV TRY"],
     // Knockout rugby plays 2 × 10:00; the clock counts up, so there's no length to set
     extraTime: {},
   },
@@ -153,8 +154,9 @@ export const SPORT_TEMPLATES: SportTemplate[] = [
     countDown: false,
     timeoutsPerTeam: 0,
     defaultPossession: "home",
-    scoreIncrements: [2, 4, 6],
-    scoreLabels: ["CONV/PEN", "TRY", "CONV TRY"],
+    // +1 is a field goal (drop goal)
+    scoreIncrements: [1, 2, 4, 6],
+    scoreLabels: ["FG", "CONV/PEN", "TRY", "CONV TRY"],
     // Golden point, 2 × 5:00 — first score wins. Counts up, so no length to set
     extraTime: { label: "GP" },
   },

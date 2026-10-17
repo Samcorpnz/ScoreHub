@@ -14,14 +14,14 @@ import { ClockAdjustButtons, NameField, ScoreButtons, SectionLabel, SmallBtn } f
 type Side = "home" | "visitor";
 type AdjustFn = (args: { side: Side; delta: number }) => void;
 
-// Keys 1/2/3 → increment[0/1/2]; Q/W/E → negative; mirror on right side (9/0/8, O/P/I).
+// Keys 1/2/3/4 → increment[0/1/2/3]; Q/W/E/R → negative; mirror on right side (9/0/8/7, O/P/I/U).
 // Returns true if the key matched a score-adjust binding (and applied it).
 function tryScoreAdjustKey(key: string, inc: readonly number[], adjust: AdjustFn): boolean {
   const bindings: [string, Side, number, boolean][] = [
-    ["1", "home", 0, false], ["2", "home", 1, false], ["3", "home", 2, false],
-    ["q", "home", 0, true], ["Q", "home", 0, true], ["w", "home", 1, true], ["W", "home", 1, true], ["e", "home", 2, true], ["E", "home", 2, true],
-    ["9", "visitor", 0, false], ["0", "visitor", 1, false], ["8", "visitor", 2, false],
-    ["o", "visitor", 0, true], ["O", "visitor", 0, true], ["p", "visitor", 1, true], ["P", "visitor", 1, true], ["i", "visitor", 2, true], ["I", "visitor", 2, true],
+    ["1", "home", 0, false], ["2", "home", 1, false], ["3", "home", 2, false], ["4", "home", 3, false],
+    ["q", "home", 0, true], ["Q", "home", 0, true], ["w", "home", 1, true], ["W", "home", 1, true], ["e", "home", 2, true], ["E", "home", 2, true], ["r", "home", 3, true], ["R", "home", 3, true],
+    ["9", "visitor", 0, false], ["0", "visitor", 1, false], ["8", "visitor", 2, false], ["7", "visitor", 3, false],
+    ["o", "visitor", 0, true], ["O", "visitor", 0, true], ["p", "visitor", 1, true], ["P", "visitor", 1, true], ["i", "visitor", 2, true], ["I", "visitor", 2, true], ["u", "visitor", 3, true], ["U", "visitor", 3, true],
   ];
   for (const [k, side, idx, negate] of bindings) {
     if (key !== k || inc[idx] === undefined) continue;
@@ -411,16 +411,16 @@ export function ScoreTab({
         <span className="font-semibold w-full" style={{ color: "var(--text-secondary)" }}>Keyboard shortcuts</span>
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>Space</kbd> Start/Stop</span>
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>⌘Z</kbd> Undo</span>
-        {(["1", "2", "3"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["1", "2", "3", "4"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Home +{scoreIncrements[i]}{scoreLabels?.[i] ? ` (${scoreLabels[i]})` : ""}</span>
         ))}
-        {(["Q", "W", "E"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["Q", "W", "E", "R"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Home −{scoreIncrements[i]}</span>
         ))}
-        {(["9", "0", "8"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["9", "0", "8", "7"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Visitor +{scoreIncrements[i]}{scoreLabels?.[i] ? ` (${scoreLabels[i]})` : ""}</span>
         ))}
-        {(["O", "P", "I"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
+        {(["O", "P", "I", "U"] as const).map((key, i) => scoreIncrements[i] !== undefined && (
           <span key={key}><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>{key}</kbd> Visitor −{scoreIncrements[i]}</span>
         ))}
         <span><kbd className="px-1.5 py-0.5 rounded font-mono" style={{ background: "var(--bg-elevated)" }}>[</kbd><kbd className="px-1.5 py-0.5 rounded font-mono ml-1" style={{ background: "var(--bg-elevated)" }}>]</kbd> Period −/+</span>

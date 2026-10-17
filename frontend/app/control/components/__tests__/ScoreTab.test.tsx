@@ -291,6 +291,23 @@ describe("ScoreTab", () => {
     });
   });
 
+  it.each([
+    ["rugby_union", [2, 3, 5, 7]],
+    ["rugby_league", [1, 2, 4, 6]],
+  ] as const)("gives %s a button and keys for each of its four score values", (sport, values) => {
+    const handlers = makeHandlers();
+    render(<ScoreTab state={makeState({ sport })} {...handlers} />);
+    for (const v of values) expect(screen.getByTestId(`score-home-inc-${v}`)).toBeInTheDocument();
+    fireEvent.keyDown(globalThis.window, { key: "4" });
+    expect(handlers.sendScoreAdjust).toHaveBeenLastCalledWith({ side: "home", delta: values[3] });
+    fireEvent.keyDown(globalThis.window, { key: "r" });
+    expect(handlers.sendScoreAdjust).toHaveBeenLastCalledWith({ side: "home", delta: -values[3] });
+    fireEvent.keyDown(globalThis.window, { key: "7" });
+    expect(handlers.sendScoreAdjust).toHaveBeenLastCalledWith({ side: "visitor", delta: values[3] });
+    fireEvent.keyDown(globalThis.window, { key: "U" });
+    expect(handlers.sendScoreAdjust).toHaveBeenLastCalledWith({ side: "visitor", delta: -values[3] });
+  });
+
   it("toggles home possession when the home-ball button is clicked", () => {
     const handlers = makeHandlers();
     render(<ScoreTab state={makeState({ possession: "none" })} {...handlers} />);
