@@ -86,7 +86,7 @@ describe("DashboardPage", () => {
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/orgs/org-1/matches?status=LIVE"))
     );
     expect(await screen.findByText("Sharks v Magic")).toBeInTheDocument();
-    expect(screen.getByText("Open Control →").closest("a")).toHaveAttribute("href", "/control?matchId=match-1");
+    expect(screen.getByText("Open Control →").closest("a")).toHaveAttribute("href", "/control/match-1");
   });
 
   it("shows 'No matches here yet.' when the list is empty", async () => {
@@ -271,7 +271,7 @@ describe("DashboardPage", () => {
     renderPage();
     fireEvent.click(await screen.findByText("Reopen"));
 
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control?matchId=ended-1"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control/ended-1"));
     expect(fetchMock).toHaveBeenCalledWith("/api/orgs/org-1/matches/ended-1/reopen", { method: "POST" });
   });
 

@@ -104,7 +104,7 @@ test.describe("adversarial: try to break it", () => {
     await waitForLive(page);
 
     const secondTab = await context.newPage();
-    await secondTab.goto(`/control?matchId=${matchId}`);
+    await secondTab.goto(`/control/${matchId}`);
     await expect(secondTab.getByTestId("controller-conflict-banner")).toBeVisible({ timeout: 10_000 });
     await secondTab.getByTestId("take-control").click();
     await expect(secondTab.getByTestId("controller-conflict-banner")).not.toBeVisible();
@@ -128,7 +128,7 @@ test.describe("adversarial: try to break it", () => {
   test("direct navigation to a nonexistent matchId does not hang or crash", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", err => errors.push(String(err)));
-    await page.goto("/control?matchId=00000000-0000-0000-0000-000000000000");
+    await page.goto("/control/00000000-0000-0000-0000-000000000000");
     await expect(page.getByTestId("connection-status")).toBeVisible({ timeout: 10_000 });
     expect(errors).toEqual([]);
   });
@@ -155,7 +155,7 @@ test.describe("adversarial: try to break it", () => {
     await waitForLive(page);
     await endMatch(page);
 
-    await page.goto(`/control?matchId=${matchId}`);
+    await page.goto(`/control/${matchId}`);
     const scoreButton = page.getByTestId("score-home-inc-1");
     if (await scoreButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await scoreButton.click();

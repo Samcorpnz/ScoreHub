@@ -1,19 +1,19 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import ControlPanel from "../page";
-import { DEFAULT_MATCH_STATE } from "../../types";
+import { DEFAULT_MATCH_STATE } from "../../../types";
 import type { MatchState } from "@scorehub/types";
 
 const {
   pushMock,
-  searchParamsMock,
+  paramsMock,
   signOutMock,
   useSessionMock,
   useMatchStateMock,
   useControlTokenMock,
 } = vi.hoisted(() => ({
   pushMock: vi.fn(),
-  searchParamsMock: vi.fn(),
+  paramsMock: vi.fn(),
   signOutMock: vi.fn(),
   useSessionMock: vi.fn(),
   useMatchStateMock: vi.fn(),
@@ -22,7 +22,7 @@ const {
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
-  useSearchParams: () => searchParamsMock(),
+  useParams: () => paramsMock(),
 }));
 
 vi.mock("next-auth/react", () => ({
@@ -30,43 +30,43 @@ vi.mock("next-auth/react", () => ({
   signOut: signOutMock,
 }));
 
-vi.mock("../../hooks/useMatchState", () => ({
+vi.mock("../../../hooks/useMatchState", () => ({
   useMatchState: useMatchStateMock,
 }));
 
-vi.mock("../../hooks/useControlToken", () => ({
+vi.mock("../../../hooks/useControlToken", () => ({
   useControlToken: useControlTokenMock,
 }));
 
-vi.mock("../../hooks/useSoundCues", () => ({
+vi.mock("../../../hooks/useSoundCues", () => ({
   useSoundCues: () => ({ cues: [], addCue: vi.fn(), removeCue: vi.fn() }),
   useSoundPlayback: vi.fn(),
 }));
 
-vi.mock("../../components/PlanBadge", () => ({
+vi.mock("../../../components/PlanBadge", () => ({
   PlanBadge: () => <div data-testid="plan-badge" />,
 }));
 
-vi.mock("../../components/OrgSwitcher", () => ({
+vi.mock("../../../components/OrgSwitcher", () => ({
   OrgSwitcher: () => <div data-testid="org-switcher" />,
 }));
 
-vi.mock("../components/ScoreTab", () => ({
+vi.mock("../../components/ScoreTab", () => ({
   ScoreTab: ({ state }: { state: MatchState }) => <div data-testid="score-tab">{state.matchName}</div>,
 }));
-vi.mock("../components/OutputsTab", () => ({
+vi.mock("../../components/OutputsTab", () => ({
   OutputsTab: ({ matchId }: { matchId?: string }) => <div data-testid="outputs-tab">{matchId ?? "no-match-id"}</div>,
 }));
-vi.mock("../components/LogosTab", () => ({
+vi.mock("../../components/LogosTab", () => ({
   LogosTab: ({ controlToken }: { controlToken: string }) => <div data-testid="logos-tab">{controlToken}</div>,
 }));
-vi.mock("../components/ThemeTab", () => ({
+vi.mock("../../components/ThemeTab", () => ({
   ThemeTab: () => <div data-testid="theme-tab" />,
 }));
-vi.mock("../components/AudioTab", () => ({
+vi.mock("../../components/AudioTab", () => ({
   AudioTab: () => <div data-testid="audio-tab" />,
 }));
-vi.mock("../components/SettingsTab", () => ({
+vi.mock("../../components/SettingsTab", () => ({
   SettingsTab: ({ matchId, onEnded }: { matchId?: string; onEnded: () => void }) => (
     <div data-testid="settings-tab">
       {matchId ?? "no-match-id"}
@@ -102,7 +102,7 @@ function makeMatchStateReturn(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  searchParamsMock.mockReturnValue({ get: () => null });
+  paramsMock.mockReturnValue({ matchId: "match-1" });
   useControlTokenMock.mockReturnValue("control-secret");
   useMatchStateMock.mockReturnValue(makeMatchStateReturn());
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
@@ -128,7 +128,7 @@ describe("ControlPanel", () => {
       return { data: null, status: "unauthenticated" };
     });
     render(<ControlPanel />);
-    expect(pushMock).toHaveBeenCalledWith("/login?callbackUrl=/control");
+    expect(pushMock).toHaveBeenCalledWith("/login?callbackUrl=%2Fcontrol%2Fmatch-1");
   });
 
   it("shows a no-access message for VIEWER-role users instead of the panel", () => {
@@ -153,7 +153,7 @@ describe("ControlPanel", () => {
   });
 
   it("switches tabs on click, passing matchId through to Outputs/Settings tabs", () => {
-    searchParamsMock.mockReturnValue({ get: (k: string) => (k === "matchId" ? "match-42" : null) });
+    paramsMock.mockReturnValue({ matchId: "match-42" });
     useSessionMock.mockReturnValue({
       data: { user: { activeRole: "ADMIN", name: "Ada Admin" } },
       status: "authenticated",

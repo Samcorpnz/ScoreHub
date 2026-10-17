@@ -179,7 +179,7 @@ export default function DashboardPage() {
         setReopenError(body?.error ?? "Couldn't reopen the match — try again.");
         return;
       }
-      router.push(`/control?matchId=${matchId}`);
+      router.push(`/control/${matchId}`);
     } catch {
       setReopenError("Couldn't reach the server — try again.");
     } finally {
@@ -366,7 +366,7 @@ export default function DashboardPage() {
                     )}
                     {clickable ? (
                       <a
-                        href={`/control?matchId=${m.id}`}
+                        href={`/control/${m.id}`}
                         className="rounded-lg px-3 py-1.5 text-xs font-black whitespace-nowrap"
                         style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
                       >

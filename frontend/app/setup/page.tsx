@@ -97,7 +97,7 @@ export default function SetupPage() {
         },
       }),
     }).then(() => {
-      router.push(`/control?matchId=${matchId}`);
+      router.push(`/control/${matchId}`);
     });
     // Deliberately keyed on the state/connection transition only. The patch must
     // be sent once when the socket connects: matchState and sendManualUpdate

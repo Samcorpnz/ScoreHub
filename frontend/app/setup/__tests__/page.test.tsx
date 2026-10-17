@@ -116,7 +116,7 @@ describe("SetupPage", () => {
     expect(payload.matchName).toBe("Round 1");
     expect(payload.home.name).toBe("Sharks");
     expect(payload.visitor.name).toBe("Magic");
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control?matchId=match-123"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control/match-123"));
   });
 
   it("shows an upgrade-required message on a 402 response", async () => {

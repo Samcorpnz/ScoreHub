@@ -30,6 +30,7 @@ function MobileControlInner() {
   // than the match its displays are showing (SA-144).
   const matchId = useSearchParams().get("matchId") ?? undefined;
   const matchQuery = matchId ? `?matchId=${encodeURIComponent(matchId)}` : "";
+  const fullPanelHref = matchId ? `/control/${encodeURIComponent(matchId)}` : "/dashboard";
   const controlToken = useControlToken(matchId);
   const {
     state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
@@ -115,7 +116,7 @@ function MobileControlInner() {
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <ConnectionBadge status={status} feedStale={feedStale} relayUnreachable={relayUnreachable} />
-          <a href={`/control${matchQuery}`} style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
+          <a href={fullPanelHref} style={{ fontSize: 11, color: "var(--text-dim)", textDecoration: "none" }}>
             Full panel ↗
           </a>
         </div>
@@ -131,7 +132,7 @@ function MobileControlInner() {
           }}
         >
           This match has ended, so it can&apos;t be changed.{" "}
-          <a href={`/control${matchQuery}`} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
+          <a href={fullPanelHref} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
         </div>
       )}
 

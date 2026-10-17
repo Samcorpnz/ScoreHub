@@ -48,15 +48,14 @@ export async function createMatch(page: Page, opts: CreateMatchOptions): Promise
     await page.getByTestId("squad-submit").click();
   }
 
-  await page.waitForURL(/\/control\?matchId=/);
-  const url = new URL(page.url());
-  const matchId = url.searchParams.get("matchId");
+  await page.waitForURL(url => /^\/control\/[^/]+$/.test(url.pathname));
+  const matchId = decodeURIComponent(new URL(page.url()).pathname.split("/")[2] ?? "");
   if (!matchId) throw new Error(`createMatch: no matchId in URL after submit (${page.url()})`);
   return { matchId };
 }
 
 export async function openControl(page: Page, matchId: string): Promise<void> {
-  await page.goto(`/control?matchId=${matchId}`);
+  await page.goto(`/control/${matchId}`);
 }
 
 export type DisplayKind = "basic" | "advanced" | "overlay" | "scorebug" | "fullscreen" | "graphics";
