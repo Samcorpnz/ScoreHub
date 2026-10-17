@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { MatchState, DisplayTheme, DEFAULT_DISPLAY_THEME } from "../../types";
 import { RELAY_URL } from "../lib/relay";
+import { resolveDisplayAssetUrl } from "../../hooks/useDisplayTheme";
 import { Card, ColorSwatch, LogoUploadCard, SectionLabel } from "./primitives";
 
 const FONT_SUGGESTIONS = [
@@ -20,6 +21,9 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
 
   const primaryColor = theme.primaryColor || DEFAULT_DISPLAY_THEME.primaryColor;
   const backgroundColor = theme.backgroundColor || DEFAULT_DISPLAY_THEME.backgroundColor;
+  const panelOpacity = theme.panelOpacity ?? 1;
+  // Shown to the operator as transparency (0% = solid), stored as opacity
+  const transparencyPct = Math.round((1 - panelOpacity) * 100);
 
   return (
     <div className="space-y-6">
@@ -27,9 +31,23 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
       <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <SectionLabel>Preview</SectionLabel>
         <div
-          className="mt-4 rounded-xl flex items-center justify-center gap-8 py-6 px-4"
-          style={{ background: backgroundColor, fontFamily: theme.font ? `"${theme.font}", sans-serif` : undefined }}
+          data-testid="theme-preview"
+          className="mt-4 rounded-xl flex items-center justify-center py-6 px-4"
+          style={{
+            backgroundColor,
+            ...(theme.backgroundImageUrl && {
+              backgroundImage: `url(${JSON.stringify(resolveDisplayAssetUrl(theme.backgroundImageUrl))})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }),
+            fontFamily: theme.font ? `"${theme.font}", sans-serif` : undefined,
+          }}
         >
+          <div
+            data-testid="theme-preview-panel"
+            className="rounded-xl flex items-center justify-center gap-8 py-4 px-6"
+            style={{ background: `rgba(13, 17, 32, ${panelOpacity})` }}
+          >
           {theme.competitionLogoUrl && (
             <div style={{ position: "relative", height: 48, width: 48, flexShrink: 0 }}>
               <Image
@@ -63,6 +81,7 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
             <p className="text-xs font-bold tracking-widest uppercase mt-1" style={{ color: "#ffffff99" }}>
               {state.visitor.name || "VISITOR"}
             </p>
+          </div>
           </div>
         </div>
       </div>
@@ -107,6 +126,50 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
               <button key={c} style={{ width: 28, height: 28, borderRadius: 6, background: c, border: `2px solid ${backgroundColor === c ? "white" : "#ffffff33"}` }}
                 onClick={() => updateTheme({ backgroundColor: c })} />
             ))}
+          </div>
+        </Card>
+
+        {/* Background image */}
+        <BackgroundImageUploader theme={theme} updateTheme={updateTheme} controlToken={controlToken} />
+
+        {/* Panel transparency */}
+        <Card title="Score Panel Transparency">
+          <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+            Lets the background colour or image show through the score panels. 0% is solid.
+          </p>
+          <div className="flex items-center gap-4 mt-2">
+            <span className="text-xs font-mono w-8 text-right" style={{ color: "var(--text-dim)" }}>0%</span>
+            <input
+              type="range"
+              data-testid="theme-panel-transparency"
+              aria-label="Score panel transparency"
+              min={0}
+              max={100}
+              step={5}
+              value={transparencyPct}
+              className="flex-1"
+              onChange={e => updateTheme({ panelOpacity: 1 - Number.parseInt(e.target.value, 10) / 100 })}
+            />
+            <span className="text-xs font-mono w-8" style={{ color: "var(--text-dim)" }}>100%</span>
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <code className="text-sm font-mono font-bold" style={{ color: "var(--accent)" }}>{transparencyPct}%</code>
+            <div className="flex gap-2">
+              {[0, 25, 50, 75].map(pct => (
+                <button
+                  key={pct}
+                  className="rounded px-2 py-1 text-xs font-bold"
+                  style={{
+                    background: transparencyPct === pct ? "var(--accent-dim)" : "var(--bg-elevated)",
+                    border: `1px solid ${transparencyPct === pct ? "var(--border-accent)" : "var(--border)"}`,
+                    color: transparencyPct === pct ? "var(--accent)" : "var(--text-secondary)",
+                  }}
+                  onClick={() => updateTheme({ panelOpacity: 1 - pct / 100 })}
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
           </div>
         </Card>
 
@@ -215,6 +278,50 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
         </button>
       </div>
     </div>
+  );
+}
+
+function BackgroundImageUploader({ theme, updateTheme, controlToken }: {
+  readonly theme: DisplayTheme;
+  readonly updateTheme: (p: Partial<DisplayTheme>) => void;
+  readonly controlToken: string;
+}) {
+  const handleUpload = async (file: File) => {
+    const fd = new FormData();
+    fd.append("background", file);
+    const res = await fetch(`${RELAY_URL}/api/display-background`, {
+      method: "POST",
+      headers: { "x-control-secret": controlToken },
+      body: fd,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const { backgroundImageUrl } = await res.json();
+    updateTheme({ backgroundImageUrl });
+  };
+
+  const handleRemove = async () => {
+    await fetch(`${RELAY_URL}/api/display-background`, {
+      method: "DELETE",
+      headers: { "x-control-secret": controlToken },
+    });
+    updateTheme({ backgroundImageUrl: "" });
+  };
+
+  return (
+    <Card title="Display Background Image">
+      <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+        Fills the full-screen, basic and advanced displays, over the background colour. The overlay,
+        score bug and graphics stay transparent for OBS and vMix. A 1920×1080 JPG or PNG, up to 5 MB.
+      </p>
+      <LogoUploadCard
+        testId="background-image"
+        logoSrc={theme.backgroundImageUrl ? resolveDisplayAssetUrl(theme.backgroundImageUrl) : null}
+        alt="Display background"
+        activeBorderColor="rgba(0,200,255,0.3)"
+        onUpload={handleUpload}
+        onRemove={handleRemove}
+      />
+    </Card>
   );
 }
 

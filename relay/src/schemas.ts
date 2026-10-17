@@ -32,6 +32,8 @@ const displayThemeSchema = z.object({
   font: z.string().max(100),
   textScale: z.number().min(0.1).max(10),
   competitionLogoUrl: z.string().max(2000),
+  backgroundImageUrl: z.string().max(2000),
+  panelOpacity: z.number().min(0).max(1),
 }).partial();
 
 const possessionSchema = z.enum(["home", "visitor", "both", "none"]);

@@ -3,20 +3,20 @@ export const metadata = { title: "Branding your displays" };
 # Branding your displays
 
 You can match your displays to your club or competition: team colours, team logos, an accent
-colour, a background, a font, and a competition logo. Changes show on every display for the match
+colour, a background colour or image, a font, and a competition logo. Changes show on every display for the match
 as soon as you make them.
 
 | What | Where | Plan |
 | --- | --- | --- |
 | Team colours | Control panel → **Settings** | All plans |
-| Accent colour, background, font, text size | Control panel → **Theme** | Pro and Venue |
+| Accent colour, background colour or image, panel transparency, font, text size | Control panel → **Theme** | Pro and Venue |
 | Team logos | Control panel → **Logos** | Pro and Venue |
 | Competition logo | Control panel → **Theme** | Pro and Venue |
 
 ## Team colours
 
-On the **Settings** tab, **Home — Team Colour** and **Visitor — Team Colour** each have a colour
-picker and a row of presets. A team's colour is used for its score, colour strips and possession
+On the **Settings** tab, the **Home Team** and **Visitor Team** cards each have a colour picker and
+a row of presets, under the team's name. A team's colour is used for its score, colour strips and possession
 indicator on every display.
 
 ## Team logos
@@ -34,6 +34,11 @@ The **Theme** tab has a live preview at the top and these settings:
 - **Primary / Accent Colour** — used for the clock, period and highlights.
 - **Display Background Colour** — the background of the scoreboard displays. The overlay,
   scorebug and graphics displays always stay transparent.
+- **Display Background Image** — an image that fills the Fullscreen, Basic and Advanced displays,
+  over the background colour. It's cropped to fill the screen, so a 1920×1080 image fits best.
+  The overlay, scorebug and graphics displays stay transparent so they still layer over video.
+- **Score Panel Transparency** — how much of the background shows through the score panels, from
+  0% (solid) up. Raise it when you use a background image you want to stay visible.
 - **Display Font** — type the name of any [Google Font](https://fonts.google.com), or pick a
   suggestion. Condensed fonts such as Bebas Neue, Oswald or Barlow Condensed suit scoreboards.
   Leave it blank, or select **Clear font**, for the default.
@@ -42,14 +47,15 @@ The **Theme** tab has a live preview at the top and these settings:
 - **Competition / Event Logo** — shown in the header of displays that have one. Separate from team
   logos.
 
-**Reset Theme to Defaults** puts the colours, font and text scale back and removes the competition
-logo.
+**Reset Theme to Defaults** puts the colours, font, text scale and panel transparency back and
+removes the background image and competition logo.
 
 ## Image requirements
 
 | | Formats | Maximum size |
 | --- | --- | --- |
 | Team and competition logos | PNG, JPG, SVG, WebP, GIF | 5 MB |
+| Display background image | PNG, JPG, SVG, WebP, GIF | 5 MB |
 
 ## Things to know
 

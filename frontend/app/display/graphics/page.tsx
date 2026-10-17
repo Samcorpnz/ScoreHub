@@ -43,7 +43,7 @@ export default function GraphicsDisplay() {
   // fetch would expose the org's people database to anyone with the share URL.
   const feedPlayerIds = (state.graphicsFeed?.stats.players ?? []).map(p => p.id);
   const roster = useRoster(org, feedPlayerIds);
-  const { backgroundColor, textScale: _textScale, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
+  const { backgroundColor, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _textScale, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
 
   useEffect(() => {
     const url = org ? `${RELAY_URL}/api/graphics/entitlement?org=${encodeURIComponent(org)}` : `${RELAY_URL}/api/graphics/entitlement`;
