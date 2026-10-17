@@ -59,7 +59,7 @@ class RelayClient {
   token = "";
 
   // Called when global settings are saved in the PI. Resolves which match
-  // the keys act on, then opens a viewer socket for live state updates.
+  // the keys act on, then opens a read-only socket for live state updates.
   //
   // A token pinned to a match always uses that match. Otherwise the match
   // chosen in the PI's picker is used — without one the keys would act on
@@ -93,8 +93,14 @@ class RelayClient {
     this.socket?.disconnect();
     if (!this.orgId) return;
 
+    // Role "monitor" proves itself with the control token and only ever
+    // receives state. The relay serves the unauthenticated display feed to
+    // ScoreHub's own pages only (DISPLAY_ORIGIN_REQUIRED, SA-159), and this
+    // process has no browser origin to offer. orgId and the display token
+    // are still sent so a relay from before that role existed, which ignores
+    // the role and treats this as a viewer, keeps working.
     this.socket = io(this.relayUrl, {
-      auth: { orgId: this.orgId, matchId: this.matchId, token: this.displayToken },
+      auth: { secret: this.token, role: "monitor", orgId: this.orgId, matchId: this.matchId, token: this.displayToken },
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

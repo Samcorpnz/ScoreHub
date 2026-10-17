@@ -169,11 +169,16 @@ function credsMissing(cfg, c) {
   return need.filter(([, v]) => !v).map(([k]) => k);
 }
 
-// A viewer socket exactly as a display page opens one (org + match + display
+// A read-only socket on the smoke match, as close to a display page's as a
+// script can get (org + match + display
 // token, no secret), which remembers the latest state and lets a check wait
 // for a state satisfying a predicate.
 function openViewer(cfg, c) {
-  const auth = cfg.expect === "legacy" ? {} : { orgId: c.org, matchId: c.match, token: c.display };
+  // The relay only serves the display feed to browsers on ScoreHub's own
+  // origin (DISPLAY_ORIGIN_REQUIRED, SA-159). This isn't one, so it watches
+  // through role "monitor" with the control token; the display token is still
+  // sent, as a display would, for a relay without that lock.
+  const auth = cfg.expect === "legacy" ? {} : { secret: c.control, role: "monitor", orgId: c.org, matchId: c.match, token: c.display };
   return new Promise((resolve, reject) => {
     const socket = io(cfg.relay, { auth, reconnection: false, transports: ["websocket"], timeout: 10_000 });
     const viewer = { socket, state: null, lastSeq: -1, regressions: 0, waiters: [] };
@@ -199,7 +204,7 @@ const control = (cfg, c) => (path, init = {}) =>
 
 async function readState(cfg, c) {
   const q = cfg.expect === "legacy" ? "" : `?org=${encodeURIComponent(c.org)}&matchId=${encodeURIComponent(c.match)}&token=${encodeURIComponent(c.display)}`;
-  const res = await get(`${cfg.relay}/state${q}`);
+  const res = await get(`${cfg.relay}/state${q}`, { headers: { "x-control-secret": c.control } });
   expectStatus(res, [200], "relay /state for the smoke match");
   return res.json();
 }

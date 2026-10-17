@@ -15,6 +15,16 @@ export const metadata: Metadata = {
   },
   description:
     "Documentation for ScoreHub — setting up matches for every supported sport, connecting a scoring console, managing your account and team, and billing.",
+  // "./" resolves against each page's own path, so every page gets a
+  // self-referencing canonical without declaring one.
+  alternates: {
+    canonical: "./",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "ScoreHub Help Centre",
+    locale: "en_NZ",
+  },
 };
 
 export default function RootLayout({ children }: { readonly children: React.ReactNode }) {

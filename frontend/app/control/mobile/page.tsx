@@ -8,7 +8,7 @@ import { useControlToken } from "../../hooks/useControlToken";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { ConnectionBadge } from "../../components/ConnectionBadge";
 import { MatchState, formatClock } from "../../types";
-import { getTemplate, getMatchLength } from "../../sport-templates";
+import { getMatchLength, getPeriodLabel, getPeriodNumber, getScoreIncrements } from "../../sport-templates";
 
 const CLOCK_PRESETS = [5, 8, 10, 12, 15, 20, 25, 30, 40, 45].map(m => ({
   label: `${m}m`,
@@ -32,7 +32,7 @@ function MobileControlInner() {
   const matchQuery = matchId ? `?matchId=${encodeURIComponent(matchId)}` : "";
   const controlToken = useControlToken(matchId);
   const {
-    state, status, feedStale, relayUnreachable, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
+    state, status, feedStale, relayUnreachable, matchEnded, sendManualUpdate, sendReset, sendUndo, sendScoreAdjust,
     controllerStatus, takeControl, estimateServerNow,
   } = useMatchState({
     secret: controlToken,
@@ -73,9 +73,14 @@ function MobileControlInner() {
   };
 
   const clockRunning = state.isRunning;
-  const increments   = getTemplate(state.sport).scoreIncrements;
+  // Follows the clock for Fast5, whose outer and super shots double in a Power Play
+  const increments   = getScoreIncrements(state, displayClock);
   const period       = Number.parseInt(state.period || "1", 10);
-  const periodLabel  = getTemplate(state.sport).periodLabel;
+  // "QTR 3", or "ET 1" once past regulation — for this period and its neighbours
+  const periodName   = (n: number) => {
+    const at = { ...state, period: String(n) };
+    return `${getPeriodLabel(at)} ${getPeriodNumber(at)}`;
+  };
   const inControl    = controllerStatus === "granted";
 
   return (
@@ -115,6 +120,20 @@ function MobileControlInner() {
           </a>
         </div>
       </div>
+
+      {/* ── Ended match ── */}
+      {matchEnded && (
+        <div
+          data-testid="match-ended-banner"
+          style={{
+            padding: "8px 16px", flexShrink: 0, fontSize: 11, fontWeight: 700, color: "#ff3c3c",
+            background: "rgba(255,60,60,0.12)", borderBottom: "1px solid rgba(255,60,60,0.3)",
+          }}
+        >
+          This match has ended, so it can&apos;t be changed.{" "}
+          <a href={`/control${matchQuery}`} style={{ color: "#ff3c3c", textDecoration: "underline" }}>Open the full panel</a> to reopen it.
+        </div>
+      )}
 
       {/* ── Controller status ── */}
       {controllerStatus !== "connecting" && (
@@ -193,7 +212,7 @@ function MobileControlInner() {
             fontSize: 11, fontWeight: 700, letterSpacing: 2,
             textTransform: "uppercase", color: "var(--accent)", marginTop: 4,
           }}>
-            {state.sport.replace("_", " ")} · {periodLabel} {state.period}
+            {state.sport.replace("_", " ")} · {getPeriodLabel(state)} {getPeriodNumber(state)}
           </div>
         </div>
 
@@ -220,11 +239,11 @@ function MobileControlInner() {
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           <TinyBtn label={showSetTime ? "▲ Time" : "▼ Time"} onClick={() => setShowSetTime(v => !v)} />
           <TinyBtn
-            label={`◀ ${periodLabel} ${Math.max(1, period - 1)}`}
+            label={`◀ ${periodName(Math.max(1, period - 1))}`}
             onClick={() => push({ period: String(Math.max(1, period - 1)) })}
           />
           <TinyBtn
-            label={`${periodLabel} ${period + 1} ▶`}
+            label={`${periodName(period + 1)} ▶`}
             onClick={() => {
               const max = getMatchLength(state);
               if (max === undefined || period < max) push({ period: String(period + 1) });

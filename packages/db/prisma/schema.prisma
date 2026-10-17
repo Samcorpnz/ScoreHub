@@ -109,10 +109,28 @@ model Match {
   displayToken String? @unique
 
   tokens ScopedToken[]
+  events MatchEvent[]
 
   @@index([orgId, status])
   @@index([orgId, sport])
   @@index([orgId, competition])
+}
+
+// A match's event log — one row per thing that happened (score, period
+// change, clock start/stop), written by the relay as it happens. `seq` is a
+// plain autoincrement, so it orders events within a match and doubles as the
+// `since` cursor for GET /api/data-feed/events. `data` holds the rest of the
+// MatchEvent shape (packages/types) as Json for the same reason Match.state
+// is Json: the relay's TypeScript type stays the single source of truth.
+model MatchEvent {
+  seq     BigInt   @id @default(autoincrement())
+  matchId String
+  match   Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  type    String
+  at      DateTime
+  data    Json
+
+  @@index([matchId, seq])
 }
 
 model User {

@@ -3,6 +3,12 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # A push that only touches the Better Stack Terraform has nothing to
+    # deploy here — infra-betterstack.yml plans and applies it. Keep this list
+    # in step with test.yml's.
+    paths-ignore:
+      - "infra/betterstack/**"
+      - ".github/workflows/infra-betterstack.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -12,10 +18,36 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
+  # A run paused at the production approval gate stays approvable indefinitely,
+  # and approving an old one would ship that older commit over a newer deploy.
+  # So once this run's tests pass, it cancels every older run still waiting for
+  # approval. Only `waiting` runs are touched: one that has been approved and is
+  # mid-deploy is left to finish, since cancelling it could leave relay and
+  # frontend on different commits (which is why this isn't a workflow-level
+  # `concurrency` group with cancel-in-progress).
+  cancel-superseded:
+    name: Cancel superseded deploy runs
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel older runs still waiting for approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=waiting&per_page=100" \
+            --jq ".workflow_runs[] | select(.run_number < $GITHUB_RUN_NUMBER) | .id" |
+          while read -r id; do
+            echo "Cancelling superseded run $id"
+            gh run cancel "$id" --repo "$GITHUB_REPOSITORY"
+          done
+
   deploy-relay:
     name: Deploy relay (Fly.io)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Requires manual approval via the "production" GitHub Environment's
     # required reviewers (configure in repo Settings → Environments) before
     # this job is allowed to run, even though it's triggered automatically
@@ -32,7 +64,7 @@ jobs:
   deploy-frontend:
     name: Deploy frontend (Vercel)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -66,7 +98,7 @@ jobs:
   smoke-test:
     name: Post-deploy smoke test
     needs: [deploy-relay, deploy-frontend]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Every run scores +1 then -1 on the one smoke match; two overlapping runs
     # would corrupt each other's baseline, so they queue rather than cancel.
@@ -110,7 +142,7 @@ jobs:
   deploy-marketing:
     name: Deploy marketing site (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Same production-environment gate as relay/frontend above — previously
     # this site deployed manually (`cd marketing && npm run build && npx
     # wrangler deploy`) with no CI and no review step at all.
@@ -133,7 +165,7 @@ jobs:
   deploy-help:
     name: Deploy help centre (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     defaults:
       run:
@@ -153,7 +185,7 @@ jobs:
   deploy-downloads:
     name: Deploy downloads redirect (Cloudflare Worker)
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     defaults:
       run:

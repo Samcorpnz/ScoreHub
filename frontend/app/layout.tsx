@@ -4,8 +4,8 @@ import './globals.css'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: 'Samcorp ScoreHub',
-  description: 'Live sports scoreboard — powered by Samcorp',
+  title: 'ScoreHub',
+  description: 'Sign in to ScoreHub to score live matches from your browser and put the score on venue screens and streams.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

@@ -9,14 +9,13 @@ import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
-import { getPeriodLabel, getTemplate } from "../../sport-templates";
+import { getPeriodText, getTemplate } from "../../sport-templates";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
 import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 export default function OverlayDisplay() {
   const { state, unauthorized } = useMatchState();
-  const { home, visitor, clockSeconds, countDown, period, isRunning, hornActive, possession } = state;
-  const periodLabel = getPeriodLabel(state);
+  const { home, visitor, clockSeconds, countDown, isRunning, hornActive, possession } = state;
   const DisplayStats = getTemplate(state.sport).displayStats;
   const displayClock = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs });
   const { backgroundColor: _bg, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme);
@@ -30,12 +29,7 @@ export default function OverlayDisplay() {
     clockColor = "var(--text-secondary)";
   }
 
-  let periodText: string;
-  if (state.periodBreak) {
-    periodText = periodLabel === "HALF" ? "HALF TIME" : `${periodLabel} BREAK`;
-  } else {
-    periodText = period === "E" ? "EXTRA" : `${periodLabel} ${period}`;
-  }
+  const periodText = getPeriodText(state);
 
   if (unauthorized) return <DisplayLinkExpiredNotice />;
 

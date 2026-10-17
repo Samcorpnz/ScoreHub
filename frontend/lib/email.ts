@@ -1,5 +1,6 @@
 import Mailgun from "mailgun.js";
 import FormData from "form-data";
+import { PAYMENT_GRACE_DAYS } from "./plans";
 import type { PaidPlan } from "./plans";
 
 // Lazily constructed, mirroring lib/stripe.ts's getStripe() — importing this
@@ -21,6 +22,10 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+// Where replies go for the emails that ask for one (SA-164). EMAIL_FROM is
+// typically a noreply address, so without this a reply goes nowhere.
+const SUPPORT_EMAIL = "hello@scorehub.co.nz";
 
 function getMailgun() {
   if (globalForMailgun.mailgun) return globalForMailgun.mailgun;
@@ -161,8 +166,8 @@ export async function sendPaymentFailedEmail({ to }: { to: string[] }): Promise<
     from,
     to,
     subject: "Your ScoreHub payment failed",
-    text: `We couldn't charge your card for your ScoreHub subscription. Stripe will retry automatically, but you may want to update your payment method to avoid losing access.\n\n${link}\n\nIf you've already resolved this, you can ignore this email.`,
-    html: `<p>We couldn't charge your card for your ScoreHub subscription. Stripe will retry automatically, but you may want to update your payment method to avoid losing access.</p><p><a href="${link}">Update payment method</a></p><p>If you've already resolved this, you can ignore this email.</p>`,
+    text: `We couldn't charge your card for your ScoreHub subscription. Your plan stays active while we retry the payment over the next ${PAYMENT_GRACE_DAYS} days. Update your payment method before then, or your account will move to the Free plan.\n\n${link}\n\nIf you've already resolved this, you can ignore this email.`,
+    html: `<p>We couldn't charge your card for your ScoreHub subscription. Your plan stays active while we retry the payment over the next ${PAYMENT_GRACE_DAYS} days. Update your payment method before then, or your account will move to the Free plan.</p><p><a href="${link}">Update payment method</a></p><p>If you've already resolved this, you can ignore this email.</p>`,
   });
 }
 
@@ -239,6 +244,7 @@ export async function sendSubscriptionEndedEmail({ to, plan }: { to: string[]; p
   await getMailgun().messages.create(domain, {
     from,
     to,
+    "h:Reply-To": SUPPORT_EMAIL,
     subject: `Your ScoreHub ${label} plan has ended`,
     text: `Your ScoreHub ${label} subscription has ended, and your account is back on the Free plan.\n\nThat means ${losing} are switched off for now — but nothing else has changed. Your matches, your scoreboards, your settings: all exactly where you left them, ready the moment you're back.\n\nGetting back to full strength takes under a minute:\n\n${link}\n\nIf something about ${label} wasn't working for you, just hit reply and tell us — we read every message, and it shapes what we build next.\n\n— The ScoreHub team`,
     html: `<p>Your ScoreHub ${label} subscription has ended, and your account is back on the Free plan.</p><p>That means ${escapeHtml(losing)} are switched off for now — but nothing else has changed. Your matches, your scoreboards, your settings: all exactly where you left them, ready the moment you're back.</p><p><a href="${link}">Reactivate ${label}</a> — it takes under a minute.</p><p>If something about ${label} wasn't working for you, just hit reply and tell us — we read every message, and it shapes what we build next.</p><p>— The ScoreHub team</p>`,

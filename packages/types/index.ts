@@ -31,6 +31,45 @@ export interface IndoorCricketWicketEvent {
   side: "home" | "visitor";
 }
 
+// One entry in a match's event log — what happened and when, as opposed to
+// MatchState's "what is true right now". The relay derives these by diffing
+// consecutive states (relay/src/matchEvents.ts), so every source of change
+// (control panel, bridge, Stream Deck, undo) is logged the same way.
+export type MatchEventType =
+  | "score"
+  | "period"
+  | "clock_start"
+  | "clock_stop"
+  | "break_start"
+  | "break_end"
+  | "reset"
+  // Always the last entry of a log that hit its size limit: what follows it
+  // in the match was not logged.
+  | "log_full";
+
+export interface MatchEvent {
+  // Position in the match's log. Assigned when the event is stored, so it is
+  // what a consumer passes back as `since` to fetch only newer events.
+  seq?: number;
+  type: MatchEventType;
+  at: string; // ISO 8601, relay wall-clock time
+  // Match clock, period and both scores immediately after the event.
+  clockSeconds: number;
+  period: string;
+  home: number;
+  visitor: number;
+  // score events only
+  side?: "home" | "visitor";
+  delta?: number;
+  // period events only: the period just left, and the scores it finished on
+  // (sports that zero the score between sets would otherwise lose them).
+  fromPeriod?: string;
+  previous?: { home: number; visitor: number };
+  // Set when the event came from an Undo, so a consumer can treat it as a
+  // correction to what it already received rather than new play.
+  correction?: boolean;
+}
+
 export type SportType =
   | "netball" | "basketball"
   | "rugby_union" | "rugby_league"
@@ -173,6 +212,13 @@ import type { CricketState } from "./sports/cricket";
 
 export type SportState = IndoorCricketState | SoftballState | CricketState;
 
+// A penalty shoot-out's tally, kept apart from the match score. One entry
+// per attempt in the order taken: true = scored, false = missed or saved.
+export interface ShootoutState {
+  home: boolean[];
+  visitor: boolean[];
+}
+
 export interface MatchState {
   sequenceId: number;
   clockSeconds: number;
@@ -195,6 +241,8 @@ export interface MatchState {
   netballStats?: NetballMatchStats;
   sportState?: SportState;
   sportConfig?: Record<string, unknown>;
+  // Present while a shoot-out is being (or has been) taken; null once cleared
+  shootout?: ShootoutState | null;
   graphicsFeed?: GraphicsFeed;
   displayTheme: DisplayTheme;
 }

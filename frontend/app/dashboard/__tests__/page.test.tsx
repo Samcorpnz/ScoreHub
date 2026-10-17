@@ -210,11 +210,139 @@ describe("DashboardPage", () => {
     expect(await screen.findByText("row 1: missing sport/home/visitor")).toBeInTheDocument();
   });
 
+  it("reads a CSV time without an offset in the browser's timezone and sends it as UTC", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    fireEvent.click(screen.getByText("upcoming"));
+    fireEvent.click(screen.getByText("Upload Fixtures"));
+    expect(screen.getByTestId("fixture-timezone")).toHaveTextContent(Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+    const csv = "sport,home,visitor,scheduledAt\nnetball,Sharks,Magic,2026-10-17T18:30";
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File([csv], "fixtures.csv", { type: "text/csv" })] } });
+    fireEvent.click(await screen.findByText("Upload 1 Fixtures"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orgs/org-1/matches/bulk",
+      expect.objectContaining({
+        body: expect.stringContaining(new Date(2026, 9, 17, 18, 30).toISOString()),
+      }),
+    ));
+  });
+
+  it("rejects a CSV row whose date can't be read", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));
+    renderPage();
+    fireEvent.click(screen.getByText("upcoming"));
+    fireEvent.click(screen.getByText("Upload Fixtures"));
+
+    const csv = "sport,home,visitor,scheduledAt\nnetball,Sharks,Magic,next Saturday";
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File([csv], "fixtures.csv", { type: "text/csv" })] } });
+
+    expect(await screen.findByText(/row 1: unreadable date "next Saturday"/)).toBeInTheDocument();
+  });
+
+  const operatorSession = {
+    data: { user: { name: "Sam Kerins", activeOrgId: "org-1", activeRole: "OPERATOR" } },
+    status: "authenticated" as const,
+  };
+
+  it("offers Reopen only to roles that can run matches", async () => {
+    useSessionMock.mockReturnValue({ ...operatorSession, data: { user: { ...operatorSession.data.user, activeRole: "VIEWER" } } });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [matchRow({ id: "ended-1", status: "ENDED" })] }) }));
+    renderPage();
+    expect(await screen.findByText("Ended")).toBeInTheDocument();
+    expect(screen.queryByText("Reopen")).not.toBeInTheDocument();
+  });
+
+  it("reopens an ended match and opens its control panel", async () => {
+    useSessionMock.mockReturnValue(operatorSession);
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => Promise.resolve(
+      init?.method === "POST"
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : { ok: true, json: async () => ({ matches: [matchRow({ id: "ended-1", status: "ENDED" })] }) },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    renderPage();
+    fireEvent.click(await screen.findByText("Reopen"));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/control?matchId=ended-1"));
+    expect(fetchMock).toHaveBeenCalledWith("/api/orgs/org-1/matches/ended-1/reopen", { method: "POST" });
+  });
+
+  it("shows why an ended match couldn't be reopened", async () => {
+    useSessionMock.mockReturnValue(operatorSession);
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => Promise.resolve(
+      init?.method === "POST"
+        ? { ok: false, json: async () => ({ error: "Free plan allows one live match at a time" }) }
+        : { ok: true, json: async () => ({ matches: [matchRow({ id: "ended-1", status: "ENDED" })] }) },
+    )));
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    renderPage();
+    fireEvent.click(await screen.findByText("Reopen"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Free plan allows one live match at a time");
+  });
+
   it("signs out and redirects to /login", async () => {
     useSessionMock.mockReturnValue(authedSession);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) }));
     renderPage();
     fireEvent.click(screen.getByText("Sign out"));
     expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/login" });
+  });
+  it("offers Export Results on the History tab only, and downloads the filtered results", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ matches: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const createObjectURL = vi.fn(() => "blob:results");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText("Export Results")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("history"));
+    fireEvent.change(screen.getByPlaceholderText("Search team name…"), { target: { value: "Sharks" } });
+    fetchMock.mockImplementation(async (url: string) =>
+      url.includes("/matches/export")
+        ? {
+            ok: true,
+            blob: async () => new Blob(["sport\r\n"]),
+            headers: new Headers({ "Content-Disposition": 'attachment; filename="scorehub-results-2026-10-11.csv"' }),
+          }
+        : { ok: true, json: async () => ({ matches: [] }) },
+    );
+    fireEvent.click(screen.getByText("Export Results"));
+
+    await waitFor(() => expect(click).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith("/api/orgs/org-1/matches/export?q=Sharks");
+    expect((click.mock.instances[0] as unknown as HTMLAnchorElement).download).toBe("scorehub-results-2026-10-11.csv");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:results");
+    click.mockRestore();
+  });
+
+  it("shows the server's message when the results export is refused", async () => {
+    useSessionMock.mockReturnValue(authedSession);
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("/matches/export")
+        ? { ok: false, json: async () => ({ error: "This feature requires the Pro or Venue plan — upgrade at /account/billing" }) }
+        : { ok: true, json: async () => ({ matches: [] }) },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("history"));
+    fireEvent.click(screen.getByText("Export Results"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("requires the Pro or Venue plan");
+    expect(screen.getByText("Export Results")).not.toBeDisabled();
   });
 });

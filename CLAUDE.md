@@ -92,8 +92,19 @@ touches exactly 4 files:
    `resetScoreOnPeriod`, optional `matchConfig` for match-creation config fields, optional
    `controlPanel` component override)
 3. `relay/src/schemas.ts` — add to the Zod `sportSchema` enum
-4. `relay/src/server.ts` — add to `SPORT_DEFAULT_CLOCK` (and `SPORT_RESET_SCORE_ON_PERIOD` if
-   the sport zeroes scores between games/sets)
+4. `relay/src/periodClock.ts` — add to `SPORT_DEFAULT_CLOCK` (and to `SPORT_EXTRA_TIME` if the
+   template sets `extraTime`), plus `SPORT_RESET_SCORE_ON_PERIOD` in `relay/src/server.ts` if the
+   sport zeroes scores between games/sets
+
+A variant of an existing sport (Fast5 netball) is a `formats` entry on that sport's template, picked
+by its `format` match option, not a new `SportType` — read a match's template with
+`getMatchTemplate(state)` rather than `getTemplate(sport)` so the variant applies.
+
+A new sport also needs its public pages, which live outside the app: a guide in
+`help/app/(docs)/sports/<slug>/page.mdx` (plus `help/app/nav.ts`), and an entry in
+`marketing/app/sports-data.ts`, which generates the sport's landing page at
+`scorehub.co.nz/sports/<slug>` and its sitemap entry. The marketing site's "21 sports" counts
+(`marketing/app/pricing-data.ts`, page copy) are hand-written, so update them too.
 
 Sports with bespoke state or UI (cricket, softball, indoor cricket) additionally define a state
 type in `packages/types/sports/<sport>.ts`, added to the `sportState` discriminated union
@@ -113,7 +124,8 @@ different caller:
 - **Control JWT** — short-lived, minted by the frontend's `/api/control-token` route from the
   logged-in user's session (requires ADMIN/MANAGER/OPERATOR role). Used by the control panel.
 - **CONTROL ScopedToken** — long-lived, DB-backed (hashed with SHA-256, never stored raw), for
-  Stream Deck / webhook callers that can't do an interactive login.
+  Stream Deck / Control API callers that can't do an interactive login. ("Control API" is the
+  product name for the `/action/*` routes; "webhooks" is reserved for outbound notifications.)
 - **BRIDGE ScopedToken** — long-lived, per-org, generated from the control panel's Settings tab;
   authenticates the venue-laptop bridge process.
 

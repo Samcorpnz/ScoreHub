@@ -5,7 +5,7 @@ import { useDisplayTheme } from "../../hooks/useDisplayTheme";
 import { ScorePanel } from "../../components/ScorePanel";
 import { ClockPanel } from "../../components/ClockPanel";
 import { ConnectionBadge } from "../../components/ConnectionBadge";
-import { getPeriodLabel, getTemplate } from "../../sport-templates";
+import { getActivePowerPlay, getBreakLabel, getPeriodLabel, getPeriodNumber, getShootout, getTemplate } from "../../sport-templates";
 import { formatScore } from "../../types";
 import { DisplayLinkExpiredNotice } from "../components/DisplayLinkExpiredNotice";
 import { PoweredByWatermark } from "../components/PoweredByWatermark";
@@ -71,9 +71,12 @@ export default function BasicDisplay() {
           <ClockPanel
             clockSeconds={state.clockSeconds}
             countDown={state.countDown}
-            period={state.period}
+            period={getPeriodNumber(state)}
             periodBreak={state.periodBreak}
             periodLabel={getPeriodLabel(state)}
+            breakLabel={getBreakLabel(state)}
+            notice={getActivePowerPlay(state)?.label}
+            shootout={getShootout(state)}
             isRunning={state.isRunning}
             hornActive={state.hornActive}
             matchName={state.matchName}

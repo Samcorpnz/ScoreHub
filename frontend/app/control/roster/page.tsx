@@ -91,10 +91,14 @@ function RosterControl() {
 
   const deletePlayer = async (playerId: string) => {
     if (!orgId) return;
-    if (!confirm("Remove this player from the roster?")) return;
+    if (!confirm("Remove this player from the roster? Their photo is deleted too.")) return;
     try {
       const res = await fetch(`/api/orgs/${orgId}/players/${playerId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setActionError(body?.error ?? "Failed to remove player");
+        return;
+      }
       await loadPlayers();
     } catch {
       setActionError("Failed to remove player");
@@ -309,6 +313,26 @@ function PlayerCard({ player, orgId, controlToken, onEdit, onDelete, onPhotoUplo
     }
   };
 
+  // The players route deletes the stored file as well as clearing photoUrl.
+  const removePhoto = async () => {
+    if (!orgId) return;
+    if (!confirm("Remove this player's photo? The image is deleted.")) return;
+    setUploading(true);
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/players/${player.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoUrl: null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      onPhotoUploaded();
+    } catch {
+      alert("Couldn't remove the photo. Try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div data-testid={`player-card-${player.id}`} style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, display: "flex", gap: 10 }}>
       <button
@@ -332,6 +356,9 @@ function PlayerCard({ player, orgId, controlToken, onEdit, onDelete, onPhotoUplo
         )}
         <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <button onClick={onEdit} style={{ fontSize: "0.65rem", color: "var(--accent)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Edit</button>
+          {player.photoUrl && (
+            <button onClick={removePhoto} disabled={uploading} data-testid={`player-photo-remove-${player.id}`} style={{ fontSize: "0.65rem", color: "var(--text-dim)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Remove photo</button>
+          )}
           <button onClick={onDelete} style={{ fontSize: "0.65rem", color: "var(--danger)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Remove</button>
         </div>
       </div>

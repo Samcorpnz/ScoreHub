@@ -1,0 +1,76 @@
+export const metadata = { title: "If a payment fails" };
+
+# If a payment fails
+
+When a renewal payment doesn't go through, nothing is switched off straight away. You have
+**14 days** to fix it, and your plan and add-ons keep working throughout.
+
+## What happens, in order
+
+| When | What happens |
+| --- | --- |
+| The payment fails | Every Admin is emailed **"Your ScoreHub payment failed"**. The plan panel on the Account page shows a **Payment issue** label. Your plan and add-ons keep working. |
+| The next 14 days | We retry the card automatically several times. You don't need to wait for a retry — you can fix it yourself at any point. |
+| A payment succeeds | Every Admin is emailed **"Your ScoreHub payment succeeded"**. The **Payment issue** label clears. Nothing else changes. |
+| 14 days pass with no successful payment | The subscription is cancelled and your account moves to the **Free** plan. Any add-ons are cancelled with it. Every Admin is emailed **"Your ScoreHub Pro plan has ended"** (or Venue). |
+
+## The emails
+
+Billing emails go to **every Admin** of every organisation on the account. Managers, Operators
+and Viewers don't get them.
+
+| Subject | What it means | What to do |
+| --- | --- | --- |
+| Your ScoreHub payment failed | A renewal payment was declined. | Update your card — see below. |
+| Action required to complete your ScoreHub payment | Your bank wants you to approve the payment. The card isn't necessarily wrong. | Follow the link in the email and complete your bank's check. |
+| Your ScoreHub payment succeeded | A payment went through after an earlier failure. | Nothing. |
+| Your ScoreHub Pro plan has ended | The plan has ended and the account is on Free. | Upgrade again when you're ready — see below. |
+
+If you aren't getting them, check your spam folder and that the right people have the Admin
+role.
+
+## Fixing it
+
+An Admin does this:
+
+1. Go to **Account → Plan & Billing** and select **Manage billing**.
+2. Update the card, or add a new one and make it the default.
+
+The next retry uses the new card. As soon as a payment succeeds the **Payment issue** label
+clears. See [Invoices & payment methods](/billing/invoices-and-payment-methods).
+
+## If your account moves to Free
+
+Nothing is deleted. Your matches, History, team, tokens and settings all stay as they are.
+
+What changes:
+
+- Only **one match can be live at a time**. Matches that are already live keep running; the limit
+  applies the next time you set up or start one. See
+  [The Free plan's one-match limit](/billing/free-plan-limit).
+- **Logos, the display theme, sounds and fixture upload** are no longer available. A theme or
+  logos already set on a match stay as they are but can't be changed.
+- Displays show a small **"Powered by ScoreHub"** mark.
+- **Add-ons are cancelled.** Graphics Control and the Player Roster show an unlock screen, data
+  feed requests are refused, and Bridge can no longer connect. Score from the control panel
+  instead.
+
+## Getting your plan back
+
+Once the plan has ended, fixing the card doesn't bring it back by itself. An Admin upgrades again
+from **Account → Plan & Billing** — see
+[Upgrading & downgrading](/billing/upgrading-and-downgrading). Paid features return as soon as
+payment completes.
+
+Add-ons don't come back with the plan. Add each one again from the **Add-ons** card.
+
+## If an add-on's payment fails
+
+An add-on bills separately from your plan, so its payment can fail without the plan's failing.
+The same 14 days apply. If it isn't paid in that time, only that add-on is cancelled — your plan
+carries on.
+
+## Still stuck
+
+If a card keeps being declined and your bank can't say why, email
+[hello@scorehub.co.nz](mailto:hello@scorehub.co.nz) before the 14 days are up.

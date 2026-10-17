@@ -31,6 +31,8 @@ function makeDeleteRequest() {
   return new NextRequest("http://localhost/api/orgs/org-1/players/p1", { method: "DELETE" });
 }
 
+const fetchMock = vi.fn();
+
 const params = Promise.resolve({ orgId: "org-1", playerId: "p1" });
 
 describe("/api/orgs/[orgId]/players/[playerId]", () => {
@@ -42,6 +44,9 @@ describe("/api/orgs/[orgId]/players/[playerId]", () => {
     playerUpdateMock.mockReset();
     playerDeleteMock.mockReset();
     delete process.env.DATABASE_URL;
+    process.env.AUTH_SECRET = "test-secret";
+    fetchMock.mockReset().mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
     authMock.mockResolvedValue({ user: { activeOrgId: "org-1", activeRole: "ADMIN" } });
     playerFindUniqueMock.mockResolvedValue({ id: "p1", orgId: "org-1" });
   });
@@ -175,6 +180,64 @@ describe("/api/orgs/[orgId]/players/[playerId]", () => {
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ status: "removed" });
       expect(playerDeleteMock).toHaveBeenCalledWith({ where: { id: "p1" } });
+    });
+
+    it("deletes the stored photo through the relay before the player", async () => {
+      playerFindUniqueMock.mockResolvedValue({ id: "p1", orgId: "org-1", photoUrl: "/player-photos/org-1/p1.png" });
+      playerDeleteMock.mockResolvedValue({});
+      const { DELETE } = await import("../route");
+      const res = await DELETE(makeDeleteRequest(), { params });
+      expect(res.status).toBe(200);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toMatch(/\/api\/player-photo\/p1$/);
+      expect(init.method).toBe("DELETE");
+      expect(init.headers["x-control-secret"]).toEqual(expect.any(String));
+    });
+
+    it("keeps the player when their photo couldn't be removed", async () => {
+      playerFindUniqueMock.mockResolvedValue({ id: "p1", orgId: "org-1", photoUrl: "/player-photos/org-1/p1.png" });
+      fetchMock.mockResolvedValue({ ok: false });
+      const { DELETE } = await import("../route");
+      const res = await DELETE(makeDeleteRequest(), { params });
+      expect(res.status).toBe(502);
+      expect(playerDeleteMock).not.toHaveBeenCalled();
+    });
+
+    it("still removes a player with no photo when the relay is unreachable", async () => {
+      fetchMock.mockRejectedValue(new Error("down"));
+      playerDeleteMock.mockResolvedValue({});
+      const { DELETE } = await import("../route");
+      const res = await DELETE(makeDeleteRequest(), { params });
+      expect(res.status).toBe(200);
+      expect(playerDeleteMock).toHaveBeenCalled();
+    });
+  });
+
+  describe("PATCH photoUrl: null", () => {
+    it("deletes the stored photo, then clears photoUrl", async () => {
+      playerFindUniqueMock.mockResolvedValue({ id: "p1", orgId: "org-1", photoUrl: "/player-photos/org-1/p1.png" });
+      playerUpdateMock.mockResolvedValue({ id: "p1", photoUrl: null });
+      const { PATCH } = await import("../route");
+      const res = await PATCH(makePatchRequest({ photoUrl: null }), { params });
+      expect(res.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(playerUpdateMock).toHaveBeenCalledWith({ where: { id: "p1" }, data: { photoUrl: null } });
+    });
+
+    it("leaves photoUrl alone when the file couldn't be removed", async () => {
+      playerFindUniqueMock.mockResolvedValue({ id: "p1", orgId: "org-1", photoUrl: "/player-photos/org-1/p1.png" });
+      fetchMock.mockResolvedValue({ ok: false });
+      const { PATCH } = await import("../route");
+      const res = await PATCH(makePatchRequest({ photoUrl: null }), { params });
+      expect(res.status).toBe(502);
+      expect(playerUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("doesn't call the relay for an ordinary edit", async () => {
+      playerUpdateMock.mockResolvedValue({ id: "p1" });
+      const { PATCH } = await import("../route");
+      await PATCH(makePatchRequest({ firstName: "Ann" }), { params });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

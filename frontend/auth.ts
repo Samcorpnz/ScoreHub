@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import {
@@ -9,6 +9,7 @@ import { prisma, Role, recordAuditEvent } from "@scorehub/db";
 import { isRateLimited, clientIp } from "@/lib/rateLimit";
 import { consumeChallenge, expectedOrigin, rpID } from "@/lib/webauthn";
 import { logger } from "@/lib/logger";
+import { RATE_LIMITED_CODE } from "@/lib/signInErrors";
 
 // Logged only for a login attempt that was actually made (an email+password
 // or a credential was presented) and failed — not for the "form submitted
@@ -21,6 +22,14 @@ function logLoginFailure(provider: "credentials" | "passkey", reason: string, ex
     message: `login failed via ${provider}: ${reason}`,
     metadata: { provider, reason, ...extra },
   });
+}
+
+// Thrown rather than returning null so the login page can tell "wait a
+// minute" apart from a wrong password (SA-161) — the code reaches the client
+// as signIn()'s result.code. Both limits are keyed without looking the account
+// up, so this says nothing about whether an email address is registered.
+class RateLimitedSignin extends CredentialsSignin {
+  code = RATE_LIMITED_CODE;
 }
 
 export type SessionMembership = {
@@ -82,7 +91,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const key = `login:${clientIp(request)}:${email.toLowerCase()}`;
         if (isRateLimited(key, 10, 60_000)) {
           logLoginFailure("credentials", "rate_limited", { email });
-          return null;
+          throw new RateLimitedSignin();
         }
 
         const user = await prisma.user.findUnique({
@@ -134,7 +143,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const key = `login-passkey:${clientIp(request)}`;
         if (isRateLimited(key, 10, 60_000)) {
           logLoginFailure("passkey", "rate_limited");
-          return null;
+          throw new RateLimitedSignin();
         }
 
         let response: AuthenticationResponseJSON;

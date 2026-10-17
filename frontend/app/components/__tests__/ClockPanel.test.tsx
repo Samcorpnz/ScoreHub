@@ -80,6 +80,49 @@ describe("ClockPanel", () => {
     expect(screen.getByText("EXTRA TIME")).toBeInTheDocument();
   });
 
+  it("spells out extra time and overtime under the period number", () => {
+    const { rerender } = render(
+      <ClockPanel clockSeconds={420} countDown={true} period="1" periodLabel="ET" isRunning={false} hornActive={false} />
+    );
+    expect(screen.getByText("EXTRA TIME")).toBeInTheDocument();
+    rerender(
+      <ClockPanel clockSeconds={300} countDown={true} period="1" periodLabel="OT" isRunning={false} hornActive={false} />
+    );
+    expect(screen.getByText("OVERTIME")).toBeInTheDocument();
+  });
+
+  it("shows the break label it's given in place of the default", () => {
+    render(
+      <ClockPanel clockSeconds={420} countDown={true} period="1" periodBreak={true} periodLabel="ET" breakLabel="FULL TIME" isRunning={false} hornActive={false} />
+    );
+    expect(screen.getByTestId("display-period")).toHaveTextContent("FULL TIME");
+  });
+
+  it("flags a notice such as a power play, except during a break", () => {
+    const { rerender } = render(
+      <ClockPanel clockSeconds={90} countDown={true} period="2" notice="POWER PLAY" isRunning={true} hornActive={false} />
+    );
+    expect(screen.getByTestId("display-notice")).toHaveTextContent("POWER PLAY");
+    rerender(
+      <ClockPanel clockSeconds={90} countDown={true} period="2" periodBreak={true} notice="POWER PLAY" isRunning={false} hornActive={false} />
+    );
+    expect(screen.queryByTestId("display-notice")).not.toBeInTheDocument();
+  });
+
+  it("shows a shoot-out's tally in place of the period", () => {
+    render(
+      <ClockPanel clockSeconds={0} countDown={false} period="3" periodBreak={true} periodLabel="ET" breakLabel="FULL TIME"
+        shootout={{ label: "PENALTIES", home: [true, true, false], visitor: [true, false], homeGoals: 2, visitorGoals: 1 }}
+        isRunning={false} hornActive={false} />
+    );
+    const tally = screen.getByTestId("display-shootout");
+    expect(tally).toHaveTextContent("PENALTIES");
+    expect(tally).toHaveTextContent("2 – 1");
+    expect(screen.getAllByTitle("Scored")).toHaveLength(3);
+    expect(screen.getAllByTitle("Missed")).toHaveLength(2);
+    expect(screen.queryByTestId("display-period")).not.toBeInTheDocument();
+  });
+
   it("does not render the match name or running indicator in compact size", () => {
     render(
       <ClockPanel

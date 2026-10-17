@@ -11,6 +11,9 @@ let capturedConfig: any;
 let capturedCredentialsConfigs: any[];
 
 vi.mock("next-auth", () => ({
+  CredentialsSignin: class extends Error {
+    code = "credentials";
+  },
   default: (config: unknown) => {
     capturedConfig = config;
     return { handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() };
@@ -107,8 +110,9 @@ describe("auth.ts", () => {
 
     it("rate-limits repeated attempts by IP+email", async () => {
       isRateLimitedMock.mockReturnValue(true);
-      const result = await authorize({ email: "a@b.com", password: "secret" });
-      expect(result).toBeNull();
+      // Thrown with its own code, so the login page can say "wait a minute"
+      // instead of "Invalid email or password." (SA-161).
+      await expect(authorize({ email: "a@b.com", password: "secret" })).rejects.toMatchObject({ code: "rate_limited" });
       expect(isRateLimitedMock).toHaveBeenCalledWith("login:127.0.0.1:a@b.com", 10, 60_000);
       expect(findUniqueMock).not.toHaveBeenCalled();
     });
@@ -199,8 +203,7 @@ describe("auth.ts", () => {
 
     it("rate-limits repeated attempts by IP", async () => {
       isRateLimitedMock.mockReturnValue(true);
-      const result = await authorizePasskey({ credential: JSON.stringify(assertionCredential()) });
-      expect(result).toBeNull();
+      await expect(authorizePasskey({ credential: JSON.stringify(assertionCredential()) })).rejects.toMatchObject({ code: "rate_limited" });
       expect(isRateLimitedMock).toHaveBeenCalledWith("login-passkey:127.0.0.1", 10, 60_000);
       expect(authenticatorFindUniqueMock).not.toHaveBeenCalled();
     });

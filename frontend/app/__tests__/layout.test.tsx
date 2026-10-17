@@ -6,7 +6,7 @@ afterEach(cleanup);
 
 describe("RootLayout", () => {
   it("exports app metadata used for the browser tab / PWA manifest", () => {
-    expect(metadata.title).toBe("Samcorp ScoreHub");
+    expect(metadata.title).toBe("ScoreHub");
     expect(metadata.manifest).toBe("/manifest.json");
     expect(metadata.appleWebApp).toMatchObject({ capable: true, title: "Samcorp ScoreHub" });
   });

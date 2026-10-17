@@ -9,7 +9,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { MatchState, DEFAULT_MATCH_STATE, IndoorCricketState } from "./types";
-import { getMatchStore, allActiveStores, evictMatchStore, createLiveMatch, MatchNotFoundError } from "./persistence";
+import { getMatchStore, allActiveStores, evictMatchStore, peekScheduledState, listMatchEvents, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
 import { prisma } from "@scorehub/db";
 import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
 import { getRedisClients, acquireTickLock, closeRedis, publishStateUpdate, subscribeStateUpdates } from "./redis";
@@ -24,6 +24,8 @@ import {
 } from "./schemas";
 import { applyCricketBall, applyOverComplete, applyInningsChange, applyDeclare, resetCricketState } from "./cricket";
 import { resyncClock } from "./clock";
+import { regulationClock, periodClock } from "./periodClock";
+import { diffMatchEvents, createMatchEventBuffer, MatchEventCause } from "./matchEvents";
 import { resolveBridgeAccess, listSelectableMatches, BRIDGE_ADDON_REQUIRED_MESSAGE } from "./matchPicker";
 import { captureException } from "./sentry";
 import { logger } from "./logger";
@@ -35,6 +37,7 @@ export interface ServerOptions {
   dataFeedSecret?: string;
   deepHealthSecret?: string;
   displayTokenRequired?: boolean;
+  displayOriginRequired?: boolean;
   uploadDir?: string;
   allowedOrigins?: string | string[];
   controlRateLimit?: number;
@@ -55,6 +58,26 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   } finally {
     clearTimeout(timer!);
   }
+}
+
+// Neon's free tier suspends Postgres after ~5 min idle, and the first query
+// after that (compute wake + Prisma reconnect) can blow a 3s budget or fail
+// outright. Retry once with a longer budget so a cold start reads as "ok" while
+// a genuinely unreachable database still reports "error". Worst case
+// (3s + 10s) stays inside Better Stack's 15s request timeout (infra/betterstack).
+export async function probeWithRetry(
+  probe: () => Promise<unknown>,
+  timeoutsMs: number[] = [3000, 10000],
+): Promise<"ok" | "error"> {
+  for (const ms of timeoutsMs) {
+    try {
+      await withTimeout(probe(), ms);
+      return "ok";
+    } catch {
+      // fall through to the next, longer attempt
+    }
+  }
+  return "error";
 }
 
 // Constant-time secret/token compare — same approach as auth.ts's
@@ -169,6 +192,7 @@ export function resetMatchState(current: MatchState, defaultClock: number): Matc
     home:    resetTeam(current.home),
     visitor: resetTeam(current.visitor),
     netballStats: undefined,
+    shootout: undefined,
     sportState: resetSportState(current.sportState),
   };
 }
@@ -206,6 +230,22 @@ export function createServer(options: ServerOptions = {}) {
   const ALLOWED_ORIGINS: string[] = requireAllowedOrigins(
     options.allowedOrigins ?? process.env.ALLOWED_ORIGINS?.split(",").map(o => o.trim())
   );
+  // The display feed (GET /state and the unauthenticated viewer socket) exists
+  // for ScoreHub's own /display/* pages. With this on, it's only served to a
+  // browser whose Origin is one of ALLOWED_ORIGINS, so graphics software
+  // hosted on someone else's site can't read match state off a display link
+  // and has to use the Data Feed add-on's token feed instead (SA-159).
+  // Browsers set Origin themselves and page scripts can't change it; a
+  // program outside a browser can forge it, so this closes the easy path
+  // rather than being an entitlement check. Anything holding a real secret
+  // (control, bridge, graphics, data-feed, monitor) is unaffected.
+  const DISPLAY_ORIGIN_REQUIRED = options.displayOriginRequired ?? (process.env.DISPLAY_ORIGIN_REQUIRED === "true");
+  const DISPLAY_ORIGIN_REFUSED_MESSAGE =
+    "the display feed is only available to ScoreHub displays — third-party software needs the Data Feed add-on";
+  function isDisplayOriginAllowed(origin: string | string[] | undefined): boolean {
+    if (!DISPLAY_ORIGIN_REQUIRED) return true;
+    return typeof origin === "string" && ALLOWED_ORIGINS.includes(origin);
+  }
 
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -216,6 +256,19 @@ export function createServer(options: ServerOptions = {}) {
   // the same IP, defeating the per-IP brute-force limits on controlAuth
   // routes. `1` trusts exactly one hop (the platform's own proxy).
   app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  // The relay serves JSON and uploaded files, never a page, so nothing has a
+  // reason to frame it. The CSP is deliberately only frame-ancestors: logos
+  // and sounds are loaded cross-origin by the frontend, and a default-src
+  // here would also apply when one is opened directly in a tab.
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Strict-Transport-Security", "max-age=63072000");
+    next();
+  });
   app.use(cors({ origin: ALLOWED_ORIGINS }));
   app.use(express.json());
   // nosniff on all served uploads; SVGs (which can carry markup) get a
@@ -259,6 +312,43 @@ export function createServer(options: ServerOptions = {}) {
   // relay restart resets to no active scene, same as those. No mutex: last
   // write wins, matching matchStateChange's own concurrency model.
   const sceneStates = new Map<string, GraphicsScenePayload & { updatedAt: string }>();
+  // Legacy mode's event log; with a database it lives in the MatchEvent table.
+  const eventBuffer = createMatchEventBuffer();
+
+  // An ENDED match is read-only until it's reopened. The frontend's end and
+  // reopen routes write Match.status straight to Postgres, so the relay has
+  // to look it up — a "still live" answer is trusted for a few seconds so a
+  // burst of scoring isn't a query per click, while an "ended" answer is
+  // re-checked on every attempt so a reopen takes effect straight away.
+  // Only matchId-scoped rooms are checked: the org-singleton room and legacy
+  // mode (no DATABASE_URL) have no single match row to end.
+  const MATCH_STATUS_TTL_MS = 3000;
+  const endedMatches = new Set<string>();
+  const matchLiveCheckedAt = new Map<string, number>();
+
+  async function refreshMatchEnded(matchId?: string): Promise<boolean> {
+    if (!matchId || !process.env.DATABASE_URL) return false;
+    const checkedAt = matchLiveCheckedAt.get(matchId);
+    if (checkedAt !== undefined && Date.now() - checkedAt < MATCH_STATUS_TTL_MS) return false;
+    const row = await prisma.match.findUnique({ where: { id: matchId }, select: { status: true } });
+    if (row?.status === "ENDED") {
+      matchLiveCheckedAt.delete(matchId);
+      endedMatches.add(matchId);
+      return true;
+    }
+    endedMatches.delete(matchId);
+    matchLiveCheckedAt.set(matchId, Date.now());
+    return false;
+  }
+
+  // For the handlers that must stay synchronous (adjustScore,
+  // indoorCricket:wicket): answers from the last known status and refreshes
+  // it in the background.
+  function isMatchEndedCached(matchId?: string): boolean {
+    if (!matchId) return false;
+    refreshMatchEnded(matchId).catch(err => console.error("[relay] failed to check match status:", matchId, err));
+    return endedMatches.has(matchId);
+  }
 
   async function getState(orgId: string, matchId?: string): Promise<MatchState> {
     const room = roomFor(orgId, matchId);
@@ -270,8 +360,33 @@ export function createServer(options: ServerOptions = {}) {
     return state;
   }
 
-  function setState(orgId: string, next: MatchState, matchId?: string): void {
+  // getState for callers that only look (the data feed). An upcoming fixture
+  // nobody has opened yet is answered from its saved row, so it stays
+  // upcoming and doesn't count against the Free plan's live-match limit.
+  async function readState(orgId: string, matchId?: string): Promise<MatchState> {
+    if (matchId && !matchStates.has(roomFor(orgId, matchId))) {
+      const scheduled = await peekScheduledState(orgId, matchId);
+      if (scheduled) return scheduled;
+    }
+    return getState(orgId, matchId);
+  }
+
+  // Logs what changed between the room's current state and `next`. Must run
+  // before matchStates is overwritten — the previous state is the baseline.
+  function recordEvents(orgId: string, next: MatchState, matchId?: string, cause?: MatchEventCause): void {
     const room = roomFor(orgId, matchId);
+    const prev = matchStates.get(room)?.state;
+    if (!prev) return;
+    const events = diffMatchEvents(prev, next, new Date(), cause);
+    if (events.length === 0) return;
+    const store = getMatchStore(orgId, matchId);
+    if (store) store.appendEvents(events);
+    else eventBuffer.append(room, events);
+  }
+
+  function setState(orgId: string, next: MatchState, matchId?: string, cause?: MatchEventCause): void {
+    const room = roomFor(orgId, matchId);
+    recordEvents(orgId, next, matchId, cause);
     matchStates.set(room, { orgId, matchId, state: next });
     io.to(room).emit("matchStateChange", next);
     getMatchStore(orgId, matchId)?.save(next);
@@ -307,6 +422,7 @@ export function createServer(options: ServerOptions = {}) {
     matchId?: string,
     eventMs?: number,
   ): Promise<MatchState> {
+    if (await refreshMatchEnded(matchId)) throw new MatchEndedError();
     const current = await getState(orgId, matchId);
     // Capture pre-change state for undo before overwriting
     const room = roomFor(orgId, matchId);
@@ -405,6 +521,7 @@ export function createServer(options: ServerOptions = {}) {
     for (const [room, entry] of matchStates) {
       const { orgId, matchId, state } = entry;
       if (!state.isRunning || bridgeSockets.get(room)?.connected) continue;
+      if (matchId && endedMatches.has(matchId)) continue;
       acquireTickLock(room)
         .then(acquired => {
           if (!acquired) return;
@@ -622,6 +739,17 @@ export function createServer(options: ServerOptions = {}) {
     },
   });
 
+  async function deletePlayerPhotos(orgId: string, playerId: string): Promise<void> {
+    if (r2Enabled) {
+      await deleteByPrefix(`player-photos/${orgId}/${playerId}.`);
+      return;
+    }
+    const dir = path.join(PLAYER_PHOTOS_DIR, orgId);
+    if (fs.existsSync(dir)) {
+      fs.readdirSync(dir).filter(f => f.startsWith(`${playerId}.`)).forEach(f => fs.unlinkSync(path.join(dir, f)));
+    }
+  }
+
   app.post(
     "/api/player-photo/:playerId",
     controlRateLimit,
@@ -642,6 +770,9 @@ export function createServer(options: ServerOptions = {}) {
         throw err;
       }
       const ext = path.extname(req.file.originalname).toLowerCase() || ".png";
+      // The stored name includes the extension, so a replacement of another
+      // type would otherwise leave the old photo behind at its public URL.
+      await deletePlayerPhotos(orgId, playerId);
       const storedUrl = await storeImage("player-photos", orgId, playerId, ext, req.file.mimetype, buffer);
       res.json({ photoUrl: `${storedUrl}?t=${Date.now()}` });
     }
@@ -651,14 +782,7 @@ export function createServer(options: ServerOptions = {}) {
     const orgId = (req as any).orgId as string;
     const playerId = safeSegment(req.params.playerId);
     if (!playerId) { res.status(400).json({ error: "invalid playerId" }); return; }
-    if (r2Enabled) {
-      await deleteByPrefix(`player-photos/${orgId}/${playerId}.`);
-    } else {
-      const dir = path.join(PLAYER_PHOTOS_DIR, orgId);
-      if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).filter(f => f.startsWith(`${playerId}.`)).forEach(f => fs.unlinkSync(path.join(dir, f)));
-      }
-    }
+    await deletePlayerPhotos(orgId, playerId);
     res.json({ status: "removed" });
   });
 
@@ -735,6 +859,14 @@ export function createServer(options: ServerOptions = {}) {
       res.status(402).json({ error: err.message });
       return;
     }
+    if (err instanceof MatchEndedError) {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    if (err instanceof MatchNotFoundError) {
+      res.status(404).json({ error: "match not found" });
+      return;
+    }
     console.error("[relay] failed to load/update match state:", err);
     captureException(err);
     res.status(500).json({ error: "internal error" });
@@ -762,7 +894,7 @@ export function createServer(options: ServerOptions = {}) {
     const [postgres, redis] = await Promise.all([
       !process.env.DATABASE_URL
         ? Promise.resolve("skipped" as const)
-        : withTimeout(prisma.$queryRaw`SELECT 1`, 3000).then(() => "ok" as const).catch(() => "error" as const),
+        : probeWithRetry(() => prisma.$queryRaw`SELECT 1`),
       (() => {
         const redisClients = getRedisClients();
         return !redisClients
@@ -818,7 +950,7 @@ export function createServer(options: ServerOptions = {}) {
     res.json(await listSelectableMatches(result, !asBridge));
   });
 
-  app.get("/state", async (req, res) => {
+  app.get("/state", controlRateLimit, async (req, res) => {
     let orgId = typeof req.query.org === "string" ? req.query.org : undefined;
     const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
     const token = typeof req.query.token === "string" ? req.query.token : undefined;
@@ -844,6 +976,16 @@ export function createServer(options: ServerOptions = {}) {
       }
       orgId = LEGACY_ROOM_ID;
     }
+    // See DISPLAY_ORIGIN_REQUIRED. A caller with no browser Origin can still
+    // read its own org's state by proving itself with a control token.
+    if (!isDisplayOriginAllowed(req.headers.origin)) {
+      const secret = req.headers["x-control-secret"];
+      const holder = await verifyActionSecret(typeof secret === "string" ? secret : undefined, CONTROL_SECRET);
+      if (holder?.orgId !== orgId) {
+        res.status(403).json({ error: DISPLAY_ORIGIN_REFUSED_MESSAGE });
+        return;
+      }
+    }
     try {
       res.json(await getState(orgId, matchId));
     } catch (err) {
@@ -867,7 +1009,40 @@ export function createServer(options: ServerOptions = {}) {
     }
     const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
     try {
-      res.json(await getState(result.orgId, matchId));
+      res.json(await readState(result.orgId, matchId));
+    } catch (err) {
+      respondToStateError(res, err);
+    }
+  });
+
+  // The match's event log (scores, period changes, clock starts/stops) for
+  // consumers that need to know what happened and when, not just the current
+  // state — results import, clip markers for a camera system. `since` is the
+  // `seq` of the last event already held; the response's `next` is the value
+  // to send on the following poll. Same token and add-on as the state route.
+  const EVENTS_PAGE_SIZE = 500;
+  app.get("/api/data-feed/events", dataFeedRateLimit, async (req, res) => {
+    const secret = req.headers["x-data-feed-secret"];
+    const result = await verifyDataFeedSecret(typeof secret === "string" ? secret : undefined, DATA_FEED_SECRET);
+    if (!result) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (!(await orgHasAddOn(result.orgId, "data-feed"))) {
+      res.status(403).json({ error: "This feature requires the data-feed add-on — upgrade at /account/billing" });
+      return;
+    }
+    const since = typeof req.query.since === "string" ? Number(req.query.since) : 0;
+    if (!Number.isSafeInteger(since) || since < 0) {
+      res.status(400).json({ error: "since must be a non-negative integer" });
+      return;
+    }
+    const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
+    try {
+      const events = process.env.DATABASE_URL
+        ? await listMatchEvents(result.orgId, matchId, since, EVENTS_PAGE_SIZE)
+        : eventBuffer.list(roomFor(result.orgId, matchId), since, EVENTS_PAGE_SIZE);
+      res.json({ events, next: events.at(-1)?.seq ?? since });
     } catch (err) {
       respondToStateError(res, err);
     }
@@ -961,7 +1136,7 @@ export function createServer(options: ServerOptions = {}) {
     }
   });
 
-  // ─── Action endpoints (Stream Deck / keyboard shortcut webhooks) ────────────
+  // ─── Action endpoints (Stream Deck / Control API) ────────────
   // Atomic verbs rather than raw MatchState patches — safe to fire without
   // knowing current state. Auth: long-lived CONTROL ScopedToken via
   // x-control-secret, or a short-lived operator JWT from the control panel.
@@ -1068,15 +1243,6 @@ export function createServer(options: ServerOptions = {}) {
     } catch (err) { respondToStateError(res, err); }
   });
 
-  // Default clock duration per sport, mirroring sport-templates.ts in the frontend.
-  const SPORT_DEFAULT_CLOCK: Record<string, number> = {
-    netball: 900, basketball: 600, rugby_union: 0, rugby_league: 0,
-    volleyball: 0, football: 0, handball: 1800, hockey: 900, waterpolo: 480,
-    tennis: 0, touch_rugby: 2400, futsal: 1200, pickleball: 0, badminton: 0,
-    table_tennis: 0, floorball: 1200, squash: 0, lawn_bowls: 0,
-    indoor_cricket: 0, softball: 0, cricket: 0, custom: 600,
-  };
-
   // Sports where scores reset to 0 when a period/set/game ends (e.g. volleyball, tennis).
   const SPORT_RESET_SCORE_ON_PERIOD = new Set<string>([
     "volleyball", "tennis",
@@ -1090,16 +1256,21 @@ export function createServer(options: ServerOptions = {}) {
       const current = await getState(orgId, matchId);
       if (isFinalPeriod(current)) { res.json({ ok: true, period: current.period, clockSeconds: current.clockSeconds }); return; }
       const n = Number.parseInt(current.period, 10);
-      const defaultClock = SPORT_DEFAULT_CLOCK[current.sport] ?? 0;
+      const nextPeriod = Number.isNaN(n) ? 2 : n + 1;
+      // Mirrors the control panel's END button (ScoreTab.tsx) — FIBA: team
+      // fouls reset each quarter. Extra-time periods get their own length.
+      const isBasketball = current.sport === "basketball";
+      const defaultClock = periodClock(current, nextPeriod);
       const resetScoreOnPeriod = SPORT_RESET_SCORE_ON_PERIOD.has(current.sport);
+      const teamReset = { ...(resetScoreOnPeriod && { score: 0 }), ...(isBasketball && { faults: 0 }) };
       const next = await applyManualUpdate(orgId, {
         isRunning: false,
         clockSeconds: defaultClock,
-        period: String(Number.isNaN(n) ? 2 : n + 1),
+        period: String(nextPeriod),
         periodBreak: true,
-        ...(resetScoreOnPeriod && {
-          home: { ...current.home, score: 0 },
-          visitor: { ...current.visitor, score: 0 },
+        ...((resetScoreOnPeriod || isBasketball) && {
+          home: { ...current.home, ...teamReset },
+          visitor: { ...current.visitor, ...teamReset },
         }),
       }, matchId);
       res.json({ ok: true, period: next.period, clockSeconds: next.clockSeconds });
@@ -1182,8 +1353,25 @@ export function createServer(options: ServerOptions = {}) {
         matchId = result.matchId;
         (socket as any).isDataFeed = true;
       }
+    } else if (role === "monitor") {
+      // Read-only state for something that already holds a control token —
+      // the Stream Deck plugin showing live values on its keys. It can
+      // already change this org's matches through /action/*, so letting it
+      // watch them gives nothing away, and unlike role "control" it never
+      // competes for the controller mutex. Registers no handlers: it only
+      // receives matchStateChange.
+      const result = await verifyActionSecret(secret, CONTROL_SECRET);
+      if (result) {
+        orgId = result.orgId;
+        matchId = result.matchId;
+        (socket as any).isMonitor = true;
+      }
     }
 
+    // A role branch above proved itself with a secret. For a monitor the
+    // org is the token's, never the one the client asked for.
+    const s = socket as any;
+    const provedItself = s.isBridge || s.isControl || s.isGraphics || s.isDataFeed || s.isMonitor;
     orgId = orgId ?? requestedOrgId ?? null;
 
     // Viewer/display connections have no signed token — they pass orgId and
@@ -1196,16 +1384,22 @@ export function createServer(options: ServerOptions = {}) {
     // also where the displayToken is checked (see DISPLAY_TOKEN_REQUIRED) —
     // a role branch above (bridge/control/graphics/data-feed) already proved
     // itself via a signed secret, so only the unauthenticated viewer path
-    // needs this.
+    // needs this. A token that isn't pinned to one match gets here too, to
+    // have the matchId it asked for checked against its own org (SA-163).
     if (!matchId && requestedMatchId && process.env.DATABASE_URL) {
       const row = await prisma.match.findUnique({ where: { id: requestedMatchId }, select: { orgId: true, displayToken: true } });
       if (row && (!orgId || row.orgId === orgId)) {
-        if (!isDisplayTokenValid(row.displayToken, requestedToken, DISPLAY_TOKEN_REQUIRED)) {
+        if (!provedItself && !isDisplayTokenValid(row.displayToken, requestedToken, DISPLAY_TOKEN_REQUIRED)) {
           next(new Error("invalid or missing display token"));
           return;
         }
         matchId = requestedMatchId;
         orgId = orgId ?? row.orgId;
+      } else if (s.isDataFeed) {
+        // Falling through would put the feed in the org's default room, where
+        // it would quietly watch (or create) a different match.
+        next(new Error("match not found"));
+        return;
       }
     }
 
@@ -1219,6 +1413,13 @@ export function createServer(options: ServerOptions = {}) {
     }
     orgId = orgId ?? LEGACY_ROOM_ID;
 
+    // See DISPLAY_ORIGIN_REQUIRED — only the unauthenticated viewer path is
+    // held to it.
+    if (!provedItself && !isDisplayOriginAllowed(socket.handshake.headers.origin)) {
+      next(new Error(DISPLAY_ORIGIN_REFUSED_MESSAGE));
+      return;
+    }
+
     (socket as any).orgId = orgId;
     (socket as any).matchId = matchId;
     next();
@@ -1231,7 +1432,7 @@ export function createServer(options: ServerOptions = {}) {
     const isControl  = (socket as any).isControl  === true;
     const isGraphics = (socket as any).isGraphics === true;
     const isDataFeed = (socket as any).isDataFeed === true;
-    let role: "bridge" | "control" | "graphics" | "data-feed" | "viewer";
+    let role: "bridge" | "control" | "graphics" | "data-feed" | "monitor" | "viewer";
     if (isBridge) {
       role = "bridge";
     } else if (isControl) {
@@ -1240,6 +1441,8 @@ export function createServer(options: ServerOptions = {}) {
       role = "graphics";
     } else if (isDataFeed) {
       role = "data-feed";
+    } else if ((socket as any).isMonitor === true) {
+      role = "monitor";
     } else {
       role = "viewer";
     }
@@ -1267,6 +1470,7 @@ export function createServer(options: ServerOptions = {}) {
           return;
         }
         const state = parsed.data as MatchState;
+        if (await refreshMatchEnded(matchId)) return;
         const current = await getState(orgId, matchId);
         if (state.sequenceId >= current.sequenceId) {
           setState(orgId, {
@@ -1357,8 +1561,15 @@ export function createServer(options: ServerOptions = {}) {
         return token?.socketId === socket.id;
       }
 
+      // Tells the panel why its buttons do nothing, so it can offer to reopen
+      // the match instead of looking broken.
+      refreshMatchEnded(matchId)
+        .then(ended => { if (ended) socket.emit("matchEnded"); })
+        .catch(err => console.error("[relay] failed to check match status:", matchId, err));
+
       socket.on("manualUpdate", async (rawPatch: unknown, ack?: () => void) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); ack?.(); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); ack?.(); return; }
         const parsed = manualUpdateRequestSchema.safeParse(rawPatch);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed manualUpdate from room ${room}:`, parsed.error.issues);
@@ -1382,20 +1593,22 @@ export function createServer(options: ServerOptions = {}) {
 
       socket.on("resetMatch", async () => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const current = await getState(orgId, matchId);
         // Push pre-reset state to undo stack so resets can be undone
         const stack = undoStacks.get(room) ?? [];
         stack.push(current);
         if (stack.length > UNDO_STACK_SIZE) stack.shift();
         undoStacks.set(room, stack);
-        const next = resetMatchState(current, SPORT_DEFAULT_CLOCK[current.sport] ?? 0);
-        setState(orgId, next, matchId);
+        const next = resetMatchState(current, regulationClock(current));
+        setState(orgId, next, matchId, "reset");
         const bridge = bridgeSockets.get(room);
         if (bridge?.connected) bridge.emit("manualUpdate", next);
       });
 
       socket.on("cricket:ball", async (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = cricketBallEventSchema.safeParse(rawPayload);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed cricket:ball from room ${room}:`, parsed.error.issues);
@@ -1410,6 +1623,7 @@ export function createServer(options: ServerOptions = {}) {
 
       socket.on("cricket:overComplete", async (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = cricketOverCompleteEventSchema.safeParse(rawPayload ?? {});
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed cricket:overComplete from room ${room}:`, parsed.error.issues);
@@ -1424,6 +1638,7 @@ export function createServer(options: ServerOptions = {}) {
 
       socket.on("cricket:inningsChange", async (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = cricketInningsChangeEventSchema.safeParse(rawPayload);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed cricket:inningsChange from room ${room}:`, parsed.error.issues);
@@ -1438,6 +1653,7 @@ export function createServer(options: ServerOptions = {}) {
 
       socket.on("cricket:declare", async (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = cricketDeclareEventSchema.safeParse(rawPayload);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed cricket:declare from room ${room}:`, parsed.error.issues);
@@ -1452,6 +1668,7 @@ export function createServer(options: ServerOptions = {}) {
 
       socket.on("undo", async () => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (await refreshMatchEnded(matchId)) { socket.emit("matchEnded"); return; }
         const stack = undoStacks.get(room);
         if (!stack?.length) return;
         const previous = stack.pop()!;
@@ -1466,6 +1683,7 @@ export function createServer(options: ServerOptions = {}) {
           // this snapshot was captured and fast-forward by that whole gap.
           ...(previous.isRunning ? { clockAnchorMs: Date.now() } : {}),
         };
+        recordEvents(orgId, restored, matchId, "undo");
         matchStates.set(room, { orgId, matchId, state: restored });
         io.to(room).emit("matchStateChange", restored);
         getMatchStore(orgId, matchId)?.save(restored);
@@ -1486,6 +1704,7 @@ export function createServer(options: ServerOptions = {}) {
       // resetMatch/undo above, not applyManualUpdate) closes that window.
       socket.on("adjustScore", (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (isMatchEndedCached(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = scoreAdjustEventSchema.safeParse(rawPayload);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed adjustScore from room ${room}:`, parsed.error.issues);
@@ -1515,6 +1734,7 @@ export function createServer(options: ServerOptions = {}) {
       // adjustScore above, and for the same reason.
       socket.on("indoorCricket:wicket", (rawPayload: unknown) => {
         if (!assertController()) { socket.emit("controllerConflict", {}); return; }
+        if (isMatchEndedCached(matchId)) { socket.emit("matchEnded"); return; }
         const parsed = indoorCricketWicketEventSchema.safeParse(rawPayload);
         if (!parsed.success) {
           console.warn(`[relay] rejected malformed indoorCricket:wicket from room ${room}:`, parsed.error.issues);
@@ -1590,6 +1810,8 @@ export function createServer(options: ServerOptions = {}) {
           undoStacks.delete(room);
           controllerTokens.delete(room);
           sceneStates.delete(room);
+          endedMatches.delete(matchId);
+          matchLiveCheckedAt.delete(matchId);
           evictMatchStore(orgId, matchId).catch(err =>
             console.error("[relay] failed to evict match store on last disconnect:", room, err)
           );
@@ -1600,7 +1822,7 @@ export function createServer(options: ServerOptions = {}) {
       console.log(`[-] ${role} disconnected from room ${room} (${socket.id})`);
     });
 
-    getState(orgId, matchId)
+    (isDataFeed ? readState : getState)(orgId, matchId)
       .then(state => socket.emit("matchStateChange", state))
       .catch(err => {
         if (err instanceof ConcurrentMatchLimitError) {

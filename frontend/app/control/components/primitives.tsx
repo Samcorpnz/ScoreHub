@@ -161,15 +161,16 @@ export function ScoreButtons({ score, onAdjust, scoreIncrements, scoreLabels, te
   );
 }
 
-export function NameField({ label, value, placeholder, onChange, onCommit }: {
+export function NameField({ label, value, placeholder, onChange, onCommit, testId }: {
   readonly label: string; readonly value: string; readonly placeholder: string;
-  readonly onChange: (v: string) => void; readonly onCommit: () => void;
+  readonly onChange: (v: string) => void; readonly onCommit: () => void; readonly testId?: string;
 }) {
   return (
     <div className="mb-3">
       <p className="text-xs mb-1" style={{ color: "var(--text-dim)" }}>{label}</p>
       <div className="flex gap-2">
         <input className="flex-1 rounded-lg px-3 py-2 text-sm font-semibold"
+          data-testid={testId}
           style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)", outline: "none" }}
           value={value} placeholder={placeholder}
           onChange={e => onChange(e.target.value)}

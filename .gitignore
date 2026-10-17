@@ -39,3 +39,6 @@ npm-debug.log*
 help/src/docs-bundle.json
 help/.dev.vars
 help/.wrangler/
+
+# SonarQube scanner working directory (rewritten on every scan)
+.scannerwork/

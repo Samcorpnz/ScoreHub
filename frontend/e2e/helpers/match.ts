@@ -132,15 +132,15 @@ export async function endMatch(page: Page): Promise<void> {
   await page.waitForURL("**/dashboard");
 }
 
-// The org id isn't in the /control URL — it's only surfaced via the
-// generated display links on the Outputs tab. Display pages need it as a
-// query param since they connect unauthenticated (see useMatchState.ts).
+// The org id isn't in the /control URL, and the Outputs tab no longer prints
+// its display links (they're only handed over via Copy URL / Pop Out,
+// SA-159) — so read it from the session, the same place the Outputs tab gets
+// it. Display pages need it as a query param since they connect
+// unauthenticated (see useMatchState.ts).
 export async function getOrgId(page: Page): Promise<string> {
-  await page.getByRole("tab", { name: "outputs" }).click();
-  const link = page.locator("text=/\\/display\\/basic\\?org=/").first();
-  const text = await link.textContent();
-  const match = text?.match(/org=([^&\s]+)/);
-  if (!match) throw new Error("getOrgId: could not find org id in Outputs tab display links");
-  await page.getByRole("tab", { name: "score" }).click();
-  return match[1];
+  const res = await page.request.get("/api/auth/session");
+  const session = await res.json();
+  const orgId = session?.user?.activeOrgId;
+  if (!orgId) throw new Error(`getOrgId: no activeOrgId in session (status ${res.status()})`);
+  return orgId;
 }

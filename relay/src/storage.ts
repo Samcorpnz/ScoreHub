@@ -24,11 +24,38 @@ export async function putObject(key: string, body: Buffer, contentType: string):
   return `${R2_PUBLIC_URL}/${key}`;
 }
 
+export const r2Bucket = R2_BUCKET;
+
+// Every object under a prefix, following pagination (a single list call stops
+// at 1000 keys). Used by maintenance scripts, not by request handlers.
+export async function listObjects(prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
+  const out: { key: string; lastModified?: Date }[] = [];
+  let token: string | undefined;
+  do {
+    const page = await client!.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token }));
+    for (const o of page.Contents ?? []) {
+      if (o.Key) out.push({ key: o.Key, lastModified: o.LastModified });
+    }
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  return out;
+}
+
+// Deletes the given keys, in batches of 1000 (the DeleteObjects limit).
+export async function deleteObjects(keys: string[]): Promise<void> {
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000);
+    const res = await client!.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: batch.map(Key => ({ Key })) } }));
+    // DeleteObjects answers 200 even when individual keys fail, listing them here.
+    const failed = res?.Errors ?? [];
+    if (failed.length) {
+      throw new Error(`failed to delete ${failed.length} object(s): ${failed.map(e => `${e.Key} (${e.Code})`).join(", ")}`);
+    }
+  }
+}
+
 // Mirrors the local-disk "delete every file starting with X" pattern used for
 // logos, where the uploaded file's extension isn't known at delete time.
 export async function deleteByPrefix(prefix: string): Promise<void> {
-  const listed = await client!.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix }));
-  const keys = (listed.Contents ?? []).map(o => o.Key).filter((k): k is string => Boolean(k));
-  if (keys.length === 0) return;
-  await client!.send(new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys.map(Key => ({ Key })) } }));
+  await deleteObjects((await listObjects(prefix)).map(o => o.key));
 }

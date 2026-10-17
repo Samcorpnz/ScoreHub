@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
-import { SPORT_TEMPLATES, getTemplate, getStructureLabel } from "../../sport-templates";
+import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
 
@@ -41,7 +41,7 @@ function templateClockLabel(clockSeconds: number, countDown: boolean): string {
   return `${direction} ${minutes}:${seconds}`;
 }
 
-function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
+function ControlApiCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
   const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
     [orgId, "tokens", "CONTROL"],
     () => fetchTokensByType(orgId, "CONTROL"),
@@ -103,7 +103,7 @@ function WebhookCard({ orgId, matchId }: { readonly orgId: string; readonly matc
   ];
 
   return (
-    <Card title="Stream Deck / Webhooks">
+    <Card title="Stream Deck / Control API">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         Control ScoreHub from a Stream Deck or any HTTP client. Install the plugin, generate a token,
         paste it into the Stream Deck property inspector, and choose your match there.
@@ -435,7 +435,7 @@ function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
 // long-lived DATA_FEED token against GET /api/data-feed/state and the
 // "data-feed" socket role — see relay/src/auth.ts's verifyDataFeedSecret.
 // Gated behind the data-feed add-on, like BridgeTokensCard above and unlike
-// WebhookCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
+// ControlApiCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
 // [orgId]/tokens 403s a DATA_FEED request for an org without the add-on, so
 // this card checks the same entitlement client-side to show an upgrade
 // prompt instead of a form that would just fail.
@@ -578,21 +578,36 @@ function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
 
 export function SettingsTab({ state, push, matchId, onEnded }: {
   readonly state: MatchState;
-  readonly push: (p: Partial<MatchState>) => void;
+  readonly push: (p: Partial<MatchState>) => void | Promise<void>;
   readonly matchId?: string;
   readonly onEnded?: () => void;
 }) {
-  const template = getTemplate(state.sport);
+  const template = getMatchTemplate(state);
+  // Only offered where the format is just a different template (Netball /
+  // Fast5) — cricket's and softball's formats are baked into their sportState.
+  const formatField = template.formats ? template.matchConfig?.find(f => f.key === "format") : undefined;
+  const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
   const { data: session } = useSession();
   const orgId = session?.user?.activeOrgId;
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState("");
 
+  function selectFormat(format: string) {
+    const sportConfig = { ...state.sportConfig, format };
+    // Bring the clock along if it's still sitting untouched on the old
+    // format's opening value; anything else is the operator's to change.
+    const untouched = !state.isRunning && state.period === "1" && state.clockSeconds === template.clockSeconds;
+    push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
+  }
+
   async function handleEndMatch() {
     if (!orgId || !matchId) return;
-    if (!globalThis.confirm("End this match? It will move to History and can't be scored again.")) return;
+    if (!globalThis.confirm("End this match? It will move to History and can't be scored unless you reopen it.")) return;
     setEnding(true);
     setEndError("");
+    // An ended match is read-only on the relay, so nothing could stop a
+    // clock that was left running once this goes through.
+    if (state.isRunning) await push({ isRunning: false });
     try {
       const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/end`, { method: "POST" });
       if (!res.ok) {
@@ -672,6 +687,29 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
         </div>
       </Card>
 
+      {/* Format — for fixtures, which don't pass through /setup's options */}
+      {formatField && (
+        <Card title={formatField.label}>
+          <div className="flex flex-wrap gap-2">
+            {formatField.options.map(opt => (
+              <button key={opt.value}
+                data-testid={`settings-format-${opt.value}`}
+                className="rounded-lg px-4 py-2 text-left"
+                style={{
+                  background: currentFormat === opt.value ? "var(--accent-dim)" : "var(--bg-elevated)",
+                  border: `1px solid ${currentFormat === opt.value ? "var(--border-accent)" : "var(--border)"}`,
+                  color: currentFormat === opt.value ? "var(--accent)" : "var(--text-secondary)",
+                }}
+                onClick={() => selectFormat(opt.value)}
+              >
+                <div className="text-sm font-semibold">{opt.label}</div>
+                {opt.description && <div className="text-xs mt-0.5" style={{ opacity: 0.7 }}>{opt.description}</div>}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Template defaults preview */}
       <Card title={`Template Defaults — ${template.label}`}>
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
@@ -705,7 +743,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
       {matchId && (
         <Card title="End Match">
           <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-            Moves this match to History. Displays connected to it will stop receiving updates.
+            Moves this match to History and locks its score. To correct it later, reopen it from History.
           </p>
           {endError && (
             <p className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{endError}</p>
@@ -726,7 +764,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
       <Card title="Connection">
         <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
           Your relay URL. The Bridge app and Stream Deck plugin already use ScoreHub&apos;s by default — you only
-          need this for the webhook endpoints, or if support asks you to set it under <strong>Advanced</strong>.
+          need this for the Control API, or if support asks you to set it under <strong>Advanced</strong>.
         </p>
         <div className="flex gap-2">
           <code data-testid="relay-url" className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
@@ -744,7 +782,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
 
       {(session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER") && orgId && (
         <>
-          <WebhookCard orgId={orgId} matchId={matchId} />
+          <ControlApiCard orgId={orgId} matchId={matchId} />
           <BridgeTokensCard orgId={orgId} />
           <DataFeedTokensCard orgId={orgId} />
         </>

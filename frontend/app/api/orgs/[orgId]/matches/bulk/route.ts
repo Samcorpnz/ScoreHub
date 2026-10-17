@@ -6,6 +6,7 @@ import { canRunMatches } from "@/lib/roles";
 import { getAccountForOrg } from "@/lib/account";
 import { getTemplate, SPORT_TEMPLATES } from "@/app/sport-templates";
 import { DEFAULT_MATCH_STATE } from "@/app/types";
+import { hasExplicitOffset } from "@/lib/fixtureTime";
 import type { SportType } from "@/app/types";
 
 const VALID_SPORTS = new Set(SPORT_TEMPLATES.map(t => t.sport));
@@ -70,8 +71,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
     }
     if (!row.home?.trim()) errors.push({ row: i, error: "missing home team" });
     if (!row.visitor?.trim()) errors.push({ row: i, error: "missing visitor team" });
+    // scheduledAt is stored in UTC. This server has no idea what timezone the
+    // uploader is in, so a time without an offset is refused rather than
+    // guessed at — the dashboard converts CSV times to UTC before posting.
     if (row.scheduledAt && Number.isNaN(Date.parse(row.scheduledAt))) {
       errors.push({ row: i, error: `invalid scheduledAt "${row.scheduledAt}"` });
+    } else if (row.scheduledAt && !hasExplicitOffset(row.scheduledAt)) {
+      errors.push({ row: i, error: `scheduledAt "${row.scheduledAt}" must include a timezone offset (for example 2026-10-17T05:30:00Z)` });
     }
     for (const [field, max] of Object.entries(FIELD_MAX) as [keyof typeof FIELD_MAX, number][]) {
       const value = row[field];

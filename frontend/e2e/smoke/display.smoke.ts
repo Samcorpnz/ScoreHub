@@ -30,7 +30,9 @@ test.describe("deployed display page", () => {
       expect(res.status, `POST /action/score/home?delta=${delta}`).toBe(200);
     };
 
-    const baseline = (await (await fetch(stateUrl)).json()).home.score as number;
+    // Not a browser on ScoreHub's origin, so the relay wants the control token
+    // before it serves the display feed (DISPLAY_ORIGIN_REQUIRED, SA-159).
+    const baseline = (await (await fetch(stateUrl, { headers: { "x-control-secret": env.control! } })).json()).home.score as number;
     const errors: string[] = [];
     page.on("pageerror", err => errors.push(String(err)));
 
@@ -44,7 +46,7 @@ test.describe("deployed display page", () => {
     } finally {
       // Restore from the relay's actual current value, not an assumed +1: if the
       // increment applied but the assertion failed, this still lands on baseline.
-      const now = (await (await fetch(stateUrl)).json()).home.score as number;
+      const now = (await (await fetch(stateUrl, { headers: { "x-control-secret": env.control! } })).json()).home.score as number;
       if (now !== baseline) await setScore(Math.max(-99, Math.min(99, baseline - now)));
     }
     await expect(score).toHaveText(String(baseline), { timeout: 10_000 });

@@ -7,7 +7,7 @@ import path from "path";
 import { createServer } from "../server";
 import { MatchState } from "../types";
 
-// Stream Deck / webhook scoring routes (/action/*) and the socket scoring
+// Stream Deck / Control API scoring routes (/action/*) and the socket scoring
 // handlers that had no direct coverage: /action/toggle, /action/score/:team,
 // /action/period/next|prev, indoorCricket:wicket and undo-after-adjust. These
 // are the scoring/clock paths SA-30 requires CI to guard.
@@ -313,5 +313,83 @@ describe("socket — indoorCricket:wicket", () => {
     await new Promise(r => setTimeout(r, 100));
     expect((await getState()).home.score).toBe(40);
     warn.mockRestore();
+  });
+});
+
+describe("POST /action/period/end — basketball", () => {
+  it("resets both teams' fouls for the next quarter, like the control panel's END QTR", async () => {
+    await manual({
+      sport: "basketball", period: "1", clockSeconds: 12, isRunning: true,
+      home: { name: "Home", score: 20, faults: 4, timeouts: 5 },
+      visitor: { name: "Visitor", score: 18, faults: 3, timeouts: 5 },
+    });
+    const res = await post("/action/period/end");
+    expect(res.body).toMatchObject({ ok: true, period: "2", clockSeconds: 600 });
+    const state = await getState();
+    expect(state.home).toMatchObject({ score: 20, faults: 0 });
+    expect(state.visitor).toMatchObject({ score: 18, faults: 0 });
+    expect(state.isRunning).toBe(false);
+    expect(state.periodBreak).toBe(true);
+  });
+
+  it("gives overtime periods a 5:00 clock", async () => {
+    await manual({ sport: "basketball", period: "4", clockSeconds: 0, isRunning: false });
+    const res = await post("/action/period/end");
+    expect(res.body).toMatchObject({ ok: true, period: "5", clockSeconds: 300 });
+  });
+
+  it("gives netball extra time 7:00, or the length set for the match", async () => {
+    await manual({ sport: "netball", period: "4", clockSeconds: 0, isRunning: false, sportConfig: {} });
+    expect((await post("/action/period/end")).body).toMatchObject({ ok: true, period: "5", clockSeconds: 420 });
+
+    await manual({ sport: "netball", period: "4", clockSeconds: 0, sportConfig: { extraTimeSeconds: 300 } });
+    expect((await post("/action/period/end")).body).toMatchObject({ ok: true, period: "5", clockSeconds: 300 });
+    expect((await post("/action/period/end")).body).toMatchObject({ ok: true, period: "6", clockSeconds: 300 });
+  });
+
+  it("runs Fast5 netball on 6:00 quarters and 1:00 extra time", async () => {
+    await manual({ sport: "netball", period: "1", clockSeconds: 0, isRunning: false, sportConfig: { format: "fast5" } });
+    expect((await post("/action/period/end")).body).toMatchObject({ ok: true, period: "2", clockSeconds: 360 });
+
+    await manual({ period: "4", clockSeconds: 0 });
+    expect((await post("/action/period/end")).body).toMatchObject({ ok: true, period: "5", clockSeconds: 60 });
+    await manual({ sportConfig: {} });
+  });
+
+  it("leaves fouls alone for other sports", async () => {
+    await manual({
+      sport: "netball", period: "1", clockSeconds: 0, isRunning: false,
+      home: { name: "Home", score: 5, faults: 2, timeouts: 1 },
+      visitor: { name: "Visitor", score: 4, faults: 1, timeouts: 1 },
+    });
+    await post("/action/period/end");
+    const state = await getState();
+    expect(state.home.faults).toBe(2);
+    expect(state.visitor.faults).toBe(1);
+  });
+});
+
+describe("penalty shoot-out tally", () => {
+  it("is stored apart from the score, cleared with null, and dropped by Reset Match", async () => {
+    await manual({ sport: "football", home: { score: 1 }, visitor: { score: 1 }, shootout: { home: [true, false], visitor: [true] } });
+    let state = await getState();
+    expect(state.shootout).toEqual({ home: [true, false], visitor: [true] });
+    expect(state.home.score).toBe(1);
+
+    await manual({ shootout: null });
+    expect((await getState()).shootout).toBeNull();
+
+    await manual({ shootout: { home: [true], visitor: [] } });
+    const control = await connectControl();
+    control.emit("resetMatch");
+    await until(async () => (await getState()).shootout === undefined);
+    control.disconnect();
+  });
+
+  it("rejects a malformed tally", async () => {
+    await manual({ shootout: null });
+    const res = await manual({ shootout: { home: ["yes"], visitor: [] } });
+    expect(res.status).toBe(400);
+    expect((await getState()).shootout).toBeNull();
   });
 });

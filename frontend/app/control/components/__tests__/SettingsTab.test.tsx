@@ -62,6 +62,32 @@ describe("SettingsTab", () => {
     expect(push).toHaveBeenCalledWith(expect.objectContaining({ sport: "netball", period: "1", isRunning: false }));
   });
 
+  it("switches a netball match to Fast5, bringing an untouched clock along", () => {
+    const push = vi.fn();
+    const state = { ...makeState(), countDown: true, clockSeconds: 900, sportConfig: { extraTimeSeconds: 300 } } as MatchState;
+    render(<SettingsTab state={state} push={push} />, { wrapper: swrWrapper });
+    fireEvent.click(screen.getByTestId("settings-format-fast5"));
+    expect(push).toHaveBeenCalledWith({ sportConfig: { extraTimeSeconds: 300, format: "fast5" }, clockSeconds: 360 });
+  });
+
+  it("leaves the clock alone when changing format mid-match", () => {
+    const push = vi.fn();
+    const state = { ...makeState(), countDown: true, clockSeconds: 512, period: "2" } as MatchState;
+    render(<SettingsTab state={state} push={push} />, { wrapper: swrWrapper });
+    fireEvent.click(screen.getByTestId("settings-format-fast5"));
+    expect(push).toHaveBeenCalledWith({ sportConfig: { format: "fast5" } });
+  });
+
+  it("describes a Fast5 match's own template, and offers no format for sports without one", () => {
+    const fast5 = { ...makeState(), sportConfig: { format: "fast5" } } as MatchState;
+    const { unmount } = render(<SettingsTab state={fast5} push={vi.fn()} />, { wrapper: swrWrapper });
+    expect(screen.getByText("Template Defaults — Fast5 Netball")).toBeInTheDocument();
+    expect(screen.getByText("Counts down from 6:00")).toBeInTheDocument();
+    unmount();
+    render(<SettingsTab state={{ ...makeState(), sport: "basketball" } as MatchState} push={vi.fn()} />, { wrapper: swrWrapper });
+    expect(screen.queryByTestId("settings-format-fast5")).not.toBeInTheDocument();
+  });
+
   it("does not render the End Match card without a matchId", () => {
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
     expect(screen.queryByTestId("end-match")).not.toBeInTheDocument();
@@ -97,18 +123,18 @@ describe("SettingsTab", () => {
     expect(await screen.findByText("Cannot end")).toBeInTheDocument();
   });
 
-  it("does not render the webhook/bridge admin cards for an OPERATOR role", () => {
+  it("does not render the Control API/bridge admin cards for an OPERATOR role", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", activeOrgId: "org1" } } });
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.queryByText("Stream Deck / Webhooks")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stream Deck / Control API")).not.toBeInTheDocument();
     expect(screen.queryByText("Bridge Devices")).not.toBeInTheDocument();
   });
 
-  it("renders the webhook/bridge admin cards for a MANAGER role with an org", async () => {
+  it("renders the Control API/bridge admin cards for a MANAGER role with an org", async () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.getByText("Stream Deck / Webhooks")).toBeInTheDocument();
+    expect(screen.getByText("Stream Deck / Control API")).toBeInTheDocument();
     expect(await screen.findByText("Bridge Devices")).toBeInTheDocument();
     expect(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)")).toBeInTheDocument();
   });

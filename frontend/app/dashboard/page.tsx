@@ -7,6 +7,7 @@ import { signOut, useSession } from "next-auth/react";
 import { PlanBadge } from "../components/PlanBadge";
 import { OrgSwitcher } from "../components/OrgSwitcher";
 import { SPORT_TEMPLATES } from "../sport-templates";
+import { formatFixtureTime, localFixtureTimeToUtc, localTimeZoneLabel } from "@/lib/fixtureTime";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? (globalThis.window !== undefined ? globalThis.location.origin : "");
 
@@ -45,6 +46,9 @@ interface FixtureRow {
 // support. Good enough for the sport/competition/home/visitor/scheduledAt
 // format documented on the upload panel; anything fancier (Excel exports
 // with embedded commas) can be pasted into a spreadsheet and re-saved.
+//
+// scheduledAt comes back as a UTC instant: a CSV time has no timezone of its
+// own, so it's read in this browser's timezone here (see lib/fixtureTime.ts).
 function parseFixtureCsv(text: string): { rows: FixtureRow[]; errors: string[] } {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length === 0) return { rows: [], errors: ["empty file"] };
@@ -59,12 +63,17 @@ function parseFixtureCsv(text: string): { rows: FixtureRow[]; errors: string[] }
       errors.push(`row ${i}: missing sport/home/visitor`);
       continue;
     }
+    const scheduledAt = rec.scheduledat ? localFixtureTimeToUtc(rec.scheduledat) : undefined;
+    if (scheduledAt === null) {
+      errors.push(`row ${i}: unreadable date "${rec.scheduledat}" — use YYYY-MM-DDTHH:MM`);
+      continue;
+    }
     rows.push({
       sport: rec.sport,
       competition: rec.competition || undefined,
       home: rec.home,
       visitor: rec.visitor,
-      scheduledAt: rec.scheduledat || undefined,
+      scheduledAt,
       matchName: rec.matchname || undefined,
     });
   }
@@ -103,6 +112,10 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [reopeningId, setReopeningId] = useState<string | null>(null);
+  const [reopenError, setReopenError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const { data: matches = [], isLoading: loading, mutate: load } = useSWR(
     orgId ? [orgId, tab, sportFilter, competitionFilter, search] : null,
@@ -120,6 +133,61 @@ export default function DashboardPage() {
       setTimeout(() => setCopied(null), 1500);
     });
   }
+
+  // Downloads the History tab's matches, as currently filtered, as a results
+  // CSV. Fetched rather than linked so a refusal (Free plan) shows its
+  // message here instead of navigating to a JSON error.
+  async function exportResults() {
+    if (!orgId) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      const params = new URLSearchParams();
+      if (sportFilter) params.set("sport", sportFilter);
+      if (competitionFilter) params.set("competition", competitionFilter);
+      if (search.trim()) params.set("q", search.trim());
+      const res = await fetch(`/api/orgs/${orgId}/matches/export?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setExportError(body?.error ?? "Export failed");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "scorehub-results.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // An ended match is read-only; reopening it makes it live again so the
+  // score can be corrected, then End Match puts it back in History.
+  async function reopen(matchId: string) {
+    if (!orgId) return;
+    if (!confirm("Reopen this match? It becomes live again so you can correct it — end it again when you're done.")) return;
+    setReopeningId(matchId);
+    setReopenError("");
+    try {
+      const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/reopen`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setReopenError(body?.error ?? "Couldn't reopen the match — try again.");
+        return;
+      }
+      router.push(`/control?matchId=${matchId}`);
+    } catch {
+      setReopenError("Couldn't reach the server — try again.");
+    } finally {
+      setReopeningId(null);
+    }
+  }
+
+  const canRunMatches = session?.user?.activeRole !== undefined && session.user.activeRole !== "VIEWER";
 
   if (authStatus === "loading") {
     return (
@@ -237,10 +305,27 @@ export default function DashboardPage() {
               {uploadOpen ? "Close Upload" : "Upload Fixtures"}
             </button>
           )}
+          {tab === "history" && (
+            <button
+              onClick={exportResults}
+              disabled={exporting}
+              className="rounded-lg px-3 py-2 text-xs font-bold whitespace-nowrap"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+            >
+              {exporting ? "Exporting…" : "Export Results"}
+            </button>
+          )}
         </div>
 
         {tab === "upcoming" && uploadOpen && orgId && (
           <FixtureUpload orgId={orgId} onDone={() => { setUploadOpen(false); load(); }} />
+        )}
+
+        {reopenError && (
+          <p role="alert" className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{reopenError}</p>
+        )}
+        {tab === "history" && exportError && (
+          <p role="alert" className="text-xs mb-3 font-semibold" style={{ color: "var(--danger)" }}>{exportError}</p>
         )}
 
         {loading ? (
@@ -265,8 +350,8 @@ export default function DashboardPage() {
                     <p className="text-sm font-bold truncate">{title}</p>
                     <p className="text-xs truncate" style={{ color: "var(--text-dim)" }}>
                       {m.sport ?? "—"}{m.competition ? ` · ${m.competition}` : ""}
-                      {m.scheduledAt ? ` · ${new Date(m.scheduledAt).toLocaleString()}` : ""}
-                      {m.status === "ENDED" && m.endedAt ? ` · ended ${new Date(m.endedAt).toLocaleString()}` : ""}
+                      {m.scheduledAt ? ` · ${formatFixtureTime(m.scheduledAt)}` : ""}
+                      {m.status === "ENDED" && m.endedAt ? ` · ended ${formatFixtureTime(m.endedAt)}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -288,7 +373,20 @@ export default function DashboardPage() {
                         {controlLinkLabel}
                       </a>
                     ) : (
-                      <span className="text-xs font-bold px-3" style={{ color: "var(--text-dim)" }}>Ended</span>
+                      <>
+                        <span className="text-xs font-bold px-3" style={{ color: "var(--text-dim)" }}>Ended</span>
+                        {canRunMatches && (
+                          <button
+                            data-testid={`reopen-match-${m.id}`}
+                            onClick={() => reopen(m.id)}
+                            disabled={reopeningId === m.id}
+                            className="rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+                            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+                          >
+                            {reopeningId === m.id ? "Reopening…" : "Reopen"}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -343,6 +441,10 @@ function FixtureUpload({ orgId, onDone }: { readonly orgId: string; readonly onD
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
         CSV with header row: <code>sport,competition,home,visitor,scheduledAt</code> (competition and scheduledAt optional).
       </p>
+      <p data-testid="fixture-timezone" className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+        Times are read in your timezone, <strong>{localTimeZoneLabel()}</strong>, and shown to each person in theirs.
+        For a fixture somewhere else, add its offset to the time — for example <code>2026-10-17T18:30+11:00</code>.
+      </p>
       <input
         type="file"
         accept=".csv,text/csv"
@@ -365,7 +467,7 @@ function FixtureUpload({ orgId, onDone }: { readonly orgId: string; readonly onD
                 <span>·</span>
                 <span>{r.home} v {r.visitor}</span>
                 {r.competition && <span>· {r.competition}</span>}
-                {r.scheduledAt && <span>· {r.scheduledAt}</span>}
+                {r.scheduledAt && <span>· {formatFixtureTime(r.scheduledAt)}</span>}
               </div>
             ))}
           </div>

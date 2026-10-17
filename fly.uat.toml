@@ -23,3 +23,9 @@ primary_region = "syd"
 
 [env]
   NODE_ENV = "production"
+  # Display links must carry their match's token, so "Regenerate display link"
+  # on the Outputs tab actually cuts off old links (see relay/src/server.ts).
+  DISPLAY_TOKEN_REQUIRED = "true"
+  # The display feed is only served to ScoreHub's own pages (ALLOWED_ORIGINS),
+  # so third-party graphics software has to use the Data Feed add-on (SA-159).
+  DISPLAY_ORIGIN_REQUIRED = "true"
