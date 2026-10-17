@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import type { ControlPanelProps } from "../../sport-templates";
 import type { SoftballFormat, SoftballState } from "../../types";
-import { NameField, SectionLabel, SmallBtn } from "./primitives";
+import { SectionLabel, SmallBtn } from "./primitives";
 
 const MAX_INNINGS: Record<SoftballFormat, number> = { fastpitch: 7, slowpitch: 6 };
 const STARTING_COUNT: Record<SoftballFormat, number> = { fastpitch: 0, slowpitch: 1 };
@@ -23,9 +22,6 @@ function getSoftballState(state: ControlPanelProps["state"]): SoftballState {
 }
 
 export function SoftballTab({ state, push, sendReset, sendUndo, sendScoreAdjust }: ControlPanelProps) {
-  const [homeName, setHomeName] = useState("");
-  const [visName, setVisName] = useState("");
-  const [matchName, setMatchName] = useState("");
 
   const sb = getSoftballState(state);
   const start = STARTING_COUNT[sb.format];
@@ -206,19 +202,7 @@ export function SoftballTab({ state, push, sendReset, sendUndo, sendScoreAdjust 
       <div className="rounded-2xl p-5 space-y-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <SectionLabel>Match Controls</SectionLabel>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <NameField label="Home team name" value={homeName} placeholder={state.home.name} onChange={setHomeName}
-            onCommit={() => { push({ home: { ...state.home, name: homeName } }); setHomeName(""); }} />
-          <NameField label="Visitor team name" value={visName} placeholder={state.visitor.name} onChange={setVisName}
-            onCommit={() => { push({ visitor: { ...state.visitor, name: visName } }); setVisName(""); }} />
-        </div>
-
-        <div className="grid grid-cols-1 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label="Match name" value={matchName} placeholder={state.matchName || "e.g. Round 1"}
-            onChange={setMatchName} onCommit={() => { push({ matchName }); setMatchName(""); }} />
-        </div>
-
-        <div className="flex gap-2 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
+        <div className="flex gap-2">
           <SmallBtn label={`Format: ${sb.format}`} onClick={() => {}} />
         </div>
 

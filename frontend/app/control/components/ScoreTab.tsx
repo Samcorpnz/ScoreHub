@@ -41,9 +41,6 @@ export function ScoreTab({
   sendCricketBall, sendCricketOverComplete, sendCricketInningsChange, sendCricketDeclare,
   sendScoreAdjust, sendIndoorCricketWicket,
 }: ControlPanelProps) {
-  const [homeName,   setHomeName]   = useState("");
-  const [visName,    setVisName]    = useState("");
-  const [matchName,  setMatchName]  = useState("");
   const [period,     setPeriod]     = useState("");
   const [clockInput, setClockInput] = useState("");
   const [extraTimeInput, setExtraTimeInput] = useState("");
@@ -487,18 +484,8 @@ export function ScoreTab({
           </div>
         )}
 
-        {/* Team names */}
+        {/* Period — team and match names live on the Settings tab */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label={`Home team name`} value={homeName} placeholder={state.home.name} onChange={setHomeName}
-            onCommit={() => { push({ home: { ...state.home, name: homeName } }); setHomeName(""); }} />
-          <NameField label={`Visitor team name`} value={visName} placeholder={state.visitor.name} onChange={setVisName}
-            onCommit={() => { push({ visitor: { ...state.visitor, name: visName } }); setVisName(""); }} />
-        </div>
-
-        {/* Match info */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-4" style={{ borderTop: "1px solid var(--border)" }}>
-          <NameField label="Match name" value={matchName} placeholder={state.matchName || "e.g. Round 1"}
-            onChange={setMatchName} onCommit={() => { push({ matchName }); setMatchName(""); }} />
           <NameField label="Period / Quarter" value={period} placeholder={state.period}
             onChange={setPeriod} onCommit={() => { push({ period }); setPeriod(""); }} />
         </div>

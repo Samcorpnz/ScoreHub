@@ -328,16 +328,6 @@ describe("ScoreTab", () => {
     expect(handlers.push).toHaveBeenCalledWith({ clockSeconds: 110 });
   });
 
-  it("commits a home team name change via the NameField Set button", () => {
-    const handlers = makeHandlers();
-    render(<ScoreTab state={makeState()} {...handlers} />);
-    const input = screen.getByPlaceholderText("Home");
-    fireEvent.change(input, { target: { value: "Sharks" } });
-    const setButton = input.parentElement!.querySelector("button")!;
-    fireEvent.click(setButton);
-    expect(handlers.push).toHaveBeenCalledWith({ home: expect.objectContaining({ name: "Sharks" }) });
-  });
-
   it("sets the clock via the MM:SS input on Enter", () => {
     const handlers = makeHandlers();
     render(<ScoreTab state={makeState()} {...handlers} />);
