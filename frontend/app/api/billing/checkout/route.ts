@@ -15,7 +15,7 @@ import {
   AddOn,
   BillingInterval,
 } from "@/lib/plans";
-import { KNOWN_ADDONS, readSubscription, currentPeriodEnd, syncAccountFromSubscription, SubscriptionContents } from "@/lib/billing";
+import { KNOWN_ADDONS, readSubscription, currentPeriodEnd, syncAccountFromSubscription, isStillEnding, SubscriptionContents } from "@/lib/billing";
 import { readScheduledChange, scheduleChange, cancelScheduledChange, withScheduledChangeKept, ScheduledChange } from "@/lib/scheduledChanges";
 
 type Account = NonNullable<Awaited<ReturnType<typeof getAccountForOrg>>>;
@@ -85,7 +85,7 @@ function addOnChange(account: Account, current: SubscriptionContents, addOn: Add
   if (!current.interval) return "Your plan's billing interval couldn't be read.";
   // Taken off earlier but still paid up to the period end: putting it back
   // costs nothing now, and it renews with the plan as before.
-  const resuming = account.addOnsEnding.includes(addOn);
+  const resuming = isStillEnding(account, addOn);
   return {
     kind: "update",
     items: [{ price: priceIdForAddOn(addOn, current.interval), quantity: 1 }],

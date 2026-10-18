@@ -5,9 +5,13 @@ import { NextRequest } from "next/server";
 const constructEventMock = vi.fn();
 const subscriptionsRetrieveMock = vi.fn();
 const subscriptionsCancelMock = vi.fn();
+const invoiceItemsListMock = vi.fn();
+const invoicesCreateMock = vi.fn();
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({
     webhooks: { constructEvent: (...a: unknown[]) => constructEventMock(...a) },
+    invoiceItems: { list: (...a: unknown[]) => invoiceItemsListMock(...a) },
+    invoices: { create: (...a: unknown[]) => invoicesCreateMock(...a) },
     subscriptions: {
       retrieve: (...a: unknown[]) => subscriptionsRetrieveMock(...a),
       cancel: (...a: unknown[]) => subscriptionsCancelMock(...a),
@@ -115,6 +119,8 @@ describe("POST /api/billing/webhook", () => {
       constructEventMock,
       subscriptionsRetrieveMock,
       subscriptionsCancelMock,
+      invoiceItemsListMock,
+      invoicesCreateMock,
       stripeEventCreateMock,
       stripeEventDeleteMock,
       accountUpdateMock,
@@ -728,6 +734,58 @@ describe("POST /api/billing/webhook", () => {
       await POST(makeRequest());
 
       expect(accountUpdateMock).not.toHaveBeenCalled();
+    });
+
+    it("invoices mid-period charges straight away once the subscription is set to end", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          customer: "cus_1",
+          status: "active",
+          cancel_at_period_end: true,
+          metadata: { accountId: "acc_1" },
+          items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "venue" }));
+      invoiceItemsListMock.mockResolvedValue({ data: [
+        // An add-on bought last week, waiting for a renewal that won't come
+        { amount: 1450, parent: { subscription_details: { subscription: "sub_1" } } },
+        { amount: 999, parent: { subscription_details: { subscription: "sub_other" } } },
+      ] });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(invoiceItemsListMock).toHaveBeenCalledWith({ customer: "cus_1", pending: true, limit: 100 });
+      expect(invoicesCreateMock).toHaveBeenCalledWith({
+        customer: "cus_1",
+        subscription: "sub_1",
+        pending_invoice_items_behavior: "include",
+        auto_advance: true,
+      });
+    });
+
+    it("doesn't raise an invoice when a subscription set to end owes nothing extra", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          customer: "cus_1",
+          status: "active",
+          cancel_at_period_end: true,
+          metadata: { accountId: "acc_1" },
+          items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "venue" }));
+      invoiceItemsListMock.mockResolvedValue({ data: [] });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(invoicesCreateMock).not.toHaveBeenCalled();
     });
 
     it("no-ops the base-plan branch when the account can't be found", async () => {

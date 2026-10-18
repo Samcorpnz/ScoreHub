@@ -5,7 +5,7 @@ import { prisma } from "@scorehub/db";
 import { getAccountForOrg } from "@/lib/account";
 import { getStripe } from "@/lib/stripe";
 import { ADDON_SUBSCRIPTION_FIELD, AddOn, BillingInterval, priceIdForAddOn } from "@/lib/plans";
-import { KNOWN_ADDONS, readSubscription, currentPeriodEnd, syncAccountFromSubscription } from "@/lib/billing";
+import { KNOWN_ADDONS, readSubscription, currentPeriodEnd, syncAccountFromSubscription, isStillEnding } from "@/lib/billing";
 import { cancelScheduledChange, withScheduledChangeKept } from "@/lib/scheduledChanges";
 
 type Account = NonNullable<Awaited<ReturnType<typeof getAccountForOrg>>>;
@@ -70,7 +70,11 @@ async function changeAddOn(account: Account, subscriptionId: string, addOn: AddO
   let updated: Stripe.Subscription;
   let current = account;
   if (resume) {
-    if (item || !account.addOnsEnding.includes(addOn)) return NextResponse.json({ cancelAtPeriodEnd: false });
+    if (item) return NextResponse.json({ cancelAtPeriodEnd: false });
+    // Past its paid period: it's a new purchase now, charged as one.
+    if (!isStillEnding(account, addOn)) {
+      return NextResponse.json({ error: "That add-on has already ended. Add it again from the Add-ons card." }, { status: 409 });
+    }
     updated = await withScheduledChangeKept(stripe, subscription, () => stripe.subscriptions.update(subscriptionId, {
       items: [{ price: priceIdForAddOn(addOn, (interval ?? account.billingInterval ?? "month") as BillingInterval), quantity: 1 }],
       proration_behavior: "none",

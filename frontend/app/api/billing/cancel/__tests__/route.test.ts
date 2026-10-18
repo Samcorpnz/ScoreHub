@@ -170,6 +170,20 @@ describe("POST /api/billing/cancel", () => {
       expect(await res.json()).toEqual({ cancelAtPeriodEnd: false });
     });
 
+    it("won't resume for free an add-on whose paid period has run out", async () => {
+      getAccountForOrgMock.mockResolvedValue(account({
+        addOnsEnding: ["graphics-operator"],
+        addOnsEndAt: new Date(Date.now() - 60_000),
+      }));
+      subscriptionsRetrieveMock.mockResolvedValue(subscription(item("si_1", "price_pro_month")));
+
+      const { POST } = await import("../route");
+      const res = await POST(makeRequest({ addOn: "graphics-operator", resume: true }));
+
+      expect(res.status).toBe(409);
+      expect(subscriptionsUpdateMock).not.toHaveBeenCalled();
+    });
+
     it("leaves the subscription alone resuming an add-on that isn't ending", async () => {
       getAccountForOrgMock.mockResolvedValue(account());
       subscriptionsRetrieveMock.mockResolvedValue(subscription(item("si_1", "price_pro_month"), item("si_2", "price_graphics_month")));

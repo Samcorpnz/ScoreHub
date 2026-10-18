@@ -4,7 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@scorehub/db";
 import { getStripe } from "@/lib/stripe";
 import { ADDON_SUBSCRIPTION_FIELD, AddOn, PaidPlan, UPGRADE_DISCOUNT_COUPON_ID } from "@/lib/plans";
-import { keepsPaidAccess, readSubscription, syncAccountFromSubscription } from "@/lib/billing";
+import { keepsPaidAccess, readSubscription, syncAccountFromSubscription, invoicePendingCharges } from "@/lib/billing";
 import {
   sendPaymentFailedEmail,
   sendPaymentActionRequiredEmail,
@@ -183,6 +183,12 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   const account = await findPlanAccount(subscription);
   if (!account) return;
+
+  // Set to end (here or in the billing portal): collect mid-period charges
+  // that were waiting for a renewal invoice that won't now come.
+  if ((subscription.cancel_at_period_end || subscription.cancel_at) && keepsPaidAccess(subscription.status)) {
+    await invoicePendingCharges(getStripe(), subscription);
+  }
 
   const discountUsed = !account.upgradeDiscountUsedAt && await hasUpgradeDiscount(subscription);
   const { nowFree, previousPlan } = await syncAccountFromSubscription(

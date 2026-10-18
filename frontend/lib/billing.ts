@@ -40,6 +40,36 @@ export function currentPeriodEnd(subscription: Stripe.Subscription): number | nu
   return subscription.items?.data[0]?.current_period_end ?? null;
 }
 
+// An add-on taken off the subscription that's still within the period it was
+// paid for, so putting it back costs nothing until the next renewal. Checks
+// the date too, not just the list: if the renewal webhook that clears the
+// list hasn't arrived, a lapsed add-on mustn't come back free.
+export function isStillEnding(account: AccountRow, addOn: AddOn): boolean {
+  return account.addOnsEnding.includes(addOn)
+    && Boolean(account.addOnsEndAt && account.addOnsEndAt.getTime() > Date.now());
+}
+
+// Upgrades and add-ons bought mid-period are charged on the next renewal
+// invoice. A subscription set to end has no next invoice, so those charges
+// would never be collected: invoice them now instead. Called whenever a
+// subscription is set to cancel, from our own cancel route or the billing
+// portal alike (via the webhook).
+export async function invoicePendingCharges(stripe: Stripe, subscription: Stripe.Subscription): Promise<boolean> {
+  const customer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  const pending = await stripe.invoiceItems.list({ customer, pending: true, limit: 100 });
+  const owed = pending.data
+    .filter(item => item.parent?.subscription_details?.subscription === subscription.id)
+    .reduce((sum, item) => sum + item.amount, 0);
+  if (owed <= 0) return false;
+  await stripe.invoices.create({
+    customer,
+    subscription: subscription.id,
+    pending_invoice_items_behavior: "include",
+    auto_advance: true,
+  });
+  return true;
+}
+
 // A failed renewal moves the subscription to "past_due" while Stripe retries
 // the card. The account keeps its plan and add-ons through that window, and
 // only drops to Free once Stripe gives up and cancels the subscription (or

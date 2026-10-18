@@ -458,6 +458,22 @@ describe("POST /api/billing/checkout", () => {
         });
       });
 
+      it("charges for an add-on whose paid period has already run out, even if the renewal hasn't been recorded", async () => {
+        getAccountForOrgMock.mockResolvedValue(subscriber({
+          addOns: ["graphics-operator"],
+          addOnsEnding: ["graphics-operator"],
+          addOnsEndAt: new Date(Date.now() - 60_000),
+        }));
+        subscriptionsRetrieveMock.mockResolvedValue(subscription(item("si_1", "price_pro_month", "month")));
+
+        const { POST } = await import("../route");
+        await POST(makeRequest({ addOn: "graphics-operator", confirm: true, prorationDate: RECENT }));
+
+        expect(subscriptionsUpdateMock).toHaveBeenCalledWith("sub_1", expect.objectContaining({
+          proration_behavior: "create_prorations",
+        }));
+      });
+
       it("400s when the add-on is already on the subscription", async () => {
         getAccountForOrgMock.mockResolvedValue(subscriber({ addOns: ["graphics-operator"] }));
         subscriptionsRetrieveMock.mockResolvedValue(subscription(
