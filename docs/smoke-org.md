@@ -65,7 +65,7 @@ match. A smoke failure marks the workflow run red; it cannot roll the deploy bac
 
 ```bash
 SMOKE_ORG_ID=… SMOKE_MATCH_ID=… SMOKE_DISPLAY_TOKEN=… SMOKE_CONTROL_TOKEN=… \
-  node scripts/smoke.mjs --relay https://scorehub-relay-uat.fly.dev --expect multi --auth required
+  node scripts/smoke.mjs --relay https://relay.uat.scorehub.co.nz --expect multi --auth required
 # browser check (needs SMOKE_FRONTEND_URL too):
 npx playwright install chromium && npm run test:smoke --workspace=frontend
 ```

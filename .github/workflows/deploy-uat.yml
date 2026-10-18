@@ -45,7 +45,7 @@ jobs:
       group: smoke-uat
       cancel-in-progress: false
     env:
-      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL_UAT || 'https://scorehub-relay-uat.fly.dev' }}
+      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL_UAT || 'https://relay.uat.scorehub.co.nz' }}
       SMOKE_AUTH_MODE: ${{ vars.SMOKE_AUTH_MODE || 'optional' }}
       SMOKE_ORG_ID: ${{ vars.SMOKE_UAT_ORG_ID }}
       SMOKE_MATCH_ID: ${{ vars.SMOKE_UAT_MATCH_ID }}

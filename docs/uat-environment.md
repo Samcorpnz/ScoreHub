@@ -19,14 +19,14 @@ team upgrades to Pro.
 | Layer | Resource | Notes |
 | --- | --- | --- |
 | Frontend | Vercel `uat` git branch (Preview environment, branch-scoped env vars) | Auto-deploys on every push to `uat` via Vercel's GitHub integration — no Actions job needed. Stable branch-alias URL: `https://scoring-app-git-uat-sam-kerins-projects.vercel.app`. Also live at `app.uat.scorehub.co.nz`, gated by Cloudflare Zero Trust Access (see below) rather than open to the internet. |
-| Relay | Fly.io app `scorehub-relay-uat` | Config: `fly.uat.toml` (repo root). Single region (`syd`), `min_machines_running = 0` / `auto_stop_machines = true` so it idles to zero cost between test sessions. Deploys via `.github/workflows/deploy-uat.yml` on push to `uat`, or manually: `flyctl deploy -c fly.uat.toml -a scorehub-relay-uat --remote-only` |
+| Relay | Fly.io app `scorehub-relay-uat` | Config: `fly.uat.toml` (repo root). Single region (`syd`), `min_machines_running = 0` / `auto_stop_machines = true` so it idles to zero cost between test sessions. Public address `https://relay.uat.scorehub.co.nz` (UAT's `NEXT_PUBLIC_RELAY_URL`, and what the Control API / Data Feed URLs in the app show) — a Fly certificate plus DNS-only `A`/`AAAA` records in Cloudflare, same as production's `relay.scorehub.co.nz`; `scorehub-relay-uat.fly.dev` still answers. Deploys via `.github/workflows/deploy-uat.yml` on push to `uat`, or manually: `flyctl deploy -c fly.uat.toml -a scorehub-relay-uat --remote-only` |
 | Database | Neon branch `UAT` (project `ScoringApp`, id `patient-morning-97818497`) | Copy-on-write off `production`. No auto-refresh policy yet — reset with `neonctl branches reset UAT --parent` when data drifts too far from useful. |
 | Redis | Upstash `ScoreHub-UAT` (pay-as-you-go, `ap-southeast-2`) | Deliberately a separate database from prod's `ScoreHub` — isolates the Socket.io cross-instance adapter and clock tick-lock so UAT traffic can't touch prod's Redis keyspace. |
 | Object storage | R2 bucket `scorehub-uat`, custom domain `cdn-uat.scorehub.co.nz` | Access key scoped to this bucket only (Object Read & Write), created via the Cloudflare dashboard (not available through `wrangler`/the account API token used for other Cloudflare ops). Account ID `c0c396b5f4c3cf71c2ecb3821febaf92`. |
 | Marketing site | Cloudflare Worker `scorehub-marketing-uat`, custom domain `uat.scorehub.co.nz` | Deploy: `cd marketing && npm run build && npx wrangler deploy --env uat`. Manual only, no CI job. Uses the verified `mail.scorehub.co.nz` Mailgun domain but still routes contact-form submissions to `sam@samcorp.co.nz` instead of `hello@scorehub.co.nz`, to keep UAT test submissions out of the real inbox — see the `uat` env block in `marketing/wrangler.jsonc`. |
 | Help centre | Cloudflare Worker `scorehub-help-uat`, custom domain `help.uat.scorehub.co.nz` | Auto-deploys on every push to `uat` via `deploy-uat.yml`'s `deploy-help-uat` job. Manual equivalent: `cd help && npm run build && npx wrangler deploy --env uat`. |
 
-UAT hostnames mirror production's structure — bare domain is marketing, `app.` is the frontend, `help.` is the help centre — just with everything nested a level under `uat.`: `uat.scorehub.co.nz` (marketing), `app.uat.scorehub.co.nz` (frontend), `help.uat.scorehub.co.nz` (help centre).
+UAT hostnames mirror production's structure — bare domain is marketing, `app.` is the frontend, `help.` is the help centre — just with everything nested a level under `uat.`: `uat.scorehub.co.nz` (marketing), `app.uat.scorehub.co.nz` (frontend), `help.uat.scorehub.co.nz` (help centre), `relay.uat.scorehub.co.nz` (relay).
 
 ## Access control on `app.uat.scorehub.co.nz`
 
@@ -39,7 +39,14 @@ cloud) — Access only intercepts traffic that's proxied through Cloudflare's ed
 **Do not switch that record to DNS-only** to "fix" the domain-misconfigured warning in
 `vercel domains inspect app.uat.scorehub.co.nz` — that warning is cosmetic in this setup (Vercel
 can't complete its own DNS-based verification while Cloudflare proxies the record) and the site
-works fine regardless; unproxying it would remove the Access gate instead. Vercel's own
+works fine regardless; unproxying it would remove the Access gate instead.
+
+`relay.uat.scorehub.co.nz` is deliberately **not** behind Access (DNS-only, since 2026-10-19).
+It was briefly proxied and gated, but that can't work: the Bridge and Stream Deck plugin don't
+send Access service-token headers, display screens on TVs/OBS machines aren't on WARP, browser
+socket.io/fetch calls from `app.uat` don't carry `relay.uat`'s Access cookie, and a proxied record
+stops Fly from renewing its certificate. The relay authenticates every caller itself, and
+`scorehub-relay-uat.fly.dev` was open regardless. Vercel's own
 project-level deployment protection (Vercel Authentication / SSO) is left enabled as normal —
 Cloudflare Access already gates this hostname before requests reach Vercel, so it doesn't add a
 second login for testers, and turning it off project-wide would also strip protection from every
@@ -123,4 +130,4 @@ prod, or vice versa).
 
 - Redeploy relay only: `flyctl deploy -c fly.uat.toml -a scorehub-relay-uat --remote-only`
 - Reset UAT data back to a copy of prod: `neonctl branches reset UAT --parent --project-id patient-morning-97818497` (or via Neon console)
-- Wake a scaled-to-zero relay: any request to `https://scorehub-relay-uat.fly.dev/health` triggers `auto_start_machines`
+- Wake a scaled-to-zero relay: any request to `https://relay.uat.scorehub.co.nz/health` triggers `auto_start_machines`
