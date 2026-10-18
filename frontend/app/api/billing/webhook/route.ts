@@ -3,7 +3,8 @@ import Stripe from "stripe";
 import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@scorehub/db";
 import { getStripe } from "@/lib/stripe";
-import { planForPriceId, addOnForPriceId, ADDON_SUBSCRIPTION_FIELD, AddOn, PaidPlan, UPGRADE_DISCOUNT_COUPON_ID } from "@/lib/plans";
+import { ADDON_SUBSCRIPTION_FIELD, AddOn, PaidPlan, UPGRADE_DISCOUNT_COUPON_ID } from "@/lib/plans";
+import { keepsPaidAccess, readSubscription, syncAccountFromSubscription } from "@/lib/billing";
 import {
   sendPaymentFailedEmail,
   sendPaymentActionRequiredEmail,
@@ -15,15 +16,25 @@ function isPaidPlan(plan: string): plan is PaidPlan {
   return plan === "pro" || plan === "venue";
 }
 
-// A failed renewal moves the subscription to "past_due" while Stripe retries
-// the card. The account keeps its plan and add-ons through that window, and
-// only drops to Free once Stripe gives up and cancels the subscription (or
-// marks it unpaid). The length of the window is not set here: it is the retry
-// schedule in each Stripe account's dashboard (Billing > Revenue recovery),
-// which must be "retry for 2 weeks, then cancel the subscription" to match
-// PAYMENT_GRACE_DAYS.
-function keepsPaidAccess(status: Stripe.Subscription.Status): boolean {
-  return status === "active" || status === "past_due";
+// Add-ons used to bill on their own subscription, marked with addOn
+// metadata. Those still running until the migration moves them onto the
+// plan's subscription keep their old handling here. One the migration has
+// already replaced (migratedTo metadata) is ignored, so its cancellation
+// doesn't take away the add-on now billed on the plan.
+function legacyAddOn(subscription: Stripe.Subscription): AddOn | "migrated" | null {
+  if (subscription.metadata?.migratedTo) return "migrated";
+  const addOn = subscription.metadata?.addOn as AddOn | undefined;
+  if (addOn) return addOn;
+  const { planItem, addOnItems } = readSubscription(subscription);
+  const [onlyAddOn] = Object.keys(addOnItems) as AddOn[];
+  return !planItem && onlyAddOn ? onlyAddOn : null;
+}
+
+async function findPlanAccount(subscription: Stripe.Subscription) {
+  const accountId = subscription.metadata?.accountId;
+  return accountId
+    ? prisma.account.findUnique({ where: { id: accountId } })
+    : prisma.account.findFirst({ where: { stripeSubscriptionId: subscription.id } });
 }
 
 // Stripe retries webhooks on any non-2xx response, so on a real processing
@@ -121,100 +132,88 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
     }
     throw err;
   }
-  const priceId = subscription.items.data[0]?.price.id;
+  // Sessions are plan-only now; this is one started before the switch to a
+  // single subscription that completed after it.
   const addOn = session.metadata?.addOn as AddOn | undefined;
-
   if (addOn) {
     await addAddOn(accountId, addOn, subscription.id);
     return;
   }
 
-  const plan = priceId ? planForPriceId(priceId) : null;
-  const interval = subscription.items.data[0]?.price.recurring?.interval ?? null;
-  // Never fail open to a paid tier: if the price id can't be mapped to a
-  // known plan (unrecognized/mis-mapped price), record the customer and
-  // subscription but leave `plan` unchanged and log the misconfiguration
-  // rather than silently granting Pro.
-  if (!plan) {
-    console.error(`[billing] unmapped priceId on checkout.session.completed: ${priceId} (account ${accountId})`);
+  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  if (!account) return;
+  // Never fail open to a paid tier: if no item maps to a known plan
+  // (unrecognized/mis-mapped price), sync leaves `plan` unchanged, and the
+  // misconfiguration is logged rather than silently granting Pro.
+  if (!readSubscription(subscription).plan) {
+    const priceIds = subscription.items.data.map(i => i.price.id);
+    console.error(`[billing] unmapped priceId on checkout.session.completed: ${priceIds.join(",")} (account ${accountId})`);
     Sentry.captureMessage("billing webhook: unmapped priceId on checkout.session.completed", {
       level: "error",
       tags: { area: "billing-webhook" },
-      extra: { priceId, accountId },
+      extra: { priceIds, accountId },
     });
   }
   // The checkout route stamps this metadata flag when it attached the
   // upgrade-discount coupon at Checkout Session creation time (see
   // UPGRADE_DISCOUNT_COUPON_ID) — mark it used so the offer can't repeat.
   const discounted = subscription.metadata?.discounted === "true";
-  await prisma.account.update({
-    where: { id: accountId },
-    data: {
-      stripeCustomerId: session.customer,
-      stripeSubscriptionId: subscription.id,
-      ...(plan ? { plan } : {}),
-      billingInterval: interval,
-      ...(discounted ? { upgradeDiscountUsedAt: new Date() } : {}),
-    },
+  await syncAccountFromSubscription(account, subscription, {
+    stripeCustomerId: session.customer,
+    ...(discounted ? { upgradeDiscountUsedAt: new Date() } : {}),
   });
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<void> {
-  const accountId = subscription.metadata?.accountId;
-  const metadataAddOn = subscription.metadata?.addOn as AddOn | undefined;
-  const priceId = subscription.items.data[0]?.price.id;
-
-  if (metadataAddOn || (priceId && addOnForPriceId(priceId))) {
+  const legacy = legacyAddOn(subscription);
+  if (legacy === "migrated") return;
+  if (legacy) {
+    const accountId = subscription.metadata?.accountId;
     const account = accountId
       ? await prisma.account.findUnique({ where: { id: accountId } })
       : await findAccountByAddOnSubscription(subscription.id);
     if (!account) return;
-    const addOn = metadataAddOn ?? addOnForPriceId(priceId!)!;
     if (keepsPaidAccess(subscription.status)) {
-      await addAddOn(account.id, addOn, subscription.id);
+      await addAddOn(account.id, legacy, subscription.id);
     } else {
-      await removeAddOn(account.id, addOn);
+      await removeAddOn(account.id, legacy);
     }
     return;
   }
 
-  const account = accountId
-    ? await prisma.account.findUnique({ where: { id: accountId } })
-    : await prisma.account.findFirst({ where: { stripeSubscriptionId: subscription.id } });
+  const account = await findPlanAccount(subscription);
   if (!account) return;
 
-  const plan = priceId ? planForPriceId(priceId) : null;
-  const interval = subscription.items.data[0]?.price.recurring?.interval ?? null;
-  const paid = keepsPaidAccess(subscription.status);
-  const nextPlan = paid ? (plan ?? account.plan) : "free";
   const discountUsed = !account.upgradeDiscountUsedAt && await hasUpgradeDiscount(subscription);
-  await prisma.account.update({
-    where: { id: account.id },
-    data: {
-      stripeSubscriptionId: subscription.id,
-      plan: nextPlan,
-      billingInterval: paid ? interval : null,
-      ...(discountUsed ? { upgradeDiscountUsedAt: new Date() } : {}),
-    },
-  });
-  // Add-ons require an active paid plan — if the base plan just lapsed,
-  // cancel any running add-on subscription rather than leaving it billing
-  // for a feature the account can no longer use.
-  if (nextPlan === "free") {
+  const { nowFree, previousPlan } = await syncAccountFromSubscription(
+    account,
+    subscription,
+    discountUsed ? { upgradeDiscountUsedAt: new Date() } : {},
+  );
+  // Add-ons still on their own subscription require an active paid plan — if
+  // the plan just lapsed, cancel them rather than leaving them billing for a
+  // feature the account can no longer use. (Add-ons on the plan's own
+  // subscription lapse with it.)
+  if (nowFree) {
     await cancelActiveAddOnSubscriptions(account);
-    if (isPaidPlan(account.plan)) await sendSubscriptionEndedEmailToAdmins(account.id, account.plan);
+    if (isPaidPlan(previousPlan)) await sendSubscriptionEndedEmailToAdmins(account.id, previousPlan);
   }
 }
 
-// A plan change confirmed in the billing portal can carry the one-time
-// upgrade coupon (see confirmSubscriptionChange in the checkout route). The
-// portal can't stamp our metadata, so look for the coupon itself. Event
-// payloads list discounts as bare ids, hence the expanded re-fetch — only
-// done when the subscription has a discount at all.
+// The one-time upgrade coupon can be on the subscription (from Checkout) or
+// on the plan's item (from an in-app plan change, see changeSubscription in
+// the checkout route). The checkout route claims it before making the
+// change; this is the backstop for a change made some other way, such as in
+// the Stripe dashboard. Event payloads list discounts as bare ids, hence the
+// expanded re-fetch — only done when there's a discount at all.
 async function hasUpgradeDiscount(subscription: Stripe.Subscription): Promise<boolean> {
-  if (!subscription.discounts?.length) return false;
-  const expanded = await getStripe().subscriptions.retrieve(subscription.id, { expand: ["discounts"] });
-  return expanded.discounts.some(d => {
+  const hasAny = subscription.discounts?.length || subscription.items.data.some(i => i.discounts?.length);
+  if (!hasAny) return false;
+  const expanded = await getStripe().subscriptions.retrieve(subscription.id, {
+    expand: ["discounts", "items.data.discounts"],
+  });
+  const discounts = [...expanded.discounts, ...expanded.items.data.flatMap(i => i.discounts)];
+  return discounts.some(d => {
     if (typeof d === "string") return false;
     const coupon = d.source?.coupon;
     return (typeof coupon === "string" ? coupon : coupon?.id) === UPGRADE_DISCOUNT_COUPON_ID;
@@ -222,23 +221,31 @@ async function hasUpgradeDiscount(subscription: Stripe.Subscription): Promise<bo
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
-  const accountId = subscription.metadata?.accountId;
-  const metadataAddOn = subscription.metadata?.addOn as AddOn | undefined;
-
-  if (metadataAddOn) {
+  const legacy = legacyAddOn(subscription);
+  if (legacy === "migrated") return;
+  if (legacy) {
+    const accountId = subscription.metadata?.accountId;
     const account = accountId
       ? await prisma.account.findUnique({ where: { id: accountId } })
       : await findAccountByAddOnSubscription(subscription.id);
-    if (account) await removeAddOn(account.id, metadataAddOn);
+    if (account) await removeAddOn(account.id, legacy);
     return;
   }
 
-  const account = accountId
-    ? await prisma.account.findUnique({ where: { id: accountId } })
-    : await prisma.account.findFirst({ where: { stripeSubscriptionId: subscription.id } });
+  const accountId = subscription.metadata?.accountId;
+  const account = await findPlanAccount(subscription);
+  // The plan's add-ons end with it. Any still on their own subscription are
+  // cancelled just below, which removes them too.
   await prisma.account.updateMany({
     where: accountId ? { id: accountId } : { stripeSubscriptionId: subscription.id },
-    data: { plan: "free", stripeSubscriptionId: null, billingInterval: null },
+    data: {
+      plan: "free",
+      stripeSubscriptionId: null,
+      billingInterval: null,
+      addOns: account ? account.addOns.filter(a => account[ADDON_SUBSCRIPTION_FIELD[a as AddOn]]) : [],
+      addOnsEnding: [],
+      addOnsEndAt: null,
+    },
   });
   // Same cascade as the "updated" case above, for when the base plan
   // subscription is cancelled outright rather than just lapsing.
@@ -265,11 +272,24 @@ async function handleInvoicePaymentActionRequired(invoice: Stripe.Invoice): Prom
 // invoice already failed, so this is specifically the "it went through after
 // all" case worth notifying admins about, not a monthly "thanks for paying".
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice): Promise<void> {
+  if (invoice.billing_reason === "subscription_cycle") await endLapsedAddOns(invoice);
   if (!invoice.attempt_count || invoice.attempt_count <= 1) return;
 
   const emails = await adminEmailsForStripeCustomer(invoice.customer);
   if (!emails) return;
   await sendPaymentRecoveredEmail({ to: emails });
+}
+
+// A renewal is when add-ons removed during the last period stop working.
+// customer.subscription.updated usually gets there first; this makes sure it
+// happens even when that event's payload left nothing to change.
+async function endLapsedAddOns(invoice: Stripe.Invoice): Promise<void> {
+  const subscription = invoice.parent?.subscription_details?.subscription;
+  const subscriptionId = typeof subscription === "string" ? subscription : subscription?.id;
+  if (!subscriptionId) return;
+  const account = await prisma.account.findFirst({ where: { stripeSubscriptionId: subscriptionId } });
+  if (!account?.addOnsEnding.length) return;
+  await syncAccountFromSubscription(account, await getStripe().subscriptions.retrieve(subscriptionId));
 }
 
 async function adminEmailsForStripeCustomer(customer: Stripe.Invoice["customer"]): Promise<string[] | null> {

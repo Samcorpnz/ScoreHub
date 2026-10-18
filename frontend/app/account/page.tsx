@@ -82,6 +82,33 @@ const ADD_ONS: AddOnConfig[] = [
   },
 ];
 
+// What a change to an existing subscription will cost, from the checkout
+// route's preview, for the admin to confirm before it's made.
+type ChangePreview = {
+  // "schedule": a downgrade, taking effect at effectiveAt with no refund.
+  // "keep": drops a scheduled downgrade.
+  kind: "update" | "schedule" | "keep";
+  effectiveAt: number | null;
+  interval?: BillingInterval;
+  chargedNow: boolean;
+  // Totals include GST worked out by Stripe Tax; tax is the GST part.
+  amountDue: number;
+  tax: number;
+  prorated: number;
+  currency: string;
+  invoiceDate: number | null;
+  prorationDate: number;
+};
+
+type PendingChange = {
+  target: "plan" | AddOnId;
+  description: string;
+  request: Record<string, unknown>;
+  preview: ChangePreview;
+};
+
+type ScheduledChange = { plan: "pro" | "venue"; interval: BillingInterval; at: number };
+
 type SubscriptionInfo = {
   status: string;
   cancelAtPeriodEnd: boolean;
@@ -99,6 +126,7 @@ export default function AccountPage() {
     billingInterval: BillingInterval | null;
     hasStripeCustomer: boolean;
     subscription: SubscriptionInfo | null;
+    scheduledChange?: ScheduledChange | null;
     addOns: string[];
     graphicsSubscription: SubscriptionInfo | null;
     dataFeedSubscription: SubscriptionInfo | null;
@@ -109,12 +137,9 @@ export default function AccountPage() {
   } | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [checkoutSecret, setCheckoutSecret] = useState<string | null>(null);
-  const [checkoutKind, setCheckoutKind] = useState<"plan" | AddOnId | null>(null);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
-  const [addOnInterval, setAddOnInterval] = useState<Record<AddOnId, BillingInterval>>({
-    "graphics-operator": "month",
-    "data-feed": "month",
-  });
+  const [pendingChange, setPendingChange] = useState<PendingChange | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [switchNotice, setSwitchNotice] = useState<string | null>(null);
   const [finishingUp, setFinishingUp] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -132,10 +157,6 @@ export default function AccountPage() {
       .then(data => {
         setBillingStatus(data);
         if (data.billingInterval) setBillingInterval(data.billingInterval);
-        setAddOnInterval(prev => ({
-          "graphics-operator": data.graphicsSubscription?.interval ?? prev["graphics-operator"],
-          "data-feed": data.dataFeedSubscription?.interval ?? prev["data-feed"],
-        }));
         return data;
       })
       .catch(() => null), []);
@@ -156,55 +177,37 @@ export default function AccountPage() {
     }
   }
 
-  // Same polling gap as waitForPlanChange, but for the add-on's own webhook
-  // path (checkout.session.completed -> Account.addOns).
-  async function waitForAddOnChange(addOnId: AddOnId, hadAddOn: boolean) {
-    setFinishingUp(true);
-    try {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        await new Promise(r => setTimeout(r, 1500));
-        const data = await fetchBillingStatus();
-        if (data && data.addOns.includes(addOnId) !== hadAddOn) return;
-      }
-    } finally {
-      setFinishingUp(false);
-    }
-  }
-
   useEffect(() => {
     fetchBillingStatus();
   }, [fetchBillingStatus]);
 
-  // Back from confirming a plan change on Stripe's page. The webhook that
-  // records it usually lands within a second or two, so look again shortly.
-  useEffect(() => {
-    if (new URLSearchParams(globalThis.location.search).get("billing") !== "updated") return;
-    const notice = setTimeout(() => {
-      // Drop the flag so a reload doesn't repeat the notice
-      globalThis.history.replaceState(null, "", "/account");
-      setSwitchNotice("Your plan change is confirmed. It can take a few seconds to show here.");
-    }, 0);
-    const refetch = setTimeout(() => { fetchBillingStatus(); }, 3000);
-    return () => { clearTimeout(notice); clearTimeout(refetch); };
-  }, [fetchBillingStatus]);
-
-  async function upgrade(plan: "pro" | "venue") {
+  async function upgrade(plan: "pro" | "venue", interval: BillingInterval = billingInterval) {
     setBillingBusy(true);
     setSwitchNotice(null);
+    setPendingChange(null);
+    const request = { plan, interval };
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, interval: billingInterval }),
+        body: JSON.stringify(request),
       });
       const data = await res.json().catch(() => null);
       if (data?.clientSecret) {
-        setCheckoutKind("plan");
         setCheckoutSecret(data.clientSecret);
-      } else if (data?.confirmUrl) {
-        // Already subscribed: Stripe's page shows the change and its prorated
-        // cost for the customer to confirm, then sends them back here.
-        globalThis.location.assign(data.confirmUrl);
+      } else if (data?.preview) {
+        // Already subscribed: the change goes on the same subscription, paid
+        // with the card on file, once the admin confirms what it costs.
+        const name = PLANS.find(p => p.id === plan)?.name ?? plan;
+        const preview: ChangePreview = data.preview;
+        setPendingChange({
+          target: "plan",
+          description: preview.kind === "keep"
+            ? `Stay on ${name}, billed ${interval === "year" ? "annually" : "monthly"}`
+            : `Switch to ${name}, billed ${interval === "year" ? "annually" : "monthly"}`,
+          request,
+          preview: data.preview,
+        });
       } else {
         setSwitchNotice(data?.error ?? "couldn't start checkout");
       }
@@ -216,19 +219,19 @@ export default function AccountPage() {
   async function purchaseAddOn(addOnId: AddOnId) {
     setAddOnBusy(prev => ({ ...prev, [addOnId]: true }));
     setAddOnNotice(prev => ({ ...prev, [addOnId]: undefined }));
+    setPendingChange(null);
     const notify = (message: string, isError: boolean) => setAddOnNotice(prev => ({ ...prev, [addOnId]: { message, isError } }));
+    const request = { addOn: addOnId };
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addOn: addOnId, interval: addOnInterval[addOnId] }),
+        body: JSON.stringify(request),
       });
       const data = await res.json().catch(() => null);
-      if (data?.clientSecret) {
-        setCheckoutKind(addOnId);
-        setCheckoutSecret(data.clientSecret);
-      } else if (data?.confirmUrl) {
-        globalThis.location.assign(data.confirmUrl);
+      if (data?.preview) {
+        const name = ADD_ONS.find(a => a.id === addOnId)?.name ?? addOnId;
+        setPendingChange({ target: addOnId, description: `Add ${name} to your plan`, request, preview: data.preview });
       } else {
         notify(data?.error ?? "Couldn't start checkout — please try again.", true);
       }
@@ -238,6 +241,45 @@ export default function AccountPage() {
       setAddOnBusy(prev => ({ ...prev, [addOnId]: false }));
     }
   }
+
+  async function confirmChange() {
+    if (!pendingChange) return;
+    const { target, request, preview } = pendingChange;
+    const notify = (message: string, isError = false) => {
+      if (target === "plan") setSwitchNotice(message);
+      else setAddOnNotice(prev => ({ ...prev, [target]: { message, isError } }));
+    };
+    setConfirmBusy(true);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...request, confirm: true, prorationDate: preview.prorationDate }),
+      });
+      const data = await res.json().catch(() => null);
+      setPendingChange(null);
+      if (data?.updated) {
+        await fetchBillingStatus();
+        notify(confirmedNotice(pendingChange));
+      } else {
+        notify(data?.error ?? "Couldn't make that change — please try again.", true);
+      }
+    } catch {
+      notify("Couldn't reach the server — please try again.", true);
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
+
+  const confirmPanel = (target: "plan" | AddOnId) =>
+    pendingChange?.target === target ? (
+      <ConfirmChange
+        change={pendingChange}
+        busy={confirmBusy}
+        onConfirm={confirmChange}
+        onCancel={() => setPendingChange(null)}
+      />
+    ) : null;
 
   async function setAddOnCancelAtPeriodEnd(addOnId: AddOnId, resume: boolean) {
     setAddOnBusy(prev => ({ ...prev, [addOnId]: true }));
@@ -298,12 +340,8 @@ export default function AccountPage() {
               clientSecret: checkoutSecret,
               onComplete: () => {
                 const previousPlan = billingStatus?.plan;
-                const kind = checkoutKind;
-                const hadAddOn = kind && kind !== "plan" ? (billingStatus?.addOns.includes(kind) ?? false) : false;
                 setCheckoutSecret(null);
-                setCheckoutKind(null);
-                if (kind && kind !== "plan") waitForAddOnChange(kind, hadAddOn);
-                else waitForPlanChange(previousPlan);
+                waitForPlanChange(previousPlan);
               },
             }}
           >
@@ -354,6 +392,7 @@ export default function AccountPage() {
         )}
         {finishingUp && <StatusText message="Finishing up your upgrade…" />}
         {switchNotice && <StatusText message={switchNotice} />}
+        {confirmPanel("plan")}
         {billingStatus?.stripeUnavailable && (
           <div data-testid="billing-stripe-unavailable">
             <StatusText isError message="Some billing details couldn't be loaded from our payment provider, so they're missing below. If this keeps happening, please contact support." />
@@ -460,13 +499,12 @@ export default function AccountPage() {
                 config={config}
                 billingStatus={billingStatus}
                 isAdmin={isAdmin}
-                interval={addOnInterval[config.id]}
-                setInterval={value => setAddOnInterval(prev => ({ ...prev, [config.id]: value }))}
                 busy={addOnBusy[config.id]}
                 onPurchase={() => purchaseAddOn(config.id)}
                 onCancel={() => setAddOnCancelAtPeriodEnd(config.id, false)}
                 onResume={() => setAddOnCancelAtPeriodEnd(config.id, true)}
               />
+              {confirmPanel(config.id)}
               {addOnNotice[config.id] && (
                 <div data-testid={`addon-notice-${config.id}`}>
                   <StatusText message={addOnNotice[config.id]!.message} isError={addOnNotice[config.id]!.isError} />
@@ -485,8 +523,6 @@ function AddOnRow({
   config,
   billingStatus,
   isAdmin,
-  interval,
-  setInterval,
   busy,
   onPurchase,
   onCancel,
@@ -495,13 +531,12 @@ function AddOnRow({
   readonly config: AddOnConfig;
   readonly billingStatus: {
     plan: string;
+    billingInterval: BillingInterval | null;
     addOns: string[];
     graphicsSubscription: SubscriptionInfo | null;
     dataFeedSubscription: SubscriptionInfo | null;
   };
   readonly isAdmin: boolean;
-  readonly interval: BillingInterval;
-  readonly setInterval: (interval: BillingInterval) => void;
   readonly busy: boolean;
   readonly onPurchase: () => void;
   readonly onCancel: () => void;
@@ -518,8 +553,7 @@ function AddOnRow({
       config={config}
       hasBasePlan={hasBasePlan}
       isAdmin={isAdmin}
-      interval={interval}
-      setInterval={setInterval}
+      interval={billingStatus.billingInterval ?? "month"}
       busy={busy}
       onPurchase={onPurchase}
     />
@@ -572,13 +606,14 @@ function ActiveAddOn({
 }
 
 function InactiveAddOn({
-  config, hasBasePlan, isAdmin, interval, setInterval, busy, onPurchase,
+  config, hasBasePlan, isAdmin, interval, busy, onPurchase,
 }: {
   readonly config: AddOnConfig;
   readonly hasBasePlan: boolean;
   readonly isAdmin: boolean;
+  // The plan's: add-ons are billed on the same subscription, so they renew
+  // together and appear on one invoice.
   readonly interval: BillingInterval;
-  readonly setInterval: (interval: BillingInterval) => void;
   readonly busy: boolean;
   readonly onPurchase: () => void;
 }) {
@@ -601,8 +636,6 @@ function InactiveAddOn({
       </div>
       {hasBasePlan && isAdmin && (
         <div className="flex items-center gap-2">
-          <SmallBtn label="Monthly" onClick={() => setInterval("month")} active={interval === "month"} />
-          <SmallBtn label="Annual (2 months free)" onClick={() => setInterval("year")} active={interval === "year"} />
           <span className="text-sm font-black" style={{ color: "var(--accent)" }}>
             {interval === "month" ? config.monthlyPrice : config.annualPrice}
             <span className="text-xs" style={{ color: "var(--text-dim)" }}>{interval === "month" ? "/mo" : "/yr"}</span>
@@ -610,6 +643,56 @@ function InactiveAddOn({
           <SmallBtn label={busy ? "Loading…" : `Add ${config.name}`} onClick={onPurchase} primary />
         </div>
       )}
+    </div>
+  );
+}
+
+function confirmedNotice({ target, preview }: PendingChange): string {
+  if (target !== "plan") return "Add-on added — it's ready to use now.";
+  if (preview.kind === "schedule") return `Done. Your plan changes on ${formatRenewalDate(preview.effectiveAt)}.`;
+  if (preview.kind === "keep") return "Your scheduled plan change is cancelled.";
+  return "Your plan has been changed.";
+}
+
+function ConfirmChange({
+  change, busy, onConfirm, onCancel,
+}: {
+  readonly change: PendingChange;
+  readonly busy: boolean;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}) {
+  const { preview } = change;
+  const money = (amount: number) =>
+    (amount / 100).toLocaleString(undefined, { style: "currency", currency: preview.currency.toUpperCase() });
+  const withGst = (amount: number) => preview.tax > 0 ? `${money(amount)} (including ${money(preview.tax)} GST)` : money(amount);
+  let cost: string;
+  if (preview.kind === "keep") {
+    cost = "Your plan carries on as it is, and nothing changes on your bill.";
+  } else if (preview.kind === "schedule") {
+    const per = preview.interval === "year" ? "year" : "month";
+    cost = `Nothing to pay today and no refund: your current plan stays until ${formatRenewalDate(preview.effectiveAt)}, `
+      + `then you're billed ${withGst(preview.amountDue)} a ${per}.`;
+  } else if (preview.chargedNow) {
+    cost = `${withGst(preview.amountDue)} will be charged to your card on file now.`;
+  } else {
+    const proratedNote = preview.prorated > 0 ? `, including ${money(preview.prorated)} for the rest of this billing period` : "";
+    cost = `Nothing to pay today. It's added to your next invoice on ${formatRenewalDate(preview.invoiceDate)}, which will be ${withGst(preview.amountDue)}${proratedNote}.`;
+  }
+  return (
+    <div
+      className="rounded-xl p-4 my-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-accent)" }}
+      data-testid={`confirm-change-${change.target}`}
+    >
+      <div>
+        <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{change.description}</p>
+        <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{cost}</p>
+      </div>
+      <div className="flex gap-2">
+        <SmallBtn label="Cancel" onClick={onCancel} />
+        <SmallBtn label={busy ? "Loading…" : "Confirm"} onClick={onConfirm} primary />
+      </div>
     </div>
   );
 }
@@ -640,6 +723,7 @@ function SubscriptionPanel({
     plan: string;
     billingInterval: BillingInterval | null;
     subscription: { status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: number | null; amount: number | null; currency: string | null } | null;
+    scheduledChange?: ScheduledChange | null;
     invoiceEmail: string | null;
     paymentMethod: { brand: string; last4: string } | null;
     upgradeDiscountAvailable: boolean;
@@ -649,14 +733,20 @@ function SubscriptionPanel({
   readonly isAdmin: boolean;
   readonly billingBusy: boolean;
   readonly cancelBusy: boolean;
-  readonly onUpgrade: (plan: "pro" | "venue") => void;
+  readonly onUpgrade: (plan: "pro" | "venue", interval?: BillingInterval) => void;
   readonly onCancel: () => void;
   readonly onResume: () => void;
 }) {
   const plan = PLANS.find(p => p.id === billingStatus.plan);
-  const nextTier = billingStatus.plan === "pro" ? PLANS.find(p => p.id === "venue") : null;
+  // Pro offers Venue as an upgrade; Venue offers Pro as a downgrade.
+  const otherTier = PLANS.find(p => p.id === (billingStatus.plan === "pro" ? "venue" : "pro"))!;
+  const otherIsUpgrade = otherTier.id === "venue";
   const sub = billingStatus.subscription;
   const interval = billingStatus.billingInterval ?? "month";
+  const scheduled = billingStatus.scheduledChange;
+  const scheduledName = PLANS.find(p => p.id === scheduled?.plan)?.name;
+  const currentPlanId = billingStatus.plan as "pro" | "venue";
+  const otherInterval: BillingInterval = interval === "year" ? "month" : "year";
 
   return (
     <div>
@@ -686,6 +776,11 @@ function SubscriptionPanel({
               Renews {formatRenewalDate(sub?.currentPeriodEnd ?? null)}
             </p>
           )}
+          {scheduled && (
+            <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }} data-testid="scheduled-change">
+              Changes to {scheduledName}, billed {scheduled.interval === "year" ? "annually" : "monthly"}, on {formatRenewalDate(scheduled.at)}.
+            </p>
+          )}
 
           <div className="mt-3 pt-3 space-y-1" style={{ borderTop: "1px solid var(--border)" }}>
             <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
@@ -702,6 +797,19 @@ function SubscriptionPanel({
 
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
+            {scheduled && !sub?.cancelAtPeriodEnd && (
+              <SmallBtn
+                label={billingBusy ? "Loading…" : `Keep ${plan?.name ?? billingStatus.plan}`}
+                onClick={() => onUpgrade(currentPlanId, interval)}
+                primary
+              />
+            )}
+            {!scheduled && !sub?.cancelAtPeriodEnd && (
+              <SmallBtn
+                label={billingBusy ? "Loading…" : `Switch to ${otherInterval === "year" ? "annual" : "monthly"} billing`}
+                onClick={() => onUpgrade(currentPlanId, otherInterval)}
+              />
+            )}
             {sub?.cancelAtPeriodEnd ? (
               <SmallBtn label={cancelBusy ? "Loading…" : "Resume subscription"} onClick={onResume} primary />
             ) : (
@@ -711,25 +819,29 @@ function SubscriptionPanel({
         )}
       </div>
 
-      {isAdmin && nextTier && !sub?.cancelAtPeriodEnd && (
+      {isAdmin && !scheduled && !sub?.cancelAtPeriodEnd && (
         <div
           className="rounded-xl p-4 mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
           style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
         >
           <div>
             <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
-              Need more capacity? Upgrade to {nextTier.name}
+              {otherIsUpgrade ? `Need more capacity? Upgrade to ${otherTier.name}` : `Need less? Switch to ${otherTier.name}`}
             </p>
-            <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{nextTier.tagline}</p>
-            {billingStatus.upgradeDiscountAvailable && <DiscountBanner className="mt-2" compact />}
+            <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+              {otherIsUpgrade
+                ? otherTier.tagline
+                : `${otherTier.tagline}. Takes effect at the end of the period you've paid for, with no refund.`}
+            </p>
+            {otherIsUpgrade && billingStatus.upgradeDiscountAvailable && <DiscountBanner className="mt-2" compact />}
           </div>
           <div className="flex items-center gap-2">
             <SmallBtn label="Monthly" onClick={() => setBillingInterval("month")} active={billingInterval === "month"} />
             <SmallBtn label="Annual (2 months free)" onClick={() => setBillingInterval("year")} active={billingInterval === "year"} />
             <SmallBtn
-              label={billingBusy ? "Loading…" : `Upgrade to ${nextTier.name}`}
-              onClick={() => onUpgrade(nextTier.id as "venue")}
-              primary
+              label={billingBusy ? "Loading…" : `${otherIsUpgrade ? "Upgrade" : "Switch"} to ${otherTier.name}`}
+              onClick={() => onUpgrade(otherTier.id as "pro" | "venue")}
+              primary={otherIsUpgrade}
             />
           </div>
         </div>

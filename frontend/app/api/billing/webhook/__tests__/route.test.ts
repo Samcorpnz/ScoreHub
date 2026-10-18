@@ -77,6 +77,37 @@ function stripeEvent(type: string, object: Record<string, unknown>, id = "evt_1"
   return { id, type, data: { object } };
 }
 
+// An Account row with the billing columns the sync reads.
+function account(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "acc_1",
+    plan: "free",
+    addOns: [],
+    addOnsEnding: [],
+    addOnsEndAt: null,
+    graphicsSubscriptionId: null,
+    dataFeedSubscriptionId: null,
+    upgradeDiscountUsedAt: null,
+    ...overrides,
+  };
+}
+
+// What syncAccountFromSubscription writes for the plan's subscription.
+function synced(data: Record<string, unknown>) {
+  return { addOns: [], addOnsEnding: [], addOnsEndAt: null, ...data };
+}
+
+const PRICES: Record<string, { plan?: string; addOn?: string }> = {
+  price_pro: { plan: "pro" },
+  price_venue: { plan: "venue" },
+  price_graphics: { addOn: "graphics-operator" },
+  price_data_feed: { addOn: "data-feed" },
+};
+function mapPrices() {
+  planForPriceIdMock.mockImplementation((id: string) => PRICES[id]?.plan ?? null);
+  addOnForPriceIdMock.mockImplementation((id: string) => PRICES[id]?.addOn ?? null);
+}
+
 describe("POST /api/billing/webhook", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -238,19 +269,26 @@ describe("POST /api/billing/webhook", () => {
         id: "sub_1",
         items: { data: [{ price: { id: "price_pro", recurring: { interval: "month" } } }] },
       });
-      planForPriceIdMock.mockReturnValue("pro");
+      subscriptionsRetrieveMock.mockResolvedValue({
+        id: "sub_1",
+        status: "active",
+        metadata: {},
+        items: { data: [{ price: { id: "price_pro", recurring: { interval: "month" } } }] },
+      });
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account());
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: {
+        data: synced({
           stripeCustomerId: "cus_1",
           stripeSubscriptionId: "sub_1",
           plan: "pro",
           billingInterval: "month",
-        },
+        }),
       });
     });
 
@@ -264,18 +302,21 @@ describe("POST /api/billing/webhook", () => {
       );
       subscriptionsRetrieveMock.mockResolvedValue({
         id: "sub_1",
+        status: "active",
+        metadata: {},
         items: { data: [{ price: { id: "price_unknown" } }] },
       });
-      planForPriceIdMock.mockReturnValue(null);
+      accountFindUniqueMock.mockResolvedValue(account());
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("unmapped priceId"));
+      // plan stays what it was (free), never a paid tier by default
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_1", billingInterval: null },
+        data: synced({ stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_1", plan: "free", billingInterval: null }),
       });
       errSpy.mockRestore();
     });
@@ -288,11 +329,14 @@ describe("POST /api/billing/webhook", () => {
           subscription: "sub_1",
         }),
       );
-      subscriptionsRetrieveMock.mockResolvedValue({ id: "sub_1", items: { data: [] } });
+      subscriptionsRetrieveMock.mockResolvedValue({ id: "sub_1", status: "active", metadata: {}, items: { data: [] } });
+      accountFindUniqueMock.mockResolvedValue(account({ id: "acc_2" }));
+      vi.spyOn(console, "error").mockImplementation(() => {});
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
+      expect(accountFindUniqueMock).toHaveBeenCalledWith({ where: { id: "acc_2" } });
       expect(accountUpdateMock).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "acc_2" } }));
     });
   });
@@ -388,15 +432,15 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [{ price: { id: "price_venue", recurring: { interval: "year" } } }] },
         }),
       );
-      planForPriceIdMock.mockReturnValue("venue");
-      accountFindFirstMock.mockResolvedValue({ id: "acc_1", plan: "free", graphicsSubscriptionId: null });
+      mapPrices();
+      accountFindFirstMock.mockResolvedValue(account());
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year" },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year" }),
       });
     });
 
@@ -410,17 +454,46 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [{ price: { id: "price_venue", recurring: { interval: "year" } } }] },
         }),
       );
-      planForPriceIdMock.mockReturnValue("venue");
-      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", plan: "pro", upgradeDiscountUsedAt: null });
-      subscriptionsRetrieveMock.mockResolvedValue({ discounts: [{ id: "di_1", source: { type: "coupon", coupon: { id: "UPGRADE20" } } }] });
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "pro" }));
+      subscriptionsRetrieveMock.mockResolvedValue({
+        discounts: [{ id: "di_1", source: { type: "coupon", coupon: { id: "UPGRADE20" } } }],
+        items: { data: [] },
+      });
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
-      expect(subscriptionsRetrieveMock).toHaveBeenCalledWith("sub_1", { expand: ["discounts"] });
+      expect(subscriptionsRetrieveMock).toHaveBeenCalledWith("sub_1", { expand: ["discounts", "items.data.discounts"] });
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year", upgradeDiscountUsedAt: expect.any(Date) },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "year", upgradeDiscountUsedAt: expect.any(Date) }),
+      });
+    });
+
+    it("marks the upgrade discount used when it's on the plan's item rather than the subscription", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          discounts: [],
+          items: { data: [{ discounts: ["di_1"], price: { id: "price_venue", recurring: { interval: "month" } } }] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "pro" }));
+      subscriptionsRetrieveMock.mockResolvedValue({
+        discounts: [],
+        items: { data: [{ discounts: [{ id: "di_1", source: { type: "coupon", coupon: "UPGRADE20" } }] }] },
+      });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: expect.objectContaining({ upgradeDiscountUsedAt: expect.any(Date) }),
       });
     });
 
@@ -434,16 +507,19 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
         }),
       );
-      planForPriceIdMock.mockReturnValue("venue");
-      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", plan: "pro", upgradeDiscountUsedAt: null });
-      subscriptionsRetrieveMock.mockResolvedValue({ discounts: [{ id: "di_2", source: { type: "coupon", coupon: "PROMO10" } }] });
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "pro" }));
+      subscriptionsRetrieveMock.mockResolvedValue({
+        discounts: [{ id: "di_2", source: { type: "coupon", coupon: "PROMO10" } }],
+        items: { data: [] },
+      });
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month" },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month" }),
       });
     });
 
@@ -456,19 +532,22 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [{ price: { id: "price_venue" } }] },
         }),
       );
-      accountFindFirstMock.mockResolvedValue({
-        id: "acc_1",
+      accountFindFirstMock.mockResolvedValue(account({
         plan: "venue",
+        addOns: ["graphics-operator"],
         graphicsSubscriptionId: "sub_graphics",
-      });
+      }));
+      accountFindUniqueMock.mockResolvedValue(account({ addOns: ["graphics-operator"] }));
       membershipFindManyMock.mockResolvedValue([{ user: { email: "admin@example.com" } }]);
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
+      // The legacy add-on's own subscription keeps it until the cascade
+      // below cancels that subscription and removes it.
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeSubscriptionId: "sub_1", plan: "free", billingInterval: null },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "free", billingInterval: null, addOns: ["graphics-operator"] }),
       });
       expect(subscriptionsCancelMock).toHaveBeenCalledWith("sub_graphics");
       // removeAddOn's own findUnique/update — the account was already fetched above
@@ -488,19 +567,19 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [{ price: { id: "price_venue", recurring: { interval: "month" } } }] },
         }),
       );
-      planForPriceIdMock.mockReturnValue("venue");
-      accountFindFirstMock.mockResolvedValue({
-        id: "acc_1",
+      mapPrices();
+      accountFindFirstMock.mockResolvedValue(account({
         plan: "venue",
+        addOns: ["graphics-operator"],
         graphicsSubscriptionId: "sub_graphics",
-      });
+      }));
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(accountUpdateMock).toHaveBeenCalledWith({
         where: { id: "acc_1" },
-        data: { stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month" },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "venue", billingInterval: "month", addOns: ["graphics-operator"] }),
       });
       expect(subscriptionsCancelMock).not.toHaveBeenCalled();
       expect(sendSubscriptionEndedEmailMock).not.toHaveBeenCalled();
@@ -535,12 +614,120 @@ describe("POST /api/billing/webhook", () => {
           items: { data: [] },
         }),
       );
-      accountFindFirstMock.mockResolvedValue({ id: "acc_1", plan: "free" });
+      accountFindFirstMock.mockResolvedValue(account());
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
       expect(sendSubscriptionEndedEmailMock).not.toHaveBeenCalled();
+    });
+
+    it("records add-ons billed as items on the plan's subscription", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          items: { data: [
+            { price: { id: "price_graphics", recurring: { interval: "month" } } },
+            { price: { id: "price_pro", recurring: { interval: "month" } } },
+            { price: { id: "price_data_feed", recurring: { interval: "month" } } },
+          ] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({ plan: "pro" }));
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      // Not mistaken for a legacy add-on subscription because the add-on
+      // item happens to be listed first
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: synced({
+          stripeSubscriptionId: "sub_1",
+          plan: "pro",
+          billingInterval: "month",
+          addOns: ["graphics-operator", "data-feed"],
+        }),
+      });
+    });
+
+    it("keeps an add-on removed at period end until that period is over", async () => {
+      const endAt = new Date(Date.now() + 86_400_000);
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          items: { data: [{ price: { id: "price_pro", recurring: { interval: "month" } } }] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({
+        plan: "pro",
+        addOns: ["graphics-operator"],
+        addOnsEnding: ["graphics-operator"],
+        addOnsEndAt: endAt,
+      }));
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: synced({
+          stripeSubscriptionId: "sub_1",
+          plan: "pro",
+          billingInterval: "month",
+          addOns: ["graphics-operator"],
+          addOnsEnding: ["graphics-operator"],
+          addOnsEndAt: endAt,
+        }),
+      });
+    });
+
+    it("ends an add-on removed at period end once the subscription renews", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_1",
+          status: "active",
+          metadata: { accountId: "acc_1" },
+          items: { data: [{ price: { id: "price_pro", recurring: { interval: "month" } } }] },
+        }),
+      );
+      mapPrices();
+      accountFindUniqueMock.mockResolvedValue(account({
+        plan: "pro",
+        addOns: ["graphics-operator"],
+        addOnsEnding: ["graphics-operator"],
+        addOnsEndAt: new Date(Date.now() - 1000),
+      }));
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "pro", billingInterval: "month" }),
+      });
+    });
+
+    it("ignores an old add-on subscription the migration has replaced", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("customer.subscription.updated", {
+          id: "sub_graphics",
+          status: "canceled",
+          metadata: { accountId: "acc_1", addOn: "graphics-operator", migratedTo: "sub_1" },
+          items: { data: [] },
+        }),
+      );
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountUpdateMock).not.toHaveBeenCalled();
     });
 
     it("no-ops the base-plan branch when the account can't be found", async () => {
@@ -600,15 +787,16 @@ describe("POST /api/billing/webhook", () => {
       constructEventMock.mockReturnValue(
         stripeEvent("customer.subscription.deleted", { id: "sub_1", metadata: {} }),
       );
-      accountFindFirstMock.mockResolvedValue({ id: "acc_1", plan: "pro", graphicsSubscriptionId: null });
+      accountFindFirstMock.mockResolvedValue(account({ plan: "pro", addOns: ["data-feed"], addOnsEnding: ["data-feed"] }));
       membershipFindManyMock.mockResolvedValue([{ user: { email: "admin@example.com" } }]);
 
       const { POST } = await import("../route");
       await POST(makeRequest());
 
+      // Add-ons on the plan's subscription end with it
       expect(accountUpdateManyMock).toHaveBeenCalledWith({
         where: { stripeSubscriptionId: "sub_1" },
-        data: { plan: "free", stripeSubscriptionId: null, billingInterval: null },
+        data: { plan: "free", stripeSubscriptionId: null, billingInterval: null, addOns: [], addOnsEnding: [], addOnsEndAt: null },
       });
       expect(sendSubscriptionEndedEmailMock).toHaveBeenCalledWith({
         to: ["admin@example.com"],
@@ -620,8 +808,8 @@ describe("POST /api/billing/webhook", () => {
       constructEventMock.mockReturnValue(
         stripeEvent("customer.subscription.deleted", { id: "sub_1", metadata: {} }),
       );
-      accountFindFirstMock.mockResolvedValue({ id: "acc_1", graphicsSubscriptionId: "sub_graphics" });
-      accountFindUniqueMock.mockResolvedValue({ id: "acc_1", addOns: ["graphics-operator"] });
+      accountFindFirstMock.mockResolvedValue(account({ addOns: ["graphics-operator"], graphicsSubscriptionId: "sub_graphics" }));
+      accountFindUniqueMock.mockResolvedValue(account({ addOns: ["graphics-operator"] }));
 
       const { POST } = await import("../route");
       await POST(makeRequest());
@@ -710,6 +898,39 @@ describe("POST /api/billing/webhook", () => {
       await POST(makeRequest());
       expect(accountFindFirstMock).not.toHaveBeenCalled();
       expect(sendPaymentRecoveredEmailMock).not.toHaveBeenCalled();
+    });
+
+    it("ends add-ons removed during the last period when the renewal is paid", async () => {
+      constructEventMock.mockReturnValue(
+        stripeEvent("invoice.payment_succeeded", {
+          customer: "cus_1",
+          attempt_count: 1,
+          billing_reason: "subscription_cycle",
+          parent: { subscription_details: { subscription: "sub_1" } },
+        }),
+      );
+      mapPrices();
+      accountFindFirstMock.mockResolvedValue(account({
+        plan: "pro",
+        addOns: ["graphics-operator"],
+        addOnsEnding: ["graphics-operator"],
+        addOnsEndAt: new Date(Date.now() - 1000),
+      }));
+      subscriptionsRetrieveMock.mockResolvedValue({
+        id: "sub_1",
+        status: "active",
+        metadata: {},
+        items: { data: [{ price: { id: "price_pro", recurring: { interval: "month" } } }] },
+      });
+
+      const { POST } = await import("../route");
+      await POST(makeRequest());
+
+      expect(accountFindFirstMock).toHaveBeenCalledWith({ where: { stripeSubscriptionId: "sub_1" } });
+      expect(accountUpdateMock).toHaveBeenCalledWith({
+        where: { id: "acc_1" },
+        data: synced({ stripeSubscriptionId: "sub_1", plan: "pro", billingInterval: "month" }),
+      });
     });
 
     it("emails admins when the payment succeeded after a prior failed attempt", async () => {

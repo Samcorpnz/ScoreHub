@@ -22,8 +22,9 @@ export function planForPriceId(priceId: string): PaidPlan | null {
   return null;
 }
 
-// Add-ons are orthogonal to `plan` — see Account.addOns — and each bills on
-// its own Stripe subscription (see ADDON_SUBSCRIPTION_FIELD below).
+// Add-ons are orthogonal to `plan` — see Account.addOns — and bill as extra
+// items on the plan's Stripe subscription, at the plan's interval (see
+// lib/billing.ts).
 export type AddOn = "graphics-operator" | "data-feed";
 
 const ADDON_ENV_VAR: Record<AddOn, Record<BillingInterval, string>> = {
@@ -31,9 +32,9 @@ const ADDON_ENV_VAR: Record<AddOn, Record<BillingInterval, string>> = {
   "data-feed": { month: "STRIPE_PRICE_ID_DATA_FEED", year: "STRIPE_PRICE_ID_DATA_FEED_ANNUAL" },
 };
 
-// Which Account column tracks each add-on's own Stripe subscription id —
-// see the schema comment on Account.graphicsSubscriptionId/dataFeedSubscriptionId
-// for why these are dedicated columns rather than a generic join table.
+// Legacy: which Account column tracks an add-on still on its own Stripe
+// subscription, until scripts/migrate-addon-subscriptions.ts moves it onto
+// the plan's — see the schema comment on Account.graphicsSubscriptionId.
 export const ADDON_SUBSCRIPTION_FIELD: Record<AddOn, "graphicsSubscriptionId" | "dataFeedSubscriptionId"> = {
   "graphics-operator": "graphicsSubscriptionId",
   "data-feed": "dataFeedSubscriptionId",

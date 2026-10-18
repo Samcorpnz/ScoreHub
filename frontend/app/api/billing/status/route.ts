@@ -3,6 +3,10 @@ import { auth } from "@/auth";
 import { getAccountForOrg } from "@/lib/account";
 import { getStripe } from "@/lib/stripe";
 import * as Sentry from "@sentry/nextjs";
+import Stripe from "stripe";
+import { AddOn, BillingInterval, priceIdForAddOn } from "@/lib/plans";
+import { readSubscription, currentPeriodEnd, syncAccountFromSubscription } from "@/lib/billing";
+import { readScheduledChange, ScheduledChange } from "@/lib/scheduledChanges";
 
 export async function GET() {
   const session = await auth();
@@ -10,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const account = await getAccountForOrg(session.user.activeOrgId);
+  let account = await getAccountForOrg(session.user.activeOrgId);
   if (!account) {
     return NextResponse.json({ error: "account not found" }, { status: 404 });
   }
@@ -34,6 +38,57 @@ export async function GET() {
       amount: item?.price.unit_amount ?? null,
       currency: sub.currency,
       interval: (item?.price.recurring?.interval as "month" | "year" | undefined) ?? null,
+    };
+  }
+
+  function itemSummary(sub: Stripe.Subscription, item: Stripe.SubscriptionItem | null): SubscriptionSummary {
+    return {
+      status: sub.status,
+      cancelAtPeriodEnd: sub.cancel_at_period_end,
+      currentPeriodEnd: currentPeriodEnd(sub),
+      amount: item?.price.unit_amount ?? null,
+      currency: sub.currency,
+      interval: (item?.price.recurring?.interval as "month" | "year" | undefined) ?? null,
+    };
+  }
+
+  // The plan and its add-ons, all items on the one subscription. An add-on
+  // taken off but still paid up shows as cancelling at addOnsEndAt; its item
+  // is gone, so its price is looked up instead.
+  type PlanSummary = {
+    plan: SubscriptionSummary | null;
+    graphics: SubscriptionSummary | null;
+    dataFeed: SubscriptionSummary | null;
+    // A downgrade waiting for the end of the period already paid for.
+    scheduledChange: ScheduledChange | null;
+  };
+  async function summarizePlan(subscriptionId: string): Promise<PlanSummary> {
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId);
+    // The renewal webhook normally ends lapsed add-ons; catch up here if it
+    // hasn't arrived yet.
+    if (account!.addOnsEndAt && account!.addOnsEndAt.getTime() <= Date.now()) {
+      account = (await syncAccountFromSubscription(account!, sub)).account as typeof account;
+    }
+    const { planItem, interval, addOnItems } = readSubscription(sub);
+    const addOnSummary = async (addOn: AddOn): Promise<SubscriptionSummary | null> => {
+      const item = addOnItems[addOn];
+      if (item) return itemSummary(sub, item);
+      if (!account!.addOnsEnding.includes(addOn) || !account!.addOnsEndAt) return null;
+      const price = await getStripe().prices.retrieve(priceIdForAddOn(addOn, (interval ?? "month") as BillingInterval));
+      return {
+        status: sub.status,
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: Math.floor(account!.addOnsEndAt.getTime() / 1000),
+        amount: price.unit_amount,
+        currency: price.currency,
+        interval: (price.recurring?.interval as "month" | "year" | undefined) ?? null,
+      };
+    };
+    return {
+      plan: itemSummary(sub, planItem),
+      graphics: await addOnSummary("graphics-operator"),
+      dataFeed: await addOnSummary("data-feed"),
+      scheduledChange: await readScheduledChange(getStripe(), sub),
     };
   }
 
@@ -68,18 +123,28 @@ export async function GET() {
   }
 
   const noCustomerInfo = { invoiceEmail: null, paymentMethod: null };
-  const [subscription, graphicsSubscription, dataFeedSubscription, customerInfo] = await Promise.all([
-    account.stripeSubscriptionId ? safely("subscription", () => summarize(account.stripeSubscriptionId!), null) : null,
-    account.graphicsSubscriptionId ? safely("graphics subscription", () => summarize(account.graphicsSubscriptionId!), null) : null,
-    account.dataFeedSubscriptionId ? safely("data feed subscription", () => summarize(account.dataFeedSubscriptionId!), null) : null,
-    account.stripeCustomerId ? safely("customer", () => summarizeCustomer(account.stripeCustomerId!), noCustomerInfo) : noCustomerInfo,
+  const noPlan: PlanSummary = { plan: null, graphics: null, dataFeed: null, scheduledChange: null };
+  // The plan's subscription goes first, on its own: it may bring the account
+  // up to date (lapsed add-ons), which the response below reads.
+  const planSummary = account.stripeSubscriptionId
+    ? await safely("subscription", () => summarizePlan(account!.stripeSubscriptionId!), noPlan)
+    : noPlan;
+  const [legacyGraphics, legacyDataFeed, customerInfo] = await Promise.all([
+    // Add-ons not yet moved onto the plan's subscription.
+    account.graphicsSubscriptionId ? safely("graphics subscription", () => summarize(account!.graphicsSubscriptionId!), null) : null,
+    account.dataFeedSubscriptionId ? safely("data feed subscription", () => summarize(account!.dataFeedSubscriptionId!), null) : null,
+    account.stripeCustomerId ? safely("customer", () => summarizeCustomer(account!.stripeCustomerId!), noCustomerInfo) : noCustomerInfo,
   ]);
+  const subscription = planSummary.plan;
+  const graphicsSubscription = legacyGraphics ?? planSummary.graphics;
+  const dataFeedSubscription = legacyDataFeed ?? planSummary.dataFeed;
 
   return NextResponse.json({
     plan: account.plan,
     billingInterval: account.billingInterval,
     hasStripeCustomer: Boolean(account.stripeCustomerId),
     subscription,
+    scheduledChange: planSummary.scheduledChange,
     addOns: account.addOns,
     graphicsSubscription,
     dataFeedSubscription,

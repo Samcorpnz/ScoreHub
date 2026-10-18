@@ -139,33 +139,160 @@ describe("AccountPage", () => {
     expect(await screen.findByText("Plan & Billing")).toBeInTheDocument();
   });
 
-  it("sends an existing subscriber to Stripe's confirm page for a plan change", async () => {
-    useSessionMock.mockReturnValue(adminSession);
-    const assign = vi.fn();
-    vi.stubGlobal("location", { search: "", assign });
-    vi.stubGlobal(
-      "fetch",
-      mockFetchRouter({
-        "/api/billing/checkout": () => jsonResponse({ confirmUrl: "https://billing.stripe.com/p/session/test_1" }),
-      })
-    );
-    renderPage();
+  describe("changing an existing subscription", () => {
+    const proStatus = {
+      ...freePlanStatus,
+      plan: "pro",
+      billingInterval: "month",
+      hasStripeCustomer: true,
+      subscription: { status: "active", cancelAtPeriodEnd: false, currentPeriodEnd: 1893456000, amount: 8900, currency: "nzd" },
+    };
+    const preview = {
+      chargedNow: false,
+      amountDue: 37800,
+      tax: 4930,
+      prorated: 13000,
+      currency: "nzd",
+      invoiceDate: 1893456000,
+      prorationDate: 1890000000,
+    };
+    // First call previews the change; the confirming call makes it.
+    function checkoutRoute() {
+      return vi.fn((body: Record<string, unknown>) => jsonResponse(body.confirm ? { updated: true } : { preview }));
+    }
+    function router(checkout: ReturnType<typeof checkoutRoute>) {
+      const fetchMock = mockFetchRouter({ "/api/billing/status": () => jsonResponse(proStatus) });
+      return vi.fn((url: string, init?: RequestInit) =>
+        url.includes("/api/billing/checkout") ? checkout(JSON.parse(String(init?.body))) : fetchMock(url, init));
+    }
+    // The paid-plan panel renders before the page has settled, and a click
+    // that early is lost, so click until the preview request goes out.
+    async function clickUpgradeToVenue() {
+      await waitFor(() => {
+        fireEvent.click(screen.getByText("Upgrade to Venue"));
+        expect(global.fetch).toHaveBeenCalledWith("/api/billing/checkout", expect.anything());
+      });
+    }
 
-    fireEvent.click(await screen.findByText("Upgrade to Pro"));
+    it("shows a plan change's cost and makes it in place once confirmed, with no checkout or redirect", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = checkoutRoute();
+      vi.stubGlobal("fetch", router(checkout));
+      renderPage();
 
-    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://billing.stripe.com/p/session/test_1"));
-  });
+      await clickUpgradeToVenue();
+      const panel = await screen.findByTestId("confirm-change-plan");
+      expect(panel).toHaveTextContent("Switch to Venue, billed monthly");
+      expect(panel).toHaveTextContent(/Nothing to pay today/);
+      expect(panel).toHaveTextContent(/including NZ\$49\.30 GST/);
+      expect(checkout).toHaveBeenCalledTimes(1);
 
-  it("confirms the change after Stripe sends the customer back", async () => {
-    useSessionMock.mockReturnValue(adminSession);
-    vi.stubGlobal("location", { search: "?billing=updated", assign: vi.fn() });
-    const replaceState = vi.spyOn(globalThis.history, "replaceState").mockImplementation(() => {});
-    vi.stubGlobal("fetch", mockFetchRouter());
-    renderPage();
+      fireEvent.click(within(panel).getByText("Confirm"));
+      await waitFor(() => expect(checkout).toHaveBeenLastCalledWith({
+        plan: "venue", interval: "month", confirm: true, prorationDate: 1890000000,
+      }));
+      expect(await screen.findByText("Your plan has been changed.")).toBeInTheDocument();
+      expect(screen.queryByTestId("embedded-checkout-provider")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("confirm-change-plan")).not.toBeInTheDocument();
+    });
 
-    expect(await screen.findByText(/Your plan change is confirmed/)).toBeInTheDocument();
-    expect(replaceState).toHaveBeenCalledWith(null, "", "/account");
-    replaceState.mockRestore();
+    it("adds an add-on with the card on file, confirmed under that add-on", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = checkoutRoute();
+      vi.stubGlobal("fetch", router(checkout));
+      renderPage();
+
+      fireEvent.click(await screen.findByText("Add Graphics Operator"));
+      const panel = await screen.findByTestId("confirm-change-graphics-operator");
+      expect(panel).toHaveTextContent("Add Graphics Operator to your plan");
+      // No interval in the request: add-ons follow the plan's
+      expect(checkout).toHaveBeenCalledWith({ addOn: "graphics-operator" });
+
+      fireEvent.click(within(panel).getByText("Confirm"));
+      expect(await screen.findByTestId("addon-notice-graphics-operator")).toHaveTextContent("Add-on added");
+    });
+
+    it("says up front when a change is charged straight away", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = vi.fn(() => jsonResponse({ preview: { ...preview, chargedNow: true, amountDue: 340000 } }));
+      vi.stubGlobal("fetch", router(checkout));
+      renderPage();
+
+      await clickUpgradeToVenue();
+      expect(await screen.findByTestId("confirm-change-plan")).toHaveTextContent(/will be charged to your card on file now/);
+    });
+
+    it("offers Venue a switch to Pro that takes effect at the period end, without a refund", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = vi.fn(() => jsonResponse({
+        preview: { ...preview, kind: "schedule", amountDue: 10235, tax: 1335, prorated: 0, effectiveAt: 1893456000, interval: "month" },
+      }));
+      const fetchMock = mockFetchRouter({ "/api/billing/status": () => jsonResponse({ ...proStatus, plan: "venue" }) });
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) =>
+        url.includes("/api/billing/checkout") ? checkout() : fetchMock(url, init)));
+      renderPage();
+
+      expect(await screen.findByText("Need less? Switch to Pro")).toBeInTheDocument();
+      await waitFor(() => {
+        fireEvent.click(screen.getByText("Switch to Pro"));
+        expect(checkout).toHaveBeenCalled();
+      });
+      const panel = await screen.findByTestId("confirm-change-plan");
+      expect(panel).toHaveTextContent(/no refund: your current plan stays until/);
+      expect(panel).toHaveTextContent(/billed NZ\$102\.35 \(including NZ\$13\.35 GST\) a month/);
+    });
+
+    it("shows a scheduled downgrade and lets the admin keep their current plan", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = vi.fn((body: Record<string, unknown>) =>
+        jsonResponse(body.confirm ? { updated: true } : { preview: { ...preview, kind: "keep", amountDue: 0 } }));
+      const fetchMock = mockFetchRouter({
+        "/api/billing/status": () => jsonResponse({
+          ...proStatus,
+          plan: "venue",
+          scheduledChange: { plan: "pro", interval: "month", at: 1893456000 },
+        }),
+      });
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) =>
+        url.includes("/api/billing/checkout") ? checkout(JSON.parse(String(init?.body))) : fetchMock(url, init)));
+      renderPage();
+
+      expect(await screen.findByTestId("scheduled-change")).toHaveTextContent("Changes to Pro, billed monthly, on");
+      // No other plan changes offered while one is waiting
+      expect(screen.queryByText("Need less? Switch to Pro")).not.toBeInTheDocument();
+      await waitFor(() => {
+        fireEvent.click(screen.getByText("Keep Venue"));
+        expect(checkout).toHaveBeenCalledWith({ plan: "venue", interval: "month" });
+      });
+      fireEvent.click(within(await screen.findByTestId("confirm-change-plan")).getByText("Confirm"));
+      expect(await screen.findByText("Your scheduled plan change is cancelled.")).toBeInTheDocument();
+    });
+
+    it("offers a switch between monthly and annual billing on the current plan", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = checkoutRoute();
+      vi.stubGlobal("fetch", router(checkout));
+      renderPage();
+
+      await waitFor(() => {
+        fireEvent.click(screen.getByText("Switch to annual billing"));
+        expect(checkout).toHaveBeenCalledWith({ plan: "pro", interval: "year" });
+      });
+    });
+
+    it("drops the change when the admin cancels the confirmation", async () => {
+      useSessionMock.mockReturnValue(adminSession);
+      const checkout = checkoutRoute();
+      vi.stubGlobal("fetch", router(checkout));
+      renderPage();
+
+      fireEvent.click(await screen.findByText("Add Data Feed"));
+      const panel = await screen.findByTestId("confirm-change-data-feed");
+      fireEvent.click(within(panel).getByText("Cancel"));
+
+      expect(screen.queryByTestId("confirm-change-data-feed")).not.toBeInTheDocument();
+      expect(checkout).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("shows the checkout error message when checkout fails to start", async () => {
