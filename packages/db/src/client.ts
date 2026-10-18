@@ -6,7 +6,16 @@ import { PrismaClient } from "../generated/prisma/client";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  // node-postgres closes a connection after 10s idle by default, so a quiet
+  // relay paid a fresh TCP+TLS+auth handshake to Neon (~0.3–1.6s) on nearly
+  // every query; the query itself is single-digit ms. Hold idle connections
+  // for a few minutes instead. keepAlive lets a connection Neon dropped
+  // (compute suspend) be noticed rather than handed out dead.
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL,
+    idleTimeoutMillis: 5 * 60_000,
+    keepAlive: true,
+  });
   return globalForPrisma.prisma ?? new PrismaClient({ adapter });
 }
 

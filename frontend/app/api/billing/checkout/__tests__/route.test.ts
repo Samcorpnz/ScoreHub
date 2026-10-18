@@ -420,6 +420,21 @@ describe("POST /api/billing/checkout", () => {
       expect((await res.json()).error).toMatch(/billing record doesn't match/);
     });
 
+    it("reports a configured price Stripe doesn't recognise as a config error, not a stale billing record", async () => {
+      const Stripe = (await import("stripe")).default;
+      getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_existing" }));
+      checkoutSessionsCreateMock.mockRejectedValue(new Stripe.errors.StripeInvalidRequestError({
+        type: "invalid_request_error", code: "resource_missing", param: "line_items[0][price]",
+        message: "No such price: 'price_other_account'",
+      }));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const { POST } = await import("../route");
+      const res = await POST(requestFrom({ addOn: "data-feed" }));
+      expect(res.status).toBe(500);
+      expect((await res.json()).error).toBe("billing is not configured");
+    });
+
     it("500s when the existing subscription has no items to change", async () => {
       getAccountForOrgMock.mockResolvedValue(baseAccount({ plan: "pro", stripeCustomerId: "cus_1", stripeSubscriptionId: "sub_existing" }));
       subscriptionsRetrieveMock.mockResolvedValue({ items: { data: [] } });

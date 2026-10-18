@@ -175,6 +175,45 @@ async function createNewCheckoutSession(
   return NextResponse.json({ clientSecret: checkoutSession.client_secret });
 }
 
+// The subscription this checkout would change, if the account still holds
+// what it's for. A saved id alone isn't enough: it can linger after the plan
+// lapsed or the add-on was removed.
+function activeSubscriptionId(account: Account, { plan, addOn }: CheckoutRequest): string | null {
+  if (plan) {
+    const onPaidPlan = account.plan === "pro" || account.plan === "venue";
+    return onPaidPlan ? account.stripeSubscriptionId : null;
+  }
+  return account.addOns.includes(addOn!) ? account[ADDON_SUBSCRIPTION_FIELD[addOn!]] : null;
+}
+
+// Turns a Stripe failure (a price that doesn't exist in the account the key
+// belongs to, a network error, …) into a response the billing page can show,
+// rather than a bodiless 500 it can't read and so can't tell the admin about.
+function stripeFailureResponse(err: unknown, extra: Record<string, unknown>): NextResponse {
+  const missing = err instanceof Stripe.errors.StripeInvalidRequestError && err.code === "resource_missing";
+  // A price id Stripe doesn't recognise is our configuration, not the
+  // customer's record: a STRIPE_PRICE_ID_* env var copied from the other
+  // Stripe account (live vs sandbox), or a price deleted in the dashboard.
+  if (missing && err.param?.includes("price")) {
+    console.error("[billing] checkout: configured price not found in Stripe:", err);
+    Sentry.captureException(err, { tags: { area: "billing-checkout", stage: "config" }, extra });
+    return NextResponse.json({ error: "billing is not configured" }, { status: 500 });
+  }
+  // A saved subscription/customer id Stripe doesn't recognise means our
+  // record and Stripe have drifted apart (an id saved against a different
+  // Stripe account, or deleted in the dashboard). Retrying won't help.
+  if (missing) {
+    console.error("[billing] checkout: saved billing record not found in Stripe:", err);
+    Sentry.captureException(err, { tags: { area: "billing-checkout", stage: "stale-record" }, extra });
+    return NextResponse.json({
+      error: "Your billing record doesn't match our payment provider, so this can't be changed here. Please contact support.",
+    }, { status: 409 });
+  }
+  console.error("[billing] checkout failed:", err);
+  Sentry.captureException(err, { tags: { area: "billing-checkout", stage: "stripe" }, extra });
+  return NextResponse.json({ error: "Couldn't start checkout — please try again, or contact support if it keeps happening." }, { status: 502 });
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.activeOrgId) {
@@ -214,44 +253,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "billing is not configured" }, { status: 500 });
   }
 
-  const existingSubscriptionId = plan ? account.stripeSubscriptionId : account[ADDON_SUBSCRIPTION_FIELD[addOn!]];
-  const hasExistingSubscription = plan
-    ? Boolean(existingSubscriptionId) && (account.plan === "pro" || account.plan === "venue")
-    : Boolean(existingSubscriptionId) && account.addOns.includes(addOn!);
+  const existingSubscriptionId = activeSubscriptionId(account, parsed);
 
   // Only base-plan upgrades qualify for the discount (not add-ons), and only
   // once per account — see the schema comment on Account.upgradeDiscountUsedAt.
   const discountEligible =
     Boolean(plan) && isPlanUpgrade(account.plan, plan!) && !account.upgradeDiscountUsedAt;
 
-  // A Stripe failure here (a price that doesn't exist in the account the key
-  // belongs to, a network error, …) would otherwise escape as a bodiless 500,
-  // which the billing page can't read and so can't tell the admin about.
   try {
-    if (hasExistingSubscription && existingSubscriptionId) {
+    if (existingSubscriptionId) {
       const origin = req.headers.get("origin") ?? process.env.NEXTAUTH_URL ?? "";
       return await confirmSubscriptionChange(stripe, account, existingSubscriptionId, priceId, discountEligible, origin);
     }
     return await createNewCheckoutSession(stripe, account, priceId, parsed, discountEligible, session.user.email ?? undefined);
   } catch (err) {
-    // A saved subscription/customer id Stripe doesn't recognise means our
-    // record and Stripe have drifted apart (an id saved against a different
-    // Stripe account, or deleted in the dashboard). Retrying won't help.
-    if (err instanceof Stripe.errors.StripeInvalidRequestError && err.code === "resource_missing") {
-      console.error("[billing] checkout: saved billing record not found in Stripe:", err);
-      Sentry.captureException(err, {
-        tags: { area: "billing-checkout", stage: "stale-record" },
-        extra: { accountId: account.id, plan, addOn, interval },
-      });
-      return NextResponse.json({
-        error: "Your billing record doesn't match our payment provider, so this can't be changed here. Please contact support.",
-      }, { status: 409 });
-    }
-    console.error("[billing] checkout failed:", err);
-    Sentry.captureException(err, {
-      tags: { area: "billing-checkout", stage: "stripe" },
-      extra: { accountId: account.id, plan, addOn, interval },
-    });
-    return NextResponse.json({ error: "Couldn't start checkout — please try again, or contact support if it keeps happening." }, { status: 502 });
+    return stripeFailureResponse(err, { accountId: account.id, plan, addOn, interval, priceId });
   }
 }
