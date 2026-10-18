@@ -42,3 +42,6 @@ help/.wrangler/
 
 # SonarQube scanner working directory (rewritten on every scan)
 .scannerwork/
+
+# Electron build output (installers ship as GitHub Release assets)
+bridge/release/

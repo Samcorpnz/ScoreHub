@@ -179,77 +179,27 @@ describe("SettingsTab", () => {
     expect(await screen.findByText("Cannot end")).toBeInTheDocument();
   });
 
-  it("does not render the Control API/bridge admin cards for an OPERATOR role", () => {
+  it("does not render the Control API card for an OPERATOR role", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "OPERATOR", activeOrgId: "org1" } } });
     render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.queryByText("Stream Deck / Control API")).not.toBeInTheDocument();
-    expect(screen.queryByText("Bridge Devices")).not.toBeInTheDocument();
+    expect(screen.queryByText("Control API")).not.toBeInTheDocument();
   });
 
-  it("renders the Control API/bridge admin cards for a MANAGER role with an org", async () => {
+  it("shows a MANAGER this match's Control API URLs, with tokens left to the Account page", () => {
     useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(screen.getByText("Stream Deck / Control API")).toBeInTheDocument();
-    expect(await screen.findByText("Bridge Devices")).toBeInTheDocument();
-    expect(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)")).toBeInTheDocument();
-  });
-
-  it("shows an upgrade prompt instead of the Bridge Devices form when the org lacks the Data Feed add-on (SA-114)", async () => {
-    useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: [] }) }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(await screen.findByText(/physical Saturn\/Vega scoreboard console/)).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Label (e.g. Venue laptop 1)")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Mac" })).not.toBeInTheDocument();
-  });
-
-  it("shows an upgrade prompt for the Data Feed card when the org lacks the add-on", async () => {
-    useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn((url: string) => {
-      if (url.includes("/api/billing/status")) return Promise.resolve({ ok: true, json: async () => ({ addOns: [] }) });
-      return Promise.resolve({ ok: true, json: async () => ({ tokens: [] }) });
-    }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(await screen.findByText("Data Feed")).toBeInTheDocument();
-    expect(await screen.findByText(/third-party graphics engine/)).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Label (e.g. Singular.live)")).not.toBeInTheDocument();
-  });
-
-  it("renders the Data Feed token form and generates a token when the org has the add-on", async () => {
-    useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.includes("/api/billing/status")) return Promise.resolve({ ok: true, json: async () => ({ addOns: ["data-feed"] }) });
-      if (url === "/api/orgs/org1/tokens" && init?.method === "POST") {
-        return Promise.resolve({ ok: true, json: async () => ({ token: "the-plaintext-token" }) });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({ tokens: [] }) });
-    });
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
+    render(<SettingsTab state={makeState()} push={vi.fn()} matchId="m1" />, { wrapper: swrWrapper });
 
-    expect(await screen.findByText("No data feed tokens yet.")).toBeInTheDocument();
-    const card = within(screen.getByText("Data Feed").closest("div")!);
-    fireEvent.change(card.getByPlaceholderText("Label (e.g. Singular.live)"), { target: { value: "Singular.live" } });
-    fireEvent.click(card.getByText("Generate Token"));
-
-    expect(await screen.findByText("the-plaintext-token")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/orgs/org1/tokens",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ label: "Singular.live", type: "DATA_FEED" }),
-      })
-    );
-  });
-
-  it("links the Bridge Devices card's download buttons to downloads.scorehub.co.nz", async () => {
-    useSessionMock.mockReturnValue({ data: { user: { activeRole: "MANAGER", activeOrgId: "org1" } } });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ tokens: [], addOns: ["data-feed"] }) }));
-    render(<SettingsTab state={makeState()} push={vi.fn()} />, { wrapper: swrWrapper });
-    expect(await screen.findByRole("link", { name: "Mac" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Mac" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/mac");
-    expect(screen.getByRole("link", { name: "Windows" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/windows");
+    expect(screen.getByText("Control API")).toBeInTheDocument();
+    expect(screen.getByTitle(/\/action\/start\?matchId=m1$/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Account → Stream Deck / Control API" })).toHaveAttribute("href", "/account");
+    // Org-wide tokens of every kind live on the Account page, not here.
+    for (const title of ["Bridge Devices", "Data Feed", "Stream Deck / Control API"]) {
+      expect(screen.queryByText(title)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole("button", { name: "Generate Token" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows the relay URL with a Copy button and no developer instructions (SA-116)", () => {

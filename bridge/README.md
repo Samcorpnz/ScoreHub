@@ -29,8 +29,12 @@ npm run dist:mac   # → release/*.dmg  (must run on macOS)
 npm run dist:win   # → release/*.exe  (must run on Windows, or via CI)
 ```
 
-Installers are **unsigned** — installing triggers a Gatekeeper/SmartScreen warning that's safe to
-click through. Code signing is a separate follow-up (SA-91 explicitly excludes it).
+Installers aren't signed with a real certificate — installing triggers a Gatekeeper/SmartScreen
+warning that's safe to click through (on Mac: System Settings → Privacy & Security → Open Anyway).
+Code signing is a separate follow-up (SA-91 explicitly excludes it). The Mac app is still
+**ad-hoc signed** (`mac.identity: "-"`): without it, Apple Silicon reports the downloaded app as
+"damaged and can't be opened", with no way past it. `hardenedRuntime` is off because ad-hoc
+signing plus hardened runtime blocks the serialport native module from loading.
 
 ## Cutting a release
 

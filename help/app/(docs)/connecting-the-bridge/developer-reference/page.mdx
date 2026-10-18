@@ -26,11 +26,35 @@ GET RELAY_URL/api/data-feed/state?matchId=MATCH_ID
 x-data-feed-secret: YOUR_TOKEN
 ```
 
-Generate the token on the **Data Feed** card of the control panel's **Settings** tab. A match's
-ID is in the address bar of its control panel, after `matchId=`.
+Generate the token on the **Data Feed Integrations** card of the **Account** page. The token
+belongs to your organisation, not to one match. Your integration picks the match by sending its
+`matchId`.
 
-Always send `matchId`. If the token was generated for one specific match, it returns that match
-and `matchId` is ignored.
+To get the list of matches the token can read, call:
+
+```
+GET RELAY_URL/api/matches
+x-data-feed-secret: YOUR_TOKEN
+```
+
+It returns the organisation's live and upcoming matches:
+
+```json
+{
+  "orgId": "…",
+  "pinnedMatchId": null,
+  "matches": [
+    { "id": "MATCH_ID", "name": "Pulse v Magic", "sport": "netball", "status": "LIVE", "scheduledAt": null }
+  ]
+}
+```
+
+Use a match's `id` as `matchId`. A match's ID is also in the address bar of its control panel,
+after `matchId=`.
+
+Always send `matchId`. If the token was pinned to one match when it was generated, it returns
+that match whatever `matchId` you send. `/api/matches` then lists only that match, and
+`pinnedMatchId` is set to its ID.
 
 The response is one JSON object holding the whole match state. Poll it; once or twice a second is
 enough for a live scoreboard. To be sent each change as it happens instead, see
@@ -189,7 +213,7 @@ socket.on("connect_error", (err) => {
 
 If the connection is refused, `connect_error` fires. `match not found` means the match ID isn't
 one of the organisation's. Any other message usually means the token is wrong or revoked, or the
-account has no active Data Feed add-on — check both on the **Settings** tab.
+account has no active Data Feed add-on — check both on the **Account** page.
 
 ### Match events
 
@@ -261,7 +285,8 @@ Things to know:
 ## Control API
 
 Every Control API call is a `POST` with a control token in an `x-control-secret` header. Generate the token
-on the **Stream Deck / Control API** card of the **Settings** tab.
+on the **Stream Deck / Control API** card of the **Account** page. The same `GET RELAY_URL/api/matches`
+call, with the token in `x-control-secret`, lists the matches it can control.
 
 ```
 POST RELAY_URL/action/score/home?delta=2&matchId=MATCH_ID
@@ -326,4 +351,4 @@ Errors return JSON with an `error` message, for example
 - A Control API call for an upcoming fixture starts it, the same as selecting **Start** on the
   dashboard. That's when a `402` can come back on the Free plan.
 - Both tokens are long-lived. Treat them like passwords, and revoke one from its card on the
-  **Settings** tab if it leaks.
+  **Account** page if it leaks.

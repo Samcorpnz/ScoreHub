@@ -45,12 +45,15 @@
       "buildResources": "resources"
     },
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "resources/*.png"
     ],
     "extraResources": [],
     "mac": {
       "category": "public.app-category.sports",
       "icon": "resources/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         { "target": "dmg", "arch": ["x64", "arm64"] }
       ]

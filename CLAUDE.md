@@ -126,7 +126,7 @@ different caller:
 - **CONTROL ScopedToken** — long-lived, DB-backed (hashed with SHA-256, never stored raw), for
   Stream Deck / Control API callers that can't do an interactive login. ("Control API" is the
   product name for the `/action/*` routes; "webhooks" is reserved for outbound notifications.)
-- **BRIDGE ScopedToken** — long-lived, per-org, generated from the control panel's Settings tab;
+- **BRIDGE ScopedToken** — long-lived, per-org, generated from the Account page's Bridge Devices card;
   authenticates the venue-laptop bridge process.
 
 When `DATABASE_URL` is unset (local dev / Jest, or a self-hosted single-tenant deployment with no

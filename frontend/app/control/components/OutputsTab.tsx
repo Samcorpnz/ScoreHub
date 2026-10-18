@@ -188,7 +188,7 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
 
       {/* Graphics software section — the feed itself is part of the Data
           Feed add-on (token-authenticated, see DataFeedTokensCard on the
-          Settings tab), so this only points there. Display links are for
+          Account page), so this only points there. Display links are for
           ScoreHub's own displays, not a data source for other software. */}
       <div className="rounded-xl p-5" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}>
         <SectionLabel>Graphics Software — Data Feed Add-on</SectionLabel>
@@ -197,8 +197,9 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
           Feed add-on gives you a token-authenticated feed of this match&apos;s live state.
         </p>
         <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
-          An Admin or Manager generates a token on the <strong>Settings</strong> tab under <strong>Data Feed</strong>.
-          An Admin can add the add-on under <a href="/account" style={{ color: "var(--accent)" }}>Account → Add-ons</a>.
+          An Admin or Manager generates a token
+          under <a href="/account" style={{ color: "var(--accent)" }}>Account → Data Feed Integrations</a>, where an
+          Admin can also add the add-on.
         </p>
       </div>
     </div>

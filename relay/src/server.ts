@@ -1018,22 +1018,34 @@ export function createServer(options: ServerOptions = {}) {
   // Feeds the match pickers in the Bridge app (x-bridge-secret) and the
   // Stream Deck plugin (x-control-secret) — both hold tokens that usually
   // aren't pinned to a match, so they have to choose one themselves (SA-145).
+  // The match list a Bridge, Stream Deck or data feed token picks from — the
+  // token belongs to the org, and the caller chooses which match to feed or
+  // read unless the token is pinned to one.
   app.get("/api/matches", controlRateLimit, async (req, res) => {
     const bridgeSecret = req.headers["x-bridge-secret"];
+    const dataFeedSecret = req.headers["x-data-feed-secret"];
     const controlSecret = req.headers["x-control-secret"];
-    const asBridge = typeof bridgeSecret === "string";
-    const result = asBridge
-      ? await verifyBridgeSecret(bridgeSecret, BRIDGE_SECRET)
-      : await verifyActionSecret(typeof controlSecret === "string" ? controlSecret : undefined, CONTROL_SECRET);
+    let caller: "bridge" | "data-feed" | "control";
+    if (typeof bridgeSecret === "string") caller = "bridge";
+    else if (typeof dataFeedSecret === "string") caller = "data-feed";
+    else caller = "control";
+    let result;
+    if (caller === "bridge") result = await verifyBridgeSecret(bridgeSecret as string, BRIDGE_SECRET);
+    else if (caller === "data-feed") result = await verifyDataFeedSecret(dataFeedSecret as string, DATA_FEED_SECRET);
+    else result = await verifyActionSecret(typeof controlSecret === "string" ? controlSecret : undefined, CONTROL_SECRET);
     if (!result) {
       res.status(401).json({ error: "unauthorized" });
       return;
     }
-    if (asBridge && !(await orgHasAddOn(result.orgId, "data-feed"))) {
-      res.status(403).json({ error: BRIDGE_ADDON_REQUIRED_MESSAGE });
+    if (caller !== "control" && !(await orgHasAddOn(result.orgId, "data-feed"))) {
+      res.status(403).json({
+        error: caller === "bridge"
+          ? BRIDGE_ADDON_REQUIRED_MESSAGE
+          : "This feature requires the data-feed add-on — upgrade at /account/billing",
+      });
       return;
     }
-    res.json(await listSelectableMatches(result, !asBridge));
+    res.json(await listSelectableMatches(result, caller === "control"));
   });
 
   app.get("/state", controlRateLimit, async (req, res) => {

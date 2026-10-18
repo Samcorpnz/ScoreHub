@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/nextjs";
 import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
 import { getStripeClient } from "@/lib/stripe-client";
 import { Card, SmallBtn } from "../components/primitives";
+import { BridgeTokensCard, DataFeedTokensCard, StreamDeckTokensCard } from "../components/TokenCards";
 
 const PLANS = [
   {
@@ -313,6 +314,8 @@ export default function AccountPage() {
     );
   }
 
+  const dataFeedEntitled = billingStatus ? billingStatus.addOns.includes("data-feed") : null;
+
   return (
     <div className="p-6 w-full max-w-5xl mx-auto space-y-6">
       <Card title="Organization">
@@ -331,7 +334,12 @@ export default function AccountPage() {
 
       {session?.user?.activeOrgId &&
         (session.user.activeRole === "ADMIN" || session.user.activeRole === "MANAGER") && (
-          <TeamCard orgId={session.user.activeOrgId} actorRole={session.user.activeRole} actorUserId={session.user.id} />
+          <>
+            <TeamCard orgId={session.user.activeOrgId} actorRole={session.user.activeRole} actorUserId={session.user.id} />
+            <BridgeTokensCard orgId={session.user.activeOrgId} dataFeedEntitled={dataFeedEntitled} />
+            <StreamDeckTokensCard orgId={session.user.activeOrgId} />
+            <DataFeedTokensCard orgId={session.user.activeOrgId} dataFeedEntitled={dataFeedEntitled} />
+          </>
         )}
 
       <Card title="Plan & Billing">

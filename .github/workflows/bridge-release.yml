@@ -4,6 +4,8 @@ name: Bridge release
 # publishes both installers as assets on a GitHub Release. Triggered by
 # pushing a `bridge-v*` tag — see bridge/README.md for the release process.
 # Unsigned installers (SA-91): code signing is a separate follow-up story.
+# The Mac app is ad-hoc signed (bridge/package.json `mac.identity: "-"`) so
+# Apple Silicon doesn't reject the download as "damaged".
 # Running it manually builds both installers without publishing anything.
 on:
   push:

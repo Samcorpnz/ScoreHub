@@ -252,13 +252,6 @@ export default function DashboardPage() {
           >
             Sign out
           </button>
-          <a
-            href="/setup"
-            className="rounded-lg px-3 py-1.5 text-xs font-bold"
-            style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
-          >
-            Set Up a New Match
-          </a>
         </div>
       </div>
 
@@ -268,7 +261,7 @@ export default function DashboardPage() {
           Upcoming fixtures, live matches, and history — click into a match to score it.
         </p>
 
-        <div className="flex gap-1 mb-4" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="flex items-center gap-1 mb-4" style={{ borderBottom: "1px solid var(--border)" }}>
           {(["live", "upcoming", "history"] as TabKey[]).map(t => (
             <button
               key={t}
@@ -284,6 +277,13 @@ export default function DashboardPage() {
               {t}
             </button>
           ))}
+          <a
+            href="/setup"
+            className="ml-auto mb-1 rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+            style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
+          >
+            Set Up a New Match
+          </a>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4">

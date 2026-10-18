@@ -1,36 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import useSWR from "swr";
+import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
 import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
 import { useEndMatch } from "../lib/useEndMatch";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
-
-interface BridgeToken {
-  id: string;
-  label?: string;
-  type: "BRIDGE" | "CONTROL" | "DATA_FEED";
-  matchId?: string | null;
-  createdAt: string;
-  revokedAt: string | null;
-}
-
-interface MatchOption {
-  id: string;
-  homeName: string | null;
-  visitorName: string | null;
-  status: string;
-}
-
-async function fetchTokensByType(orgId: string, type: BridgeToken["type"]): Promise<BridgeToken[]> {
-  const res = await fetch(`/api/orgs/${orgId}/tokens`);
-  if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
-  return (data.tokens || []).filter((t: BridgeToken) => t.type === type);
-}
 
 function templateClockLabel(clockSeconds: number, countDown: boolean): string {
   if (clockSeconds === 0) {
@@ -42,48 +18,9 @@ function templateClockLabel(clockSeconds: number, countDown: boolean): string {
   return `${direction} ${minutes}:${seconds}`;
 }
 
-function ControlApiCard({ orgId, matchId }: { readonly orgId: string; readonly matchId?: string }) {
-  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
-    [orgId, "tokens", "CONTROL"],
-    () => fetchTokensByType(orgId, "CONTROL"),
-  );
-  const [label, setLabel] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [justCreated, setJustCreated] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  const generateToken = async () => {
-    setGenerating(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim() || undefined, type: "CONTROL" }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { token } = await res.json();
-      setJustCreated(token);
-      setLabel("");
-      await loadTokens();
-    } catch {
-      setError("Failed to generate token");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const revokeToken = async (tokenId: string) => {
-    if (!confirm("Revoke this Stream Deck token?")) return;
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens/${tokenId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
-      await loadTokens();
-    } catch {
-      setError("Failed to revoke token");
-    }
-  };
-
+// The Control API's per-match endpoint URLs. Tokens themselves are org-wide
+// and live on the Account page, alongside Bridge and Data Feed tokens.
+function ControlApiCard({ matchId }: { readonly matchId?: string }) {
   const qMatchId = matchId ? `?matchId=${matchId}` : "";
   const ampMatchId = matchId ? `&matchId=${matchId}` : "";
   const baseUrl = RELAY_URL;
@@ -104,475 +41,34 @@ function ControlApiCard({ orgId, matchId }: { readonly orgId: string; readonly m
   ];
 
   return (
-    <Card title="Stream Deck / Control API">
+    <Card title="Control API">
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-        Control ScoreHub from a Stream Deck or any HTTP client. Install the plugin, generate a token,
-        paste it into the Stream Deck property inspector, and choose your match there.
+        This match&apos;s endpoint URLs, for a Stream Deck HTTP action or any HTTP client. Send a
+        Stream Deck token as the <code>x-control-secret</code> header — tokens are
+        under <a href="/account" style={{ color: "var(--accent)" }}>Account → Stream Deck / Control API</a>.
       </p>
-
-      {/* Plugin download */}
-      <div className="flex items-center gap-3 mb-4 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-        <div className="flex-1">
-          <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>ScoreHub Stream Deck Plugin</p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--text-dim)" }}>Double-click to install. Live score on every button.</p>
-        </div>
-        <a
-          href="/scorehub.streamDeckPlugin"
-          download="scorehub.streamDeckPlugin"
-          className="rounded-lg px-3 py-2 text-xs font-bold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
-        >
-          Download
-        </a>
-      </div>
-
-      {justCreated && (
-        <div className="mb-3 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-accent)" }}>
-          <p className="text-xs font-semibold mb-2" style={{ color: "var(--accent)" }}>
-            Copy this token now — it won&apos;t be shown again:
-          </p>
-          <div className="flex gap-2">
-            <code className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-base)", color: "var(--accent)" }}>
-              {justCreated}
+      <div className="space-y-1">
+        {actions.map(a => (
+          <div key={a.label} className="flex items-center gap-2 text-xs">
+            <span className="w-24 shrink-0 font-semibold" style={{ color: "var(--text-secondary)" }}>{a.label}</span>
+            <code
+              className="flex-1 min-w-0 p-1.5 rounded truncate"
+              style={{ background: "var(--bg-elevated)", color: "var(--text-dim)" }}
+              title={a.url}
+            >
+              {a.url}
             </code>
             <button
-              className="rounded-lg px-3 text-xs font-semibold shrink-0"
-              style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-              onClick={() => navigator.clipboard.writeText(justCreated)}
+              type="button"
+              className="shrink-0 rounded px-2 py-1 text-xs"
+              style={{ background: "var(--accent-dim)", color: "var(--accent)" }}
+              onClick={() => navigator.clipboard.writeText(a.url)}
             >
               Copy
             </button>
           </div>
-        </div>
-      )}
-
-      <div className="flex gap-2 mb-4">
-        <input
-          type="text"
-          placeholder="Label (e.g. Court 1 Stream Deck)"
-          className="flex-1 rounded-lg px-3 py-2 text-sm"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-        />
-        <button
-          className="rounded-lg px-3 py-2 text-sm font-semibold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-          onClick={generateToken}
-          disabled={generating}
-        >
-          {generating ? "Generating…" : "Generate Token"}
-        </button>
+        ))}
       </div>
-
-      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load tokens"}</p>}
-
-      {!loading && tokens.length > 0 && (
-        <div className="space-y-1 mb-4">
-          {tokens.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded" style={{ background: "var(--bg-elevated)" }}>
-              <div>
-                <span style={{ color: "var(--text-primary)" }}>{t.label || "Unlabeled"}</span>
-                <span className="ml-2" style={{ color: "var(--text-dim)" }}>{new Date(t.createdAt).toLocaleDateString()}</span>
-              </div>
-              {t.revokedAt ? (
-                <span style={{ color: "var(--text-dim)" }}>Revoked</span>
-              ) : (
-                <button
-                  className="rounded px-2 py-1 shrink-0"
-                  style={{ color: "#EF4444", border: "1px solid #EF444433" }}
-                  onClick={() => revokeToken(t.id)}
-                >
-                  Revoke
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-        <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Endpoint URLs</p>
-        <div className="space-y-1">
-          {actions.map(a => (
-            <div key={a.label} className="flex items-center gap-2 text-xs">
-              <span className="w-24 shrink-0 font-semibold" style={{ color: "var(--text-secondary)" }}>{a.label}</span>
-              <code
-                className="flex-1 p-1.5 rounded truncate"
-                style={{ background: "var(--bg-elevated)", color: "var(--text-dim)" }}
-                title={a.url}
-              >
-                {a.url}
-              </code>
-              <button
-                type="button"
-                className="shrink-0 rounded px-2 py-1 text-xs"
-                style={{ background: "var(--accent-dim)", color: "var(--accent)" }}
-                onClick={() => navigator.clipboard.writeText(a.url)}
-              >
-                Copy
-              </button>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
-          Click any URL to copy. Set <code>x-control-secret</code> as a custom header in your Stream Deck HTTP action.
-        </p>
-      </div>
-    </Card>
-  );
-}
-
-// Whether the account has the Data Feed add-on, which covers both console
-// bridging and the third-party feed. null while loading.
-function useDataFeedEntitled(): boolean | null {
-  const [entitled, setEntitled] = useState<boolean | null>(null);
-  useEffect(() => {
-    fetch("/api/billing/status")
-      .then(res => res.ok ? res.json() : { addOns: [] })
-      .then(data => setEntitled((data.addOns ?? []).includes("data-feed")))
-      .catch(err => {
-        console.warn("[SettingsTab] failed to fetch billing status:", err);
-        setEntitled(false);
-      });
-  }, []);
-  return entitled;
-}
-
-// Bridging a console is part of the Data Feed add-on (SA-114) — POST
-// /api/orgs/[orgId]/tokens 403s a BRIDGE request without it and the relay
-// refuses the bridge's connection, so show the upgrade prompt rather than a
-// form that would just fail.
-function BridgeTokensCard({ orgId }: { readonly orgId: string }) {
-  const entitled = useDataFeedEntitled();
-  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
-    entitled ? [orgId, "tokens", "BRIDGE"] : null,
-    () => fetchTokensByType(orgId, "BRIDGE"),
-  );
-  const [label, setLabel] = useState("");
-  const [pinnedMatchId, setPinnedMatchId] = useState("");
-  const [matches, setMatches] = useState<MatchOption[]>([]);
-  const [generating, setGenerating] = useState(false);
-  const [justCreated, setJustCreated] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!entitled) return;
-    fetch(`/api/orgs/${orgId}/matches?status=LIVE,SCHEDULED`)
-      .then(res => res.ok ? res.json() : { matches: [] })
-      .then(data => setMatches(data.matches || []))
-      .catch(() => setMatches([]));
-  }, [orgId, entitled]);
-
-  const generateToken = async () => {
-    setGenerating(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim() || undefined, matchId: pinnedMatchId || undefined }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { token } = await res.json();
-      setJustCreated(token);
-      setLabel("");
-      setPinnedMatchId("");
-      await loadTokens();
-    } catch {
-      setError("Failed to generate token");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const revokeToken = async (tokenId: string) => {
-    if (!confirm("Revoke this bridge token? Any venue laptop using it will lose connection until reconfigured with a new one.")) return;
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens/${tokenId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
-      await loadTokens();
-    } catch {
-      setError("Failed to revoke token");
-    }
-  };
-
-  if (entitled === null) return null;
-
-  if (!entitled) {
-    return (
-      <Card title="Bridge Devices">
-        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          Score from a physical Saturn/Vega scoreboard console at the venue — requires the Data Feed add-on.
-        </p>
-        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
-          An Admin can add it under <a href="/account" style={{ color: "var(--accent)" }}>Account → Billing</a>.
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="Bridge Devices">
-      <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-        Generate a token for each venue laptop running the bridge app. Paste it into the bridge&apos;s
-        <strong>Bridge Secret</strong> field, then choose the match in the bridge app. Pin
-        the token to a match here only if that laptop should never feed any other match.
-      </p>
-
-      <div className="flex items-center gap-3 mb-4 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-        <div className="flex-1">
-          <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>ScoreHub Bridge app</p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--text-dim)" }}>
-            Install on the venue laptop, then paste a token below into its setup screen.
-          </p>
-        </div>
-        <a
-          href="https://downloads.scorehub.co.nz/mac"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-lg px-3 py-2 text-xs font-bold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
-        >
-          Mac
-        </a>
-        <a
-          href="https://downloads.scorehub.co.nz/windows"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-lg px-3 py-2 text-xs font-bold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)", textDecoration: "none" }}
-        >
-          Windows
-        </a>
-      </div>
-
-      {justCreated && (
-        <div className="mb-3 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-accent)" }}>
-          <p className="text-xs font-semibold mb-2" style={{ color: "var(--accent)" }}>
-            Copy this now — it won&apos;t be shown again:
-          </p>
-          <div className="flex gap-2">
-            <code className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-base)", color: "var(--accent)" }}>
-              {justCreated}
-            </code>
-            <button
-              className="rounded-lg px-3 text-xs font-semibold shrink-0"
-              style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-              onClick={() => navigator.clipboard.writeText(justCreated)}
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2 mb-3">
-        <input
-          type="text"
-          placeholder="Label (e.g. Venue laptop 1)"
-          className="flex-1 rounded-lg px-3 py-2 text-sm"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-        />
-        <select
-          className="rounded-lg px-3 py-2 text-sm shrink-0"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-          value={pinnedMatchId}
-          onChange={e => setPinnedMatchId(e.target.value)}
-        >
-          <option value="">All matches</option>
-          {matches.map(m => (
-            <option key={m.id} value={m.id}>
-              {(m.homeName || "Home")} v {(m.visitorName || "Visitor")} ({m.status === "LIVE" ? "live" : "scheduled"})
-            </option>
-          ))}
-        </select>
-        <button
-          className="rounded-lg px-3 py-2 text-sm font-semibold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-          onClick={generateToken}
-          disabled={generating}
-        >
-          {generating ? "Generating…" : "Generate Token"}
-        </button>
-      </div>
-
-      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load bridge tokens"}</p>}
-
-      {(() => {
-        if (loading) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>Loading…</p>;
-        if (tokens.length === 0) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>No bridge tokens yet.</p>;
-        return (
-        <div className="space-y-1.5">
-          {tokens.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded" style={{ background: "var(--bg-elevated)" }}>
-              <div>
-                <div style={{ color: "var(--text-primary)" }}>{t.label || "Unlabeled"}</div>
-                <div style={{ color: "var(--text-dim)" }}>{new Date(t.createdAt).toLocaleDateString()}</div>
-              </div>
-              {t.revokedAt ? (
-                <span style={{ color: "var(--text-dim)" }}>Revoked</span>
-              ) : (
-                <button
-                  className="rounded px-2 py-1 shrink-0"
-                  style={{ color: "#EF4444", border: "1px solid #EF444433" }}
-                  onClick={() => revokeToken(t.id)}
-                >
-                  Revoke
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        );
-      })()}
-    </Card>
-  );
-}
-
-// Third-party integrations (Singular.live, VIZRT) authenticate with a
-// long-lived DATA_FEED token against GET /api/data-feed/state and the
-// "data-feed" socket role — see relay/src/auth.ts's verifyDataFeedSecret.
-// Gated behind the data-feed add-on, like BridgeTokensCard above and unlike
-// ControlApiCard (Stream Deck tokens are ungated by design) — POST /api/orgs/
-// [orgId]/tokens 403s a DATA_FEED request for an org without the add-on, so
-// this card checks the same entitlement client-side to show an upgrade
-// prompt instead of a form that would just fail.
-function DataFeedTokensCard({ orgId }: { readonly orgId: string }) {
-  const entitled = useDataFeedEntitled();
-  const [label, setLabel] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [justCreated, setJustCreated] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  const { data: tokens = [], isLoading: loading, error: loadError, mutate: loadTokens } = useSWR(
-    entitled ? [orgId, "tokens", "DATA_FEED"] : null,
-    () => fetchTokensByType(orgId, "DATA_FEED"),
-  );
-
-  const generateToken = async () => {
-    setGenerating(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim() || undefined, type: "DATA_FEED" }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { token } = await res.json();
-      setJustCreated(token);
-      setLabel("");
-      await loadTokens();
-    } catch {
-      setError("Failed to generate token");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const revokeToken = async (tokenId: string) => {
-    if (!confirm("Revoke this data feed token? Any third-party integration using it will lose access until reconfigured with a new one.")) return;
-    try {
-      const res = await fetch(`/api/orgs/${orgId}/tokens/${tokenId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
-      await loadTokens();
-    } catch {
-      setError("Failed to revoke token");
-    }
-  };
-
-  if (entitled === false) {
-    return (
-      <Card title="Data Feed">
-        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          Pipe live match state into a third-party graphics engine (Singular.live, Chyron, VIZRT) —
-          requires the Data Feed add-on.
-        </p>
-        <p className="text-xs mt-2" style={{ color: "var(--text-dim)" }}>
-          Upgrade at <code>/account/billing</code>.
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="Data Feed">
-      <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-        Generate a token for a third-party graphics engine (Singular.live, Chyron, VIZRT) to connect
-        to <code>{`${RELAY_URL}/api/data-feed/state`}</code> — send it as the <code>x-data-feed-secret</code> header.
-      </p>
-
-      {justCreated && (
-        <div className="mb-3 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-accent)" }}>
-          <p className="text-xs font-semibold mb-2" style={{ color: "var(--accent)" }}>
-            Copy this now — it won&apos;t be shown again:
-          </p>
-          <div className="flex gap-2">
-            <code className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-base)", color: "var(--accent)" }}>
-              {justCreated}
-            </code>
-            <button
-              className="rounded-lg px-3 text-xs font-semibold shrink-0"
-              style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-              onClick={() => navigator.clipboard.writeText(justCreated)}
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2 mb-3">
-        <input
-          type="text"
-          placeholder="Label (e.g. Singular.live)"
-          className="flex-1 rounded-lg px-3 py-2 text-sm"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-        />
-        <button
-          className="rounded-lg px-3 py-2 text-sm font-semibold shrink-0"
-          style={{ background: "var(--accent-dim)", border: "1px solid var(--border-accent)", color: "var(--accent)" }}
-          onClick={generateToken}
-          disabled={generating}
-        >
-          {generating ? "Generating…" : "Generate Token"}
-        </button>
-      </div>
-
-      {(error || loadError) && <p className="text-xs mb-3" style={{ color: "#EF4444" }}>{error || "Failed to load data feed tokens"}</p>}
-
-      {(() => {
-        if (loading) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>Loading…</p>;
-        if (tokens.length === 0) return <p className="text-xs" style={{ color: "var(--text-dim)" }}>No data feed tokens yet.</p>;
-        return (
-        <div className="space-y-1.5">
-          {tokens.map(t => (
-            <div key={t.id} className="flex items-center justify-between gap-2 text-xs p-2 rounded" style={{ background: "var(--bg-elevated)" }}>
-              <div>
-                <div style={{ color: "var(--text-primary)" }}>{t.label || "Unlabeled"}</div>
-                <div style={{ color: "var(--text-dim)" }}>{new Date(t.createdAt).toLocaleDateString()}</div>
-              </div>
-              {t.revokedAt ? (
-                <span style={{ color: "var(--text-dim)" }}>Revoked</span>
-              ) : (
-                <button
-                  className="rounded px-2 py-1 shrink-0"
-                  style={{ color: "#EF4444", border: "1px solid #EF444433" }}
-                  onClick={() => revokeToken(t.id)}
-                >
-                  Revoke
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        );
-      })()}
     </Card>
   );
 }
@@ -633,7 +129,6 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
   const formatField = template.formats ? template.matchConfig?.find(f => f.key === "format") : undefined;
   const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
   const { data: session } = useSession();
-  const orgId = session?.user?.activeOrgId;
   const { endMatch: handleEndMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
   function selectFormat(format: string) {
@@ -808,6 +303,9 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
           Your relay URL. The Bridge app and Stream Deck plugin already use ScoreHub&apos;s by default — you only
           need this for the Control API, or if support asks you to set it under <strong>Advanced</strong>.
         </p>
+        <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+          Tokens for Bridge, Stream Deck and the data feed are on the <a href="/account" style={{ color: "var(--accent)" }}>Account</a> page.
+        </p>
         <div className="flex gap-2">
           <code data-testid="relay-url" className="text-xs flex-1 p-2 rounded overflow-x-auto" style={{ background: "var(--bg-elevated)", color: "var(--accent)" }}>
             {RELAY_URL}
@@ -822,12 +320,8 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
         </div>
       </Card>
 
-      {(session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER") && orgId && (
-        <>
-          <ControlApiCard orgId={orgId} matchId={matchId} />
-          <BridgeTokensCard orgId={orgId} />
-          <DataFeedTokensCard orgId={orgId} />
-        </>
+      {(session?.user?.activeRole === "ADMIN" || session?.user?.activeRole === "MANAGER") && (
+        <ControlApiCard matchId={matchId} />
       )}
     </div>
   );

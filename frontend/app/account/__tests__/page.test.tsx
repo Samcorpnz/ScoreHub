@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import AccountPage from "../page";
 
@@ -453,5 +453,129 @@ describe("AccountPage", () => {
 
     await screen.findByText("Display Name");
     expect(screen.queryByText("Team")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bridge Devices")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stream Deck / Control API")).not.toBeInTheDocument();
+  });
+
+  it("shows the Bridge Devices form and download links when the org has the Data Feed add-on", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("fetch", mockFetchRouter({
+      "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro", addOns: ["data-feed"] }),
+      "/tokens": () => jsonResponse({ tokens: [] }),
+      "/matches": () => jsonResponse({ matches: [] }),
+    }));
+    renderPage();
+
+    expect(await screen.findByText("Bridge Devices")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)")).toBeInTheDocument();
+    expect(await screen.findByText("No bridge tokens yet.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mac" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/mac");
+    expect(screen.getByRole("link", { name: "Windows" })).toHaveAttribute("href", "https://downloads.scorehub.co.nz/windows");
+  });
+
+  it("generates a bridge token pinned to a match", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes("/api/billing/status")) return jsonResponse({ ...freePlanStatus, plan: "pro", addOns: ["data-feed"] });
+      if (url === "/api/orgs/org-1/tokens" && init?.method === "POST") return jsonResponse({ token: "bridge-plaintext" });
+      if (url.includes("/tokens")) return jsonResponse({ tokens: [] });
+      if (url.includes("/matches")) {
+        return jsonResponse({ matches: [{ id: "m1", homeName: "Pulse", visitorName: "Magic", status: "LIVE" }] });
+      }
+      return mockFetchRouter()(url, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+
+    fireEvent.change(await screen.findByPlaceholderText("Label (e.g. Venue laptop 1)"), { target: { value: "Court 1" } });
+    const bridge = within(screen.getByText("Bridge Devices").parentElement!);
+    await bridge.findByRole("option", { name: "Pulse v Magic (live)" });
+    fireEvent.change(bridge.getByLabelText("Pin to match"), { target: { value: "m1" } });
+    fireEvent.click(bridge.getByRole("button", { name: "Generate Token" }));
+
+    expect(await screen.findByText("bridge-plaintext")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orgs/org-1/tokens",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ label: "Court 1", type: "BRIDGE", matchId: "m1" }) }),
+    );
+  });
+
+  it("lists each token with the match it's pinned to, or All matches", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("fetch", mockFetchRouter({
+      "/api/billing/status": () => jsonResponse({ ...freePlanStatus, plan: "pro", addOns: ["data-feed"] }),
+      "/tokens": () => jsonResponse({ tokens: [
+        { id: "t1", label: "Laptop A", type: "BRIDGE", matchId: null, createdAt: "2026-10-01T00:00:00Z", revokedAt: null },
+        { id: "t2", label: "Laptop B", type: "BRIDGE", matchId: "m1", createdAt: "2026-10-01T00:00:00Z", revokedAt: null },
+      ] }),
+      "/matches": () => jsonResponse({ matches: [{ id: "m1", homeName: "Pulse", visitorName: "Magic", status: "LIVE" }] }),
+    }));
+    renderPage();
+
+    expect(await screen.findByText("Laptop A")).toBeInTheDocument();
+    expect(screen.getByText(/^All matches ·/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Pinned to Pulse v Magic ·/)).toBeInTheDocument();
+  });
+
+  it("generates Stream Deck tokens on every plan, with no add-on needed", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/orgs/org-1/tokens" && init?.method === "POST") return jsonResponse({ token: "deck-plaintext" });
+      if (url.includes("/tokens")) return jsonResponse({ tokens: [] });
+      if (url.includes("/matches")) return jsonResponse({ matches: [] });
+      return mockFetchRouter()(url, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+
+    const placeholder = await screen.findByPlaceholderText("Label (e.g. Court 1 Stream Deck)");
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", "/scorehub.streamDeckPlugin");
+    fireEvent.change(placeholder, { target: { value: "Court 1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate Token" }));
+
+    expect(await screen.findByText("deck-plaintext")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orgs/org-1/tokens",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ label: "Court 1", type: "CONTROL" }) }),
+    );
+  });
+
+  it("generates a data feed token when the org has the add-on, and explains how to pick a match", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes("/api/billing/status")) return jsonResponse({ ...freePlanStatus, plan: "pro", addOns: ["data-feed"] });
+      if (url === "/api/orgs/org-1/tokens" && init?.method === "POST") return jsonResponse({ token: "feed-plaintext" });
+      if (url.includes("/tokens")) return jsonResponse({ tokens: [] });
+      if (url.includes("/matches")) return jsonResponse({ matches: [] });
+      return mockFetchRouter()(url, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage();
+
+    const placeholder = await screen.findByPlaceholderText("Label (e.g. Singular.live)");
+    expect(screen.getByText(/\/api\/matches$/)).toBeInTheDocument();
+    fireEvent.change(placeholder, { target: { value: "Singular.live" } });
+    const card = placeholder.closest("div")!.parentElement!;
+    fireEvent.click(within(card).getByRole("button", { name: "Generate Token" }));
+
+    expect(await screen.findByText("feed-plaintext")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/orgs/org-1/tokens",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ label: "Singular.live", type: "DATA_FEED" }) }),
+    );
+  });
+
+  it("shows an upgrade prompt instead of the Bridge Devices form without the Data Feed add-on (SA-114)", async () => {
+    useSessionMock.mockReturnValue(adminSession);
+    vi.stubGlobal("fetch", mockFetchRouter());
+    renderPage();
+
+    expect(await screen.findByText(/physical Saturn\/Vega scoreboard console/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Label (e.g. Venue laptop 1)")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Mac" })).not.toBeInTheDocument();
+    expect(screen.getByText(/^Pipe live match state into a third-party graphics engine/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Label (e.g. Singular.live)")).not.toBeInTheDocument();
+    // Stream Deck needs no add-on, so its form is still there.
+    expect(screen.getByPlaceholderText("Label (e.g. Court 1 Stream Deck)")).toBeInTheDocument();
   });
 });
