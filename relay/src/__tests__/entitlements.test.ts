@@ -9,15 +9,15 @@ import { SignJWT } from "jose";
 // to control org/account/match state precisely rather than hit a real DB.
 jest.mock("@scorehub/db", () => {
   const orgs = new Map<string, { accountId: string }>();
-  const accounts = new Map<string, { plan: string }>();
+  const accounts = new Map<string, { plan: string; addOns: string[] }>();
   const matches: { id: string; orgId: string; status: string; state: unknown }[] = [];
   let nextId = 1;
 
   return {
     recordAuditEvent: jest.fn(),
-    __seed(orgId: string, accountId: string, plan: string) {
+    __seed(orgId: string, accountId: string, plan: string, addOns: string[] = []) {
       orgs.set(orgId, { accountId });
-      accounts.set(accountId, { plan });
+      accounts.set(accountId, { plan, addOns });
     },
     __reset() {
       orgs.clear();
@@ -30,7 +30,8 @@ jest.mock("@scorehub/db", () => {
         findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
           const org = orgs.get(where.id);
           if (!org) return null;
-          return { accountId: org.accountId, account: { plan: accounts.get(org.accountId)?.plan ?? "free" } };
+          const account = accounts.get(org.accountId);
+          return { accountId: org.accountId, account: { plan: account?.plan ?? "free", addOns: account?.addOns ?? [] } };
         }),
       },
       match: {
@@ -61,7 +62,7 @@ jest.mock("@scorehub/db", () => {
 import { createServer } from "../server";
 import { DEFAULT_MATCH_STATE } from "../types";
 import * as db from "@scorehub/db";
-const seed = (db as unknown as { __seed: (orgId: string, accountId: string, plan: string) => void }).__seed;
+const seed = (db as unknown as { __seed: (orgId: string, accountId: string, plan: string, addOns?: string[]) => void }).__seed;
 const resetSeed = (db as unknown as { __reset: () => void }).__reset;
 
 const BRIDGE_SECRET = "test-bridge-secret";
@@ -148,6 +149,40 @@ describe("branding in MatchState patches (SA-32)", () => {
   });
 });
 
+describe("per-output styling (Graphics add-on)", () => {
+  const outputs = { scorebug: { font: "Anton", scoreScale: 1.5 } };
+
+  it("keeps a Pro org's theme change but holds outputs without the add-on", async () => {
+    seed("org-outputs-pro", "account-outputs-pro", "pro");
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-outputs-pro"))
+      .send({ displayTheme: { primaryColor: "#ff0000", outputs } });
+    expect(res.status).toBe(200);
+    expect(res.body.displayTheme.primaryColor).toBe("#ff0000");
+    expect(res.body.displayTheme.outputs ?? {}).toEqual({});
+  });
+
+  it("applies outputs for an org with the add-on", async () => {
+    seed("org-outputs-gfx", "account-outputs-gfx", "pro", ["graphics-operator"]);
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-outputs-gfx"))
+      .send({ displayTheme: { outputs } });
+    expect(res.status).toBe(200);
+    expect(res.body.displayTheme.outputs).toEqual(outputs);
+  });
+
+  it("rejects an out-of-range size", async () => {
+    seed("org-outputs-range", "account-outputs-range", "pro", ["graphics-operator"]);
+    const res = await request(app)
+      .post("/manual")
+      .set("x-control-secret", await controlToken("org-outputs-range"))
+      .send({ displayTheme: { outputs: { overlay: { clockScale: 40 } } } });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("sport is fixed once a match is set up", () => {
   async function matchToken(orgId: string, matchId: string): Promise<string> {
     return new SignJWT({ orgId, role: "ADMIN", matchId })
@@ -219,6 +254,43 @@ describe("display background image", () => {
     expect(removed.status).toBe(200);
     const after = await request(app).post("/manual").set("x-control-secret", tokenA).send({});
     expect(after.body.displayTheme.backgroundImageUrl).toBe("");
+  });
+
+  it("needs the Graphics add-on for a per-output background", async () => {
+    seed("org-bg-out-pro", "account-bg-out-pro", "pro");
+    const res = await request(app)
+      .post("/api/display-background?output=fullscreen")
+      .set("x-control-secret", await controlToken("org-bg-out-pro"))
+      .attach("background", PNG, "bg.png");
+    expect(res.status).toBe(403);
+  });
+
+  it("stores a per-output background on that output only", async () => {
+    seed("org-bg-out-gfx", "account-bg-out-gfx", "pro", ["graphics-operator"]);
+    const match = await newMatch("org-bg-out-gfx");
+    const token = await matchToken("org-bg-out-gfx", match);
+    const res = await request(app)
+      .post("/api/display-background?output=fullscreen")
+      .set("x-control-secret", token)
+      .attach("background", PNG, "bg.png");
+    expect(res.status).toBe(200);
+    expect(res.body.backgroundImageUrl).toMatch(new RegExp(`^/logos/org-bg-out-gfx/background-${match}-fullscreen\\.png\\?t=`));
+    const state = await request(app).post("/manual").set("x-control-secret", token).send({});
+    expect(state.body.displayTheme.outputs.fullscreen.backgroundImageUrl).toBe(res.body.backgroundImageUrl);
+    expect(state.body.displayTheme.backgroundImageUrl ?? "").toBe("");
+
+    await request(app).delete("/api/display-background?output=fullscreen").set("x-control-secret", token);
+    const after = await request(app).post("/manual").set("x-control-secret", token).send({});
+    expect(after.body.displayTheme.outputs.fullscreen.backgroundImageUrl).toBe("");
+  });
+
+  it("rejects a per-output background for an output that has none", async () => {
+    seed("org-bg-out-bad", "account-bg-out-bad", "pro", ["graphics-operator"]);
+    const res = await request(app)
+      .post("/api/display-background?output=scorebug")
+      .set("x-control-secret", await controlToken("org-bg-out-bad"))
+      .attach("background", PNG, "bg.png");
+    expect(res.status).toBe(400);
   });
 
   it("rejects a panel opacity outside 0–1", async () => {

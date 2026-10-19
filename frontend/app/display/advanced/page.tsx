@@ -12,7 +12,7 @@ import { PoweredByWatermark } from "../components/PoweredByWatermark";
 
 export default function AdvancedDisplay() {
   const { state, status, relayUnreachable, unauthorized } = useMatchState();
-  const { textScale: _ts, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
+  const { textScale: _ts, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme, "advanced");
   const DisplayStats = getTemplate(state.sport).displayStats;
 
   if (unauthorized) return <DisplayLinkExpiredNotice />;

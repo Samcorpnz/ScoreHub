@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { DisplayTheme, DEFAULT_DISPLAY_THEME } from "../types";
+import { DisplayTheme, DisplayOutputKey, DEFAULT_DISPLAY_THEME } from "../types";
 import { RELAY_URL } from "../control/lib/relay";
 
 // Display panels are painted with --bg-surface / --bg-elevated (globals.css);
@@ -18,6 +18,11 @@ export type DisplayThemeStyle = React.CSSProperties & {
   "--border-accent": string;
   "--bg-base": string;
   "--text-scale": string;
+  // Graphics add-on per-element sizes (OutputStyle), 1 when unset
+  "--score-scale": string;
+  "--clock-scale": string;
+  "--name-scale": string;
+  "--period-scale": string;
   textScale: number;
   competitionLogoUrl: string;
   // Pages that must stay transparent for OBS/vMix (overlay, score bug,
@@ -27,8 +32,17 @@ export type DisplayThemeStyle = React.CSSProperties & {
   backgroundPosition?: string;
 };
 
-export function useDisplayTheme(theme: DisplayTheme | undefined): DisplayThemeStyle {
-  const t = theme ?? DEFAULT_DISPLAY_THEME;
+// `output` picks up that output's Graphics add-on overrides (font,
+// background, element sizes) on top of the match-wide theme.
+export function useDisplayTheme(theme: DisplayTheme | undefined, output?: DisplayOutputKey): DisplayThemeStyle {
+  const base = theme ?? DEFAULT_DISPLAY_THEME;
+  const override = output ? base.outputs?.[output] : undefined;
+  const t: DisplayTheme = {
+    ...base,
+    font: override?.font || base.font,
+    backgroundColor: override?.backgroundColor || base.backgroundColor,
+    backgroundImageUrl: override?.backgroundImageUrl || base.backgroundImageUrl,
+  };
   const loadedFonts = useRef(new Set<string>());
 
   useEffect(() => {
@@ -58,6 +72,10 @@ export function useDisplayTheme(theme: DisplayTheme | undefined): DisplayThemeSt
     "--border-accent":  `${primaryColor}44`,
     "--bg-base":        backgroundColor,
     "--text-scale":     String(textScale),
+    "--score-scale":    String(override?.scoreScale ?? 1),
+    "--clock-scale":    String(override?.clockScale ?? 1),
+    "--name-scale":     String(override?.nameScale ?? 1),
+    "--period-scale":   String(override?.periodScale ?? 1),
     textScale,
     competitionLogoUrl: t.competitionLogoUrl || "",
     ...(panelOpacity < 1 && {

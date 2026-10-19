@@ -189,6 +189,26 @@ export interface DisplayTheme {
   backgroundImageUrl?: string;
   // Opacity of the score panels (0–1), so a background image shows through
   panelOpacity?: number;
+  // Graphics add-on: per-output overrides on top of the fields above. The
+  // relay drops changes to this from orgs without the add-on.
+  outputs?: Partial<Record<DisplayOutputKey, OutputStyle>>;
+}
+
+export const DISPLAY_OUTPUT_KEYS = ["fullscreen", "basic", "advanced", "overlay", "scorebug"] as const;
+export type DisplayOutputKey = typeof DISPLAY_OUTPUT_KEYS[number];
+
+// Unset fields fall back to the match-wide theme. The four sizes are
+// multipliers stacked on top of DisplayTheme.textScale.
+export interface OutputStyle {
+  font?: string;
+  // Fullscreen, basic and advanced only — the overlay and score bug stay
+  // transparent (or chroma-keyed via ?key=).
+  backgroundColor?: string;
+  backgroundImageUrl?: string;
+  scoreScale?: number;
+  clockScale?: number;
+  nameScale?: number;
+  periodScale?: number;
 }
 
 export const DEFAULT_DISPLAY_THEME: DisplayTheme = {

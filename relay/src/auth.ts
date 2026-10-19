@@ -157,6 +157,30 @@ export async function verifyDataFeedSecret(
   return { orgId: token.orgId, matchId: token.matchId ?? undefined };
 }
 
+// Graphics add-on simple data feed (vMix/OBS data sources). Those tools can
+// only take a URL, so this token rides in the query string — which is why it
+// is its own read-only type rather than reusing GRAPHICS (which can switch
+// scenes) or DATA_FEED (a separate paid add-on).
+export async function verifyGraphicsDataSecret(
+  secret: string | undefined,
+  legacySecret: string
+): Promise<AuthResult | null> {
+  if (!secret) return null;
+
+  if (!process.env.DATABASE_URL) {
+    if (legacySecret && secretsEqual(secret, legacySecret)) return { orgId: LEGACY_ROOM_ID };
+    logAuthFailure("verifyGraphicsDataSecret", "legacy_secret_mismatch");
+    return null;
+  }
+
+  const token = await prisma.scopedToken.findUnique({ where: { tokenHash: hashToken(secret) } });
+  if (token?.type !== "GRAPHICS_DATA" || token?.revokedAt) {
+    logAuthFailure("verifyGraphicsDataSecret", token ? "wrong_type_or_revoked" : "token_not_found", { orgId: token?.orgId });
+    return null;
+  }
+  return { orgId: token.orgId, matchId: token.matchId ?? undefined };
+}
+
 // Graphics Operator add-on persona. Deliberately separate from
 // verifyControlSecret even though it accepts the same two credential shapes
 // (long-lived GRAPHICS ScopedToken, or a short-lived JWT minted by the

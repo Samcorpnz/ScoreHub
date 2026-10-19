@@ -3,10 +3,13 @@
 /**
  * Streaming overlay — transparent background, designed to sit in OBS/vMix.
  * Drop it as a Browser Source, set width=1920 height=120 (or similar).
+ * ?key=green|blue (Graphics add-on) swaps the transparency for a solid
+ * chroma key colour, for switchers that can't take an alpha channel.
  */
 
 import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
+import { useChromaKey } from "../../hooks/useChromaKey";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodText, getTemplate } from "../../sport-templates";
@@ -18,7 +21,8 @@ export default function OverlayDisplay() {
   const { home, visitor, clockSeconds, countDown, isRunning, hornActive, possession } = state;
   const DisplayStats = getTemplate(state.sport).displayStats;
   const displayClock = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs });
-  const { backgroundColor: _bg, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme);
+  const { backgroundColor: _bg, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme, "overlay");
+  const chromaKey = useChromaKey();
 
   let clockColor: string;
   if (hornActive) {
@@ -36,7 +40,7 @@ export default function OverlayDisplay() {
   return (
     <div
       style={{
-        background: "transparent",
+        background: chromaKey ?? "transparent",
         ...themeVars,
         width: "100vw",
         display: "flex",
@@ -87,7 +91,7 @@ export default function OverlayDisplay() {
           <span
             className="clock-digit"
             style={{
-              fontSize: "1.6rem",
+              fontSize: "calc(1.6rem * var(--clock-scale, 1))",
               color: clockColor,
               lineHeight: 1,
             }}
@@ -96,7 +100,7 @@ export default function OverlayDisplay() {
           </span>
           <span
             style={{
-              fontSize: "0.6rem",
+              fontSize: "calc(0.6rem * var(--period-scale, 1))",
               fontWeight: 700,
               letterSpacing: "0.2em",
               color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)",
@@ -172,7 +176,7 @@ function TeamBlock({
       >
         <span
           style={{
-            fontSize: "0.6rem",
+            fontSize: "calc(0.6rem * var(--name-scale, 1))",
             fontWeight: 700,
             letterSpacing: "0.15em",
             textTransform: "uppercase",
@@ -187,7 +191,7 @@ function TeamBlock({
         <span
           data-testid={align === "right" ? "display-score-home" : "display-score-visitor"}
           className="score-digit"
-          style={{ fontSize: "2.2rem", color, textShadow: `0 0 20px ${color}44` }}
+          style={{ fontSize: "calc(2.2rem * var(--score-scale, 1))", color, textShadow: `0 0 20px ${color}44` }}
         >
           {score}
         </span>

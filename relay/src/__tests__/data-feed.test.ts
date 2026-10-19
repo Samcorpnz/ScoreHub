@@ -75,6 +75,7 @@ jest.mock("@scorehub/db", () => {
 });
 
 import { createServer } from "../server";
+import { DEFAULT_MATCH_STATE } from "../types";
 import * as db from "@scorehub/db";
 
 type Db = {
@@ -365,5 +366,53 @@ describe("data-feed socket with a token not pinned to a match", () => {
     const s = connect({ matchId: "match-9" });
     const err = await new Promise<Error>(resolve => s.on("connect_error", resolve));
     expect(err.message).toBe("invalid or missing display token");
+  });
+});
+
+describe("GET /api/graphics/data (Graphics add-on simple feed)", () => {
+  it("401s with no token", async () => {
+    const res = await request(app).get("/api/graphics/data");
+    expect(res.status).toBe(401);
+  });
+
+  it("refuses a token of another type", async () => {
+    seedOrg("org-1", "acc-1", ["graphics-operator"]);
+    seedToken("tok-gfx", { type: "GRAPHICS", orgId: "org-1" });
+    const res = await request(app).get("/api/graphics/data").query({ token: "tok-gfx" });
+    expect(res.status).toBe(401);
+  });
+
+  it("403s when the org lacks the graphics add-on", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedToken("tok-gd", { type: "GRAPHICS_DATA", orgId: "org-1" });
+    const res = await request(app).get("/api/graphics/data").query({ token: "tok-gd" });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/graphics-operator add-on/);
+  });
+
+  it("serves the flat record as JSON, XML or CSV with a query-string token", async () => {
+    seedOrg("org-1", "acc-1", ["graphics-operator"]);
+    seedToken("tok-gd", { type: "GRAPHICS_DATA", orgId: "org-1", matchId: "gfx-match" });
+    seedMatch("gfx-match", { orgId: "org-1", state: { ...DEFAULT_MATCH_STATE, sport: "netball" } });
+
+    const json = await request(app).get("/api/graphics/data").query({ token: "tok-gd" });
+    expect(json.status).toBe(200);
+    expect(json.headers["cache-control"]).toBe("no-store");
+    expect(json.body).toMatchObject({ sport: "netball", clockDirection: expect.any(String), homeScore: expect.any(Number) });
+
+    const xml = await request(app).get("/api/graphics/data").query({ token: "tok-gd", format: "xml" });
+    expect(xml.headers["content-type"]).toMatch(/application\/xml/);
+    expect(xml.text).toContain("<sport>netball</sport>");
+
+    const csv = await request(app).get("/api/graphics/data").query({ token: "tok-gd", format: "csv" });
+    expect(csv.headers["content-type"]).toMatch(/text\/csv/);
+    expect(csv.text.split("\r\n")[0]).toMatch(/^matchName,sport,period,/);
+  });
+
+  it("400s on an unknown format", async () => {
+    seedOrg("org-1", "acc-1", ["graphics-operator"]);
+    seedToken("tok-gd", { type: "GRAPHICS_DATA", orgId: "org-1" });
+    const res = await request(app).get("/api/graphics/data").query({ token: "tok-gd", format: "yaml" });
+    expect(res.status).toBe(400);
   });
 });

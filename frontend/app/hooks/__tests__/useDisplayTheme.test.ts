@@ -4,6 +4,31 @@ import { useDisplayTheme } from "../useDisplayTheme";
 import { DEFAULT_DISPLAY_THEME } from "../../types";
 
 describe("useDisplayTheme", () => {
+  describe("per-output overrides (Graphics add-on)", () => {
+    const theme = {
+      ...DEFAULT_DISPLAY_THEME,
+      font: "Inter",
+      backgroundColor: "#111111",
+      outputs: { fullscreen: { font: "Anton", backgroundColor: "#222222", scoreScale: 1.5, clockScale: 0.8 } },
+    };
+
+    it("applies the named output's font, background and sizes", () => {
+      const { result } = renderHook(() => useDisplayTheme(theme, "fullscreen"));
+      expect(result.current.fontFamily).toBe('"Anton", sans-serif');
+      expect(result.current.backgroundColor).toBe("#222222");
+      expect(result.current["--score-scale"]).toBe("1.5");
+      expect(result.current["--clock-scale"]).toBe("0.8");
+      expect(result.current["--name-scale"]).toBe("1");
+    });
+
+    it("leaves other outputs on the match-wide theme", () => {
+      const { result } = renderHook(() => useDisplayTheme(theme, "basic"));
+      expect(result.current.fontFamily).toBe('"Inter", sans-serif');
+      expect(result.current.backgroundColor).toBe("#111111");
+      expect(result.current["--score-scale"]).toBe("1");
+    });
+  });
+
   it("falls back to DEFAULT_DISPLAY_THEME when no theme is supplied", () => {
     const { result } = renderHook(() => useDisplayTheme(undefined));
     expect(result.current.backgroundColor).toBe(DEFAULT_DISPLAY_THEME.backgroundColor);

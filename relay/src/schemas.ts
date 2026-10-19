@@ -26,6 +26,18 @@ const teamStateSchema = z.object({
   logoUrl: z.string().max(2000),
 }).partial();
 
+const outputScaleSchema = z.number().min(0.25).max(4);
+
+const outputStyleSchema = z.object({
+  font: z.string().max(100),
+  backgroundColor: z.string().max(20),
+  backgroundImageUrl: z.string().max(2000),
+  scoreScale: outputScaleSchema,
+  clockScale: outputScaleSchema,
+  nameScale: outputScaleSchema,
+  periodScale: outputScaleSchema,
+}).partial();
+
 const displayThemeSchema = z.object({
   primaryColor: z.string().max(20),
   backgroundColor: z.string().max(20),
@@ -34,6 +46,14 @@ const displayThemeSchema = z.object({
   competitionLogoUrl: z.string().max(2000),
   backgroundImageUrl: z.string().max(2000),
   panelOpacity: z.number().min(0).max(1),
+  // Graphics add-on per-output overrides (see OutputStyle)
+  outputs: z.object({
+    fullscreen: outputStyleSchema,
+    basic: outputStyleSchema,
+    advanced: outputStyleSchema,
+    overlay: outputStyleSchema,
+    scorebug: outputStyleSchema,
+  }).partial(),
 }).partial();
 
 const possessionSchema = z.enum(["home", "visitor", "both", "none"]);

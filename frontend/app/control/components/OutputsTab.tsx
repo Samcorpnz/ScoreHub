@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { SectionLabel } from "./primitives";
+import { MatchState } from "../../types";
+import { useHasAddOn } from "../../hooks/useAddOns";
+import { ChromaKey } from "../../hooks/useChromaKey";
+import { OutputStylesCard } from "./OutputStylesCard";
+import { GraphicsDataCard } from "./GraphicsDataCard";
 
 const DISPLAYS = [
   {
@@ -30,6 +35,7 @@ const DISPLAYS = [
     desc: "Transparent background. Add as Browser Source (1920×120) in OBS/vMix/Wirecast.",
     tags: ["OBS", "vMix", "Wirecast", "Transparent"],
     windowSize: "1920,120",
+    keyable: true,
   },
   {
     href: "/display/scorebug",
@@ -37,11 +43,25 @@ const DISPLAYS = [
     desc: "Compact corner widget with transparent background. URL params: ?position=tr|tl|br|bl&size=sm|md|lg",
     tags: ["OBS", "vMix", "Corner Widget", "Transparent"],
     windowSize: "480,100",
+    keyable: true,
   },
 ];
 
-export function OutputsTab({ matchId }: { readonly matchId?: string }) {
+// Graphics add-on: solid key colours for outputs that are otherwise
+// transparent, for switchers (an ATEM over HDMI/SDI) that can't take alpha
+const KEY_OPTIONS: { key: ChromaKey; label: string }[] = [
+  { key: "green", label: "Green key" },
+  { key: "blue", label: "Blue key" },
+];
+
+export function OutputsTab({ matchId, state, push, controlToken }: {
+  readonly matchId?: string;
+  readonly state: MatchState;
+  readonly push: (p: Partial<MatchState>) => void;
+  readonly controlToken: string;
+}) {
   const { data: session } = useSession();
+  const hasGraphics = useHasAddOn("graphics-operator");
   const orgId = session?.user?.activeOrgId;
   const origin = typeof globalThis.window !== "undefined" ? globalThis.window.location.origin : "";
 
@@ -99,11 +119,12 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
   // The link is only ever handed over through Copy URL / Pop Out, never
   // printed: it's for a ScoreHub display, and the relay won't serve its feed
   // to anything else (DISPLAY_ORIGIN_REQUIRED, SA-159).
-  const withOrg = (path: string) => {
+  const withOrg = (path: string, key?: ChromaKey) => {
     const params = new URLSearchParams();
     if (orgId) params.set("org", orgId);
     if (matchId) params.set("matchId", matchId);
     if (displayToken) params.set("token", displayToken);
+    if (key) params.set("key", key);
     const qs = params.toString();
     return qs ? `${path}?${qs}` : path;
   };
@@ -160,6 +181,9 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
                 </button>
               </div>
             </div>
+            {d.keyable && hasGraphics && (
+              <KeyLinks onCopy={key => navigator.clipboard.writeText(`${origin}${withOrg(d.href, key)}`)} testIdPrefix={d.label} />
+            )}
           </div>
           );
         })}
@@ -184,7 +208,25 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
             desc="Manage headshots and bios ahead of time."
           />
         </div>
+        {hasGraphics && (
+          <div className="mt-4">
+            <p className="text-xs mb-2" style={{ color: "var(--text-dim)" }}>
+              Graphics output on a solid key colour, for switchers that can&apos;t take a transparent source:
+            </p>
+            <KeyLinks onCopy={key => navigator.clipboard.writeText(`${origin}${withOrg("/display/graphics", key)}`)} testIdPrefix="Graphics" />
+          </div>
+        )}
+        {hasGraphics === false && (
+          <p className="text-xs mt-4" style={{ color: "var(--text-dim)" }}>
+            The Graphics add-on also unlocks per-output fonts, sizes and backgrounds, green and blue key outputs, and a
+            data out link for vMix and OBS. An Admin can add it under{" "}
+            <a href="/account" style={{ color: "var(--accent)" }}>Account → Add-ons</a>.
+          </p>
+        )}
       </div>
+
+      {hasGraphics && <OutputStylesCard state={state} push={push} controlToken={controlToken} />}
+      {hasGraphics && orgId && <GraphicsDataCard orgId={orgId} matchId={matchId} canManage={canRotate} />}
 
       {/* Graphics software section — the feed itself is part of the Data
           Feed add-on (token-authenticated, see DataFeedTokensCard on the
@@ -201,6 +243,25 @@ export function OutputsTab({ matchId }: { readonly matchId?: string }) {
           An Admin can add the add-on under <a href="/account" style={{ color: "var(--accent)" }}>Account → Add-ons</a>.
         </p>
       </div>
+    </div>
+  );
+}
+
+function KeyLinks({ onCopy, testIdPrefix }: { readonly onCopy: (key: ChromaKey) => void; readonly testIdPrefix: string }) {
+  return (
+    <div className="flex gap-2 flex-wrap mt-3">
+      {KEY_OPTIONS.map(({ key, label }) => (
+        <button
+          key={key}
+          data-testid={`key-link-${testIdPrefix}-${key}`}
+          className="rounded-lg px-3 py-1.5 text-xs font-bold whitespace-nowrap"
+          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+          onClick={() => onCopy(key)}
+        >
+          <span aria-hidden style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, marginRight: 6, background: key === "green" ? "#00B140" : "#0047BB" }} />
+          Copy {label} URL
+        </button>
+      ))}
     </div>
   );
 }

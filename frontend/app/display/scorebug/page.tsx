@@ -3,11 +3,13 @@
 /**
  * Scorebug — compact corner widget, transparent background.
  * Add as a Browser Source in OBS/vMix at ~480×100, position top-right or top-left.
- * No chroma key needed.
+ * No chroma key needed — but ?key=green|blue (Graphics add-on) gives a solid
+ * key colour for switchers that can't take an alpha channel.
  *
  * URL params:
  *   ?position=tr|tl|br|bl  — which corner (default: top-right)
  *   ?size=sm|md|lg          — overall scale (default: md)
+ *   ?key=green|blue         — chroma key background (Graphics add-on)
  */
 
 import { useSearchParams } from "next/navigation";
@@ -15,6 +17,7 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
+import { useChromaKey } from "../../hooks/useChromaKey";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodText } from "../../sport-templates";
@@ -50,7 +53,8 @@ function Scorebug() {
   const { state, unauthorized } = useMatchState();
   const { home, visitor, clockSeconds, countDown, isRunning, hornActive, possession } = state;
   const displayClock = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs: state.clockAnchorMs, clockCarryMs: state.clockCarryMs });
-  const { backgroundColor: _bg, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme);
+  const { backgroundColor: _bg, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _ts, competitionLogoUrl: _cl, ...themeVars } = useDisplayTheme(state.displayTheme, "scorebug");
+  const chromaKey = useChromaKey();
 
   if (unauthorized) return <DisplayLinkExpiredNotice />;
 
@@ -70,7 +74,7 @@ function Scorebug() {
   return (
     <div style={{
       width: "100vw", height: "100vh",
-      background: "transparent",
+      background: chromaKey ?? "transparent",
       display: "flex",
       alignItems: vAlign,
       justifyContent: align,
@@ -114,7 +118,7 @@ function Scorebug() {
             <span style={{
               fontFamily: "'Courier New', monospace",
               fontVariantNumeric: "tabular-nums",
-              fontSize: "1.4rem",
+              fontSize: "calc(1.4rem * var(--clock-scale, 1))",
               fontWeight: 700,
               color: clockColor,
               letterSpacing: "0.05em",
@@ -123,7 +127,7 @@ function Scorebug() {
               {formatClockDisplay(displayClock)}
             </span>
             <span style={{
-              fontSize: "0.6rem",
+              fontSize: "calc(0.6rem * var(--period-scale, 1))",
               fontWeight: 800,
               letterSpacing: "0.2em",
               color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)",
@@ -198,7 +202,7 @@ function TeamBlock({ name, score, color, hasPossession, logoSrc, side }: {
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: side === "home" ? "flex-start" : "flex-end" }}>
         <span style={{
-          fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.12em",
+          fontSize: "calc(0.6rem * var(--name-scale, 1))", fontWeight: 700, letterSpacing: "0.12em",
           textTransform: "uppercase", color: "rgba(255,255,255,0.45)",
           whiteSpace: "nowrap",
         }}>
@@ -207,7 +211,7 @@ function TeamBlock({ name, score, color, hasPossession, logoSrc, side }: {
         </span>
         <span data-testid={`display-score-${side}`} style={{
           fontVariantNumeric: "tabular-nums", fontWeight: 900,
-          fontSize: "2rem", color, lineHeight: 1,
+          fontSize: "calc(2rem * var(--score-scale, 1))", color, lineHeight: 1,
           textShadow: `0 0 16px ${color}55`,
         }}>
           {score}

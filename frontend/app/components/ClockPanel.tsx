@@ -64,7 +64,7 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
         data-testid="display-clock"
         className={`clock-digit ${hornActive ? "horn-active" : ""}`}
         style={{
-          fontSize: isCompact ? "2rem" : "calc(4.5rem * var(--text-scale, 1))",
+          fontSize: isCompact ? "calc(2rem * var(--clock-scale, 1))" : "calc(4.5rem * var(--text-scale, 1) * var(--clock-scale, 1))",
           color: clockColor,
           textShadow: clockTextShadow(isRunning, hornActive),
         }}
@@ -90,7 +90,7 @@ export function ClockPanel({ clockSeconds, countDown, period, periodBreak, perio
         <p
           data-testid="display-period"
           className="uppercase font-black tracking-widest"
-          style={{ fontSize: isCompact ? "1.2rem" : "calc(2rem * var(--text-scale, 1))", color: periodColor }}
+          style={{ fontSize: isCompact ? "calc(1.2rem * var(--period-scale, 1))" : "calc(2rem * var(--text-scale, 1) * var(--period-scale, 1))", color: periodColor }}
         >
           {periodHeadline}
         </p>

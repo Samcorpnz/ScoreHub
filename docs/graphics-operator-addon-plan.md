@@ -237,3 +237,14 @@ way `ScoreTab.tsx` already does.
       no mockpush mapping). Full bridge suite 61/61 passing, tsc clean. Revisit file-based vs.
       DB-stored mapping config (noted as a possible future step above) once/if a second *real*
       provider is named.
+- [x] Output options (2026-10-19): per-output overrides in `DisplayTheme.outputs` (font, background
+      colour/image for fullscreen/basic/advanced, and score/clock/name/period size multipliers applied
+      as `--*-scale` CSS vars by `useDisplayTheme(theme, output)`); the relay holds `outputs` unchanged
+      for orgs without the add-on (`withoutUnentitledBranding`) and gates `?output=` background
+      uploads. `?key=green|blue` on overlay/scorebug/graphics swaps transparency for chroma
+      `#00B140`/`#0047BB` (`useChromaKey`, checked against `/api/graphics/entitlement`). "Data out":
+      `GET /api/graphics/data?token=&format=json|xml|csv` (`relay/src/graphicsDataFeed.ts`) — a flat
+      record for vMix/OBS data sources, authenticated by a new read-only `GRAPHICS_DATA` ScopedToken
+      (query-string friendly, so deliberately not GRAPHICS or DATA_FEED). The clock is sent as both
+      `clockDisplay` (computed per request) and `clockSeconds`/`clockAnchorMs`/`clockDirection`; with no
+      relay anchor (bridge-driven) the relay uses when it last received state, extrapolating at most 2s.

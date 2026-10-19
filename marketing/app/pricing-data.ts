@@ -30,7 +30,7 @@ export const addOns = [
     price: "$29",
     period: "/mo",
     annual: "$290/yr",
-    detail: "Scene-driven broadcast overlays — lower-thirds, player cards, stat panels — on one stable Browser Source URL for OBS/vMix/Wirecast.",
+    detail: "Scene-driven broadcast overlays — lower-thirds, player cards, stat panels — on one stable Browser Source URL for OBS/vMix/Wirecast. Plus per-output fonts, sizes and backgrounds, green/blue key outputs for hardware switchers, and a data out link for vMix/OBS data sources.",
   },
   {
     name: "Data Feed add-on",
