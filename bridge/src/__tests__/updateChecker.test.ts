@@ -1,4 +1,5 @@
 import { UpdateChecker, downloadUrlForPlatform, isNewerVersion, parseVersion } from "../updateChecker";
+import { CHANNEL_SETTINGS, RELEASE_CHANNEL } from "../releaseChannel";
 
 type Release = { tag_name: string; draft?: boolean; prerelease?: boolean };
 
@@ -40,6 +41,13 @@ describe("version helpers", () => {
     expect(isNewerVersion("garbage", "1.0.0")).toBe(false);
   });
 
+  // release-channel.json is only rewritten to "uat" inside CI for bridge-uat-v*
+  // tags (scripts/set-release-channel.js); committing that edit would turn every
+  // production installer into a UAT one.
+  it("is committed as the production channel", () => {
+    expect(RELEASE_CHANNEL).toBe("production");
+  });
+
   it("maps platform to download URL", () => {
     expect(downloadUrlForPlatform("darwin")).toBe("https://downloads.scorehub.co.nz/mac");
     expect(downloadUrlForPlatform("win32")).toBe("https://downloads.scorehub.co.nz/windows");
@@ -73,6 +81,39 @@ describe("UpdateChecker", () => {
       ])
     );
     expect((await checker.check(false)).status).toBe("up-to-date");
+  });
+
+  // SA-255: UAT builds are published as bridge-uat-v* pre-releases in the same
+  // repo. A production install must never be offered one, even a newer one, or
+  // one published without the pre-release flag by mistake.
+  it("never offers a UAT build to a production install", async () => {
+    const checker = makeChecker(
+      fakeFetch([
+        { tag_name: "bridge-uat-v9.0.0-rc.1", prerelease: true },
+        { tag_name: "bridge-uat-v8.0.0" },
+        { tag_name: "bridge-v1.0.0" },
+      ])
+    );
+    expect(await checker.check(false)).toMatchObject({ status: "up-to-date", latestVersion: null });
+  });
+
+  it("follows UAT pre-releases and the UAT download link with the UAT channel settings", async () => {
+    const checker = makeChecker(
+      fakeFetch([
+        { tag_name: "bridge-v5.0.0" },
+        { tag_name: "bridge-uat-v1.1.0-rc.1", prerelease: true },
+      ]),
+      {
+        tagPrefix: CHANNEL_SETTINGS.uat.tagPrefix,
+        includePrerelease: CHANNEL_SETTINGS.uat.includePrerelease,
+        downloadsBase: CHANNEL_SETTINGS.uat.downloadsBase,
+      }
+    );
+    expect(await checker.check(false)).toMatchObject({
+      status: "available",
+      latestVersion: "1.1.0-rc.1",
+      downloadUrl: "https://downloads.uat.scorehub.co.nz/mac",
+    });
   });
 
   it("is up to date when the latest release equals or trails the current version", async () => {

@@ -11,6 +11,7 @@ import { startJsonSource } from "./sources/championDataJsonSource";
 import { startScrapeSource } from "./sources/championDataScrapeSource";
 import { MatchState, DEFAULT_MATCH_STATE } from "./types";
 import { log } from "./logger";
+import { CHANNEL } from "./releaseChannel";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -65,10 +66,12 @@ const RELAY_HEARTBEAT_CHECK_MS = 5_000;
 // ScoreHub's hosted relay. The desktop app defaults to it so a customer only
 // needs a token and a match (SA-146) — it's on a domain we control because
 // it ships inside installers that won't always be updated. Still overridable
-// (RELAY_URL, or the UI's Advanced section) for UAT and self-hosted relays.
-// Outside Electron (plain `npm run dev` / Docker, where BRIDGE_CONFIG_DIR is
-// unset) the default stays local so development never points at production.
-export const HOSTED_RELAY_URL = "https://relay.scorehub.co.nz";
+// (RELAY_URL, or the UI's Advanced section) for self-hosted relays. A UAT
+// build (bridge-uat-v* tag) defaults to the UAT relay instead — see
+// releaseChannel.ts. Outside Electron (plain `npm run dev` / Docker, where
+// BRIDGE_CONFIG_DIR is unset) the default stays local so development never
+// points at production.
+export const HOSTED_RELAY_URL = CHANNEL.relayUrl;
 const DEFAULT_RELAY_URL = process.env.BRIDGE_CONFIG_DIR ? HOSTED_RELAY_URL : "http://localhost:4000";
 
 const DEFAULT_CONFIG: BridgeConfig = {

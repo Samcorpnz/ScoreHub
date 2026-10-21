@@ -5,19 +5,25 @@
  * "latest .dmg" / "latest .exe" and 302s to the real github.com URL, so the
  * control panel and help site can link to a stable, branded address instead
  * of a raw releases URL that changes with every version.
+ *
+ * The `uat` environment (downloads.uat.scorehub.co.nz, SA-255) serves UAT
+ * builds instead: `bridge-uat-v*` tags, which are published as pre-releases,
+ * so it sets INCLUDE_PRERELEASE. Production leaves it unset and never serves a
+ * pre-release.
  */
 
 export interface Env {
   GITHUB_REPO: string; // "Samcorpnz/ScoringApp"
   RELEASE_TAG_PREFIX: string; // "bridge-v"
+  INCLUDE_PRERELEASE?: string; // "true" to serve pre-releases (UAT only)
 }
 
-interface GitHubAsset {
+export interface GitHubAsset {
   name: string;
   browser_download_url: string;
 }
 
-interface GitHubRelease {
+export interface GitHubRelease {
   tag_name: string;
   draft: boolean;
   prerelease: boolean;
@@ -47,9 +53,17 @@ async function findLatestBridgeRelease(env: Env): Promise<GitHubRelease | undefi
   }
 
   const releases = (await response.json()) as GitHubRelease[];
+  return pickRelease(releases, env);
+}
+
+/** The first (newest-created) published release with the channel's tag prefix. */
+export function pickRelease(releases: GitHubRelease[], env: Env): GitHubRelease | undefined {
+  const includePrerelease = env.INCLUDE_PRERELEASE === "true";
   return releases.find(
     (release) =>
-      !release.draft && !release.prerelease && release.tag_name.startsWith(env.RELEASE_TAG_PREFIX)
+      !release.draft &&
+      (includePrerelease || !release.prerelease) &&
+      release.tag_name.startsWith(env.RELEASE_TAG_PREFIX)
   );
 }
 

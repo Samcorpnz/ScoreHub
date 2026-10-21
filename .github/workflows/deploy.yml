@@ -198,6 +198,7 @@ jobs:
           cache: npm
           cache-dependency-path: downloads/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
