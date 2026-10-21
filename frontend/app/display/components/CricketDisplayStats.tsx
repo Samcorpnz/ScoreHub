@@ -28,7 +28,7 @@ export function CricketDisplayStats({ state, variant = "full" }: Readonly<Displa
     return (
       <div
         className="flex items-center justify-between px-5 py-2 rounded-lg"
-        style={{ background: "rgba(7,9,15,0.92)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+        style={{ background: "var(--keyed-panel-bg, rgba(7,9,15,0.92))", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
       >
         <span className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>
           CRR <span style={{ color: "var(--accent)" }}>{crr}</span>

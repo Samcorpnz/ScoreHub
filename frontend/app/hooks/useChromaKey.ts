@@ -9,6 +9,16 @@ import { RELAY_URL } from "../control/lib/relay";
 export const CHROMA_KEY_COLORS = { green: "#00B140", blue: "#0047BB" } as const;
 export type ChromaKey = keyof typeof CHROMA_KEY_COLORS;
 
+// On a transparent source the panels are slightly see-through and cast a
+// soft shadow. Over a key colour that would tint the panels and leave a dark
+// halo the keyer can't remove cleanly, so keyed pages set these on their
+// root and the panels read them with the transparent-source look as the
+// fallback: `var(--keyed-panel-bg, rgba(7,9,15,0.92))`.
+export const KEYED_PANEL_VARS = {
+  "--keyed-panel-bg": "rgb(7,9,15)",
+  "--keyed-panel-shadow": "none",
+} as const;
+
 export function isChromaKey(value: string | null): value is ChromaKey {
   return value === "green" || value === "blue";
 }

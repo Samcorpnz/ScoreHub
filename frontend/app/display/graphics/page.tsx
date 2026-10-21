@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { useMatchState } from "../../hooks/useMatchState";
 import { useGraphicsScene } from "../../hooks/useGraphicsScene";
-import { useChromaKey } from "../../hooks/useChromaKey";
+import { useChromaKey, KEYED_PANEL_VARS } from "../../hooks/useChromaKey";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
 import { useRoster } from "../../hooks/useRoster";
 import { SCENE_REGISTRY } from "./scenes/sceneRegistry";
@@ -67,7 +67,9 @@ export default function GraphicsDisplay() {
         // switchers) — the theme's backgroundColor is only used
         // as a tint for scene card backgrounds via --graphics-card-bg below.
         background: chromaKey ?? "transparent",
-        "--graphics-card-bg": hexToRgba(backgroundColor ?? "#07090F", 0.92),
+        // Opaque cards and no shadows on a key colour (see KEYED_PANEL_VARS)
+        "--graphics-card-bg": hexToRgba(backgroundColor ?? "#07090F", chromaKey ? 1 : 0.92),
+        ...(chromaKey && KEYED_PANEL_VARS),
         width: "100vw",
         minHeight: "100vh",
         display: "flex",

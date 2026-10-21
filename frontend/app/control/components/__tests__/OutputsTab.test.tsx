@@ -153,6 +153,27 @@ describe("OutputsTab", () => {
       expect(screen.queryByTestId("graphics-data-card")).not.toBeInTheDocument();
     });
 
+    it("offers to clear leftover per-output styles once the add-on has lapsed", async () => {
+      useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: "OPERATOR" } } });
+      stubFetch([]);
+      const push = vi.fn();
+      const state = {
+        ...DEFAULT_MATCH_STATE,
+        displayTheme: { ...DEFAULT_MATCH_STATE.displayTheme, primaryColor: "#ff0000", outputs: { scorebug: { font: "Anton" } } },
+      } as MatchState;
+      render(<OutputsTab {...baseProps} state={state} push={push} matchId="match1" />);
+      fireEvent.click(await screen.findByTestId("output-styles-clear"));
+      expect(push).toHaveBeenCalledWith({ displayTheme: expect.objectContaining({ primaryColor: "#ff0000", outputs: {} }) });
+    });
+
+    it("doesn't offer to clear per-output styles when there are none", async () => {
+      useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: "ADMIN" } } });
+      stubFetch([]);
+      render(<OutputsTab {...baseProps} matchId="match1" />);
+      expect(await screen.findByText(/also unlocks per-output fonts/)).toBeInTheDocument();
+      expect(screen.queryByTestId("output-styles-clear")).not.toBeInTheDocument();
+    });
+
     it("copies a green key URL for the keyable outputs", async () => {
       useSessionMock.mockReturnValue({ data: { user: { activeOrgId: "org1", activeRole: "ADMIN" } } });
       stubFetch(["graphics-operator"]);

@@ -13,7 +13,7 @@ export function NetballDisplayStats({ state, variant = "full" }: Readonly<Displa
     return (
       <div
         className="flex items-center justify-between px-5 py-2 rounded-lg gap-6"
-        style={{ background: "rgba(7,9,15,0.92)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+        style={{ background: "var(--keyed-panel-bg, rgba(7,9,15,0.92))", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
       >
         <CompactTeamLine team={stats.home} color="var(--home-color)" />
         <CompactTeamLine team={stats.visitor} color="var(--visitor-color)" />

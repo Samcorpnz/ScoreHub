@@ -17,7 +17,7 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
-import { useChromaKey } from "../../hooks/useChromaKey";
+import { useChromaKey, KEYED_PANEL_VARS } from "../../hooks/useChromaKey";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodText } from "../../sport-templates";
@@ -80,6 +80,7 @@ function Scorebug() {
       justifyContent: align,
       padding: 16,
       ...themeVars,
+      ...(chromaKey && KEYED_PANEL_VARS),
     }}>
       <div style={{ transform: `scale(${scale})`, transformOrigin: `${position.includes("l") ? "left" : "right"} ${position.includes("b") ? "bottom" : "top"}` }}>
         <div style={{
@@ -87,7 +88,7 @@ function Scorebug() {
           alignItems: "stretch",
           borderRadius: 8,
           overflow: "hidden",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.8)",
+          boxShadow: "var(--keyed-panel-shadow, 0 4px 24px rgba(0,0,0,0.8))",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
           fontSize: 14,
@@ -104,7 +105,7 @@ function Scorebug() {
 
           {/* Clock + period */}
           <div style={{
-            background: "rgba(7,9,15,0.95)",
+            background: "var(--keyed-panel-bg, rgba(7,9,15,0.95))",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -162,7 +163,7 @@ function TeamBlock({ name, score, color, hasPossession, logoSrc, side }: {
 }) {
   return (
     <div style={{
-      background: "rgba(7,9,15,0.95)",
+      background: "var(--keyed-panel-bg, rgba(7,9,15,0.95))",
       display: "flex",
       flexDirection: side === "home" ? "row" : "row-reverse",
       alignItems: "center",

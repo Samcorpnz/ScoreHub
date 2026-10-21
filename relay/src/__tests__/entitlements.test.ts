@@ -173,6 +173,27 @@ describe("per-output styling (Graphics add-on)", () => {
     expect(res.body.displayTheme.outputs).toEqual(outputs);
   });
 
+  // Lapsed add-on (or plan): the display pages keep applying stored styles,
+  // so clearing them must still go through.
+  it.each([
+    ["pro", "org-outputs-lapsed-pro"],
+    ["free", "org-outputs-lapsed-free"],
+  ])("lets a %s org without the add-on clear its per-output styles", async (plan, orgId) => {
+    seed(orgId, `account-${orgId}`, "pro", ["graphics-operator"]);
+    const token = await controlToken(orgId);
+    await request(app).post("/manual").set("x-control-secret", token).send({ displayTheme: { outputs } });
+
+    seed(orgId, `account-${orgId}`, plan);
+    const blocked = await request(app).post("/manual").set("x-control-secret", token)
+      .send({ displayTheme: { outputs: { scorebug: { font: "Oswald" } } } });
+    expect(blocked.body.displayTheme.outputs).toEqual(outputs);
+
+    const cleared = await request(app).post("/manual").set("x-control-secret", token)
+      .send({ displayTheme: { outputs: {} } });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.displayTheme.outputs).toEqual({});
+  });
+
   it("rejects an out-of-range size", async () => {
     seed("org-outputs-range", "account-outputs-range", "pro", ["graphics-operator"]);
     const res = await request(app)

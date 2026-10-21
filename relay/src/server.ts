@@ -367,10 +367,19 @@ export function createServer(options: ServerOptions = {}) {
   // getState for callers that only look (the data feed). An upcoming fixture
   // nobody has opened yet is answered from its saved row, so it stays
   // upcoming and doesn't count against the Free plan's live-match limit.
+  //
+  // A match's room key is its id alone (see roomFor), so a match another org
+  // already has in memory would otherwise be served from the cache without
+  // any ownership check — the DB lookup below only runs on a cache miss.
+  // Feed callers pass a query-string matchId, so check the cached owner too.
   async function readState(orgId: string, matchId?: string): Promise<MatchState> {
-    if (matchId && !matchStates.has(roomFor(orgId, matchId))) {
-      const scheduled = await peekScheduledState(orgId, matchId);
-      if (scheduled) return scheduled;
+    if (matchId) {
+      const cached = matchStates.get(roomFor(orgId, matchId));
+      if (cached && cached.orgId !== orgId) throw new MatchNotFoundError();
+      if (!cached) {
+        const scheduled = await peekScheduledState(orgId, matchId);
+        if (scheduled) return scheduled;
+      }
     }
     return getState(orgId, matchId);
   }
@@ -507,10 +516,14 @@ export function createServer(options: ServerOptions = {}) {
     const logoChanged = (side: "home" | "visitor") =>
       patch[side]?.logoUrl !== undefined && patch[side]?.logoUrl !== current[side].logoUrl;
     if (!themeChanged && !sides.some(logoChanged)) return patch;
+    // Clearing every per-output style is always allowed, so an org whose
+    // Graphics add-on (or Pro plan) has lapsed isn't stuck with styles the
+    // display pages keep applying — the Outputs tab offers it then.
+    const clearsOutputs = outputsChanged && Object.keys(theme.outputs ?? {}).length === 0;
     if (await orgHasPlan(orgId, BRANDING_PLANS)) {
       // Per-output styling is the Graphics add-on on top of Pro — keep the
       // rest of the theme change, but hold outputs at what's already stored.
-      if (!outputsChanged || (await orgHasAddOn(orgId, "graphics-operator"))) return patch;
+      if (!outputsChanged || clearsOutputs || (await orgHasAddOn(orgId, "graphics-operator"))) return patch;
       return { ...patch, displayTheme: { ...theme, outputs: current.displayTheme?.outputs } as MatchState["displayTheme"] };
     }
 
@@ -518,6 +531,7 @@ export function createServer(options: ServerOptions = {}) {
     for (const side of sides) {
       if (rest[side]) rest[side] = { ...rest[side], logoUrl: current[side].logoUrl };
     }
+    if (clearsOutputs) return { ...rest, displayTheme: { ...current.displayTheme, outputs: {} } };
     return rest;
   }
 

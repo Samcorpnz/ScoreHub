@@ -205,6 +205,22 @@ describe("GET /api/data-feed/state", () => {
     expect(res.status).toBe(404);
   });
 
+  // The match's room key is its id alone, so once org-2 has it in memory a
+  // cache hit must still be checked against the caller's org.
+  it("404s for another org's match that is already live in memory", async () => {
+    seedOrg("org-1", "acc-1", ["data-feed"]);
+    seedOrg("org-2", "acc-2", ["data-feed"]);
+    seedToken("tok-1", { type: "DATA_FEED", orgId: "org-1" });
+    seedToken("tok-2", { type: "DATA_FEED", orgId: "org-2", matchId: "cached-other" });
+    seedMatch("cached-other", { orgId: "org-2", state: { ...DEFAULT_MATCH_STATE, sport: "hockey" } });
+    const owner = await request(app).get("/api/data-feed/state").set("x-data-feed-secret", "tok-2");
+    expect(owner.status).toBe(200);
+
+    const res = await request(app).get("/api/data-feed/state").query({ matchId: "cached-other" }).set("x-data-feed-secret", "tok-1");
+    expect(res.status).toBe(404);
+    expect(res.body.sport).toBeUndefined();
+  });
+
   it("401s for a token of the wrong type (e.g. BRIDGE)", async () => {
     seedOrg("org-1", "acc-1", ["data-feed"]);
     seedToken("tok-1", { type: "BRIDGE", orgId: "org-1" });
@@ -407,6 +423,20 @@ describe("GET /api/graphics/data (Graphics add-on simple feed)", () => {
     const csv = await request(app).get("/api/graphics/data").query({ token: "tok-gd", format: "csv" });
     expect(csv.headers["content-type"]).toMatch(/text\/csv/);
     expect(csv.text.split("\r\n")[0]).toMatch(/^matchName,sport,period,/);
+  });
+
+  it("404s for another org's match that is already live in memory", async () => {
+    seedOrg("org-1", "acc-1", ["graphics-operator"]);
+    seedOrg("org-2", "acc-2", ["graphics-operator"]);
+    seedToken("tok-gd", { type: "GRAPHICS_DATA", orgId: "org-1" });
+    seedToken("tok-gd-2", { type: "GRAPHICS_DATA", orgId: "org-2", matchId: "gfx-other" });
+    seedMatch("gfx-other", { orgId: "org-2", state: { ...DEFAULT_MATCH_STATE, sport: "hockey" } });
+    const owner = await request(app).get("/api/graphics/data").query({ token: "tok-gd-2" });
+    expect(owner.status).toBe(200);
+
+    const res = await request(app).get("/api/graphics/data").query({ token: "tok-gd", matchId: "gfx-other" });
+    expect(res.status).toBe(404);
+    expect(res.body.homeScore).toBeUndefined();
   });
 
   it("400s on an unknown format", async () => {

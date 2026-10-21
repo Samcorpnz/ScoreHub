@@ -223,6 +223,24 @@ export function OutputsTab({ matchId, state, push, controlToken }: {
             <a href="/account" style={{ color: "var(--accent)" }}>Account → Add-ons</a>.
           </p>
         )}
+        {/* Styles set while the account had the add-on still show on the
+            displays, and the editor above is gone — so offer a way out. The
+            relay accepts clearing them without the add-on. */}
+        {hasGraphics === false && Object.keys(state.displayTheme?.outputs ?? {}).length > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-3 p-3 rounded-lg" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              This match still has per-output styles from the Graphics add-on, and the displays still use them.
+            </p>
+            <button
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold shrink-0"
+              style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-secondary)" }}
+              data-testid="output-styles-clear"
+              onClick={() => push({ displayTheme: { ...state.displayTheme, outputs: {} } })}
+            >
+              Clear per-output styles
+            </button>
+          </div>
+        )}
       </div>
 
       {hasGraphics && <OutputStylesCard state={state} push={push} controlToken={controlToken} />}

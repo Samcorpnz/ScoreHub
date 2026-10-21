@@ -9,7 +9,7 @@
 
 import { useMatchState } from "../../hooks/useMatchState";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
-import { useChromaKey } from "../../hooks/useChromaKey";
+import { useChromaKey, KEYED_PANEL_VARS } from "../../hooks/useChromaKey";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { formatClockDisplay, formatScore } from "../../types";
 import { getPeriodText, getTemplate } from "../../sport-templates";
@@ -42,6 +42,7 @@ export default function OverlayDisplay() {
       style={{
         background: chromaKey ?? "transparent",
         ...themeVars,
+        ...(chromaKey && KEYED_PANEL_VARS),
         width: "100vw",
         display: "flex",
         alignItems: "flex-end",
@@ -60,7 +61,7 @@ export default function OverlayDisplay() {
           gap: 0,
           borderRadius: 10,
           overflow: "hidden",
-          boxShadow: "0 4px 32px rgba(0,0,0,0.7)",
+          boxShadow: "var(--keyed-panel-shadow, 0 4px 32px rgba(0,0,0,0.7))",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
         }}
@@ -77,7 +78,7 @@ export default function OverlayDisplay() {
         {/* Center clock/period */}
         <div
           style={{
-            background: "rgba(7,9,15,0.92)",
+            background: "var(--keyed-panel-bg, rgba(7,9,15,0.92))",
             padding: "10px 20px",
             display: "flex",
             flexDirection: "column",
@@ -145,7 +146,7 @@ function TeamBlock({
   return (
     <div
       style={{
-        background: "rgba(7,9,15,0.92)",
+        background: "var(--keyed-panel-bg, rgba(7,9,15,0.92))",
         display: "flex",
         flexDirection: align === "right" ? "row" : "row-reverse",
         alignItems: "center",

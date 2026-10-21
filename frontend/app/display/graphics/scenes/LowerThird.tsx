@@ -25,7 +25,7 @@ export function LowerThird({ state }: Pick<SceneProps, "state">) {
         gap: 0,
         borderRadius: 10,
         overflow: "hidden",
-        boxShadow: "0 4px 32px rgba(0,0,0,0.7)",
+        boxShadow: "var(--keyed-panel-shadow, 0 4px 32px rgba(0,0,0,0.7))",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
         background: "var(--graphics-card-bg, rgba(7,9,15,0.92))",
