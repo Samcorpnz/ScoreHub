@@ -46,6 +46,31 @@ signing plus hardened runtime blocks the serialport native module from loading.
 4. `downloads.scorehub.co.nz` (see `downloads/` at the repo root) resolves `/mac` and `/windows`
    to the latest matching release automatically — no separate publish step needed there.
 
+### UAT builds (SA-255)
+
+To hand testers an installer before it reaches customers, tag a UAT build instead:
+
+```bash
+git tag bridge-uat-v0.3.2-rc.1 && git push origin bridge-uat-v0.3.2-rc.1
+```
+
+The same workflow runs `scripts/set-release-channel.js` first, which (inside CI only — don't
+commit its edits) switches `src/release-channel.json` to `"uat"`, sets the version from the tag,
+and renames the app to "ScoreHub Bridge UAT" with its own `appId`. The result:
+
+- It's published as a GitHub **pre-release**, served by
+  [downloads.uat.scorehub.co.nz/mac](https://downloads.uat.scorehub.co.nz/mac) and
+  [/windows](https://downloads.uat.scorehub.co.nz/windows). `downloads.scorehub.co.nz` and
+  production installs' update check skip pre-releases and other tag prefixes, so customers never
+  see it.
+- It defaults to the UAT relay (`https://relay.uat.scorehub.co.nz`) and checks for newer
+  `bridge-uat-v*` pre-releases instead of production ones (`src/releaseChannel.ts`).
+- It installs alongside the production app with a separate `bridge-config.json`, so a tester's
+  production settings (relay, token) don't leak into UAT, or the other way round.
+
+The update check compares major.minor.patch only, so `-rc.2` isn't offered as an update over
+`-rc.1` of the same version — testers reinstall from the UAT download link.
+
 Installers are distributed as public GitHub Release assets, not R2/S3 — the repo is public, so
 release assets are already public URLs, and `electron-updater` (SA-92, not yet implemented) will
 consume the same GitHub release feed natively. See the SA-88 epic for the full rationale.

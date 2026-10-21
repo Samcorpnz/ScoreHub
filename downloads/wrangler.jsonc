@@ -20,9 +20,11 @@
       "routes": [
         { "pattern": "downloads.uat.scorehub.co.nz", "custom_domain": true }
       ],
+      // UAT serves bridge-uat-v* pre-releases (SA-255), never production builds.
       "vars": {
         "GITHUB_REPO": "Samcorpnz/ScoreHub",
-        "RELEASE_TAG_PREFIX": "bridge-v"
+        "RELEASE_TAG_PREFIX": "bridge-uat-v",
+        "INCLUDE_PRERELEASE": "true"
       }
     }
   }
