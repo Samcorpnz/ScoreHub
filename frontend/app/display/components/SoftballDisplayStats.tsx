@@ -24,7 +24,7 @@ export function SoftballDisplayStats({ state, variant = "full" }: Readonly<Displ
     return (
       <div
         className="flex items-center justify-center px-5 py-2 rounded-lg gap-4"
-        style={{ background: "rgba(7,9,15,0.92)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+        style={{ background: "var(--keyed-panel-bg, rgba(7,9,15,0.92))", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
       >
         {count}
       </div>

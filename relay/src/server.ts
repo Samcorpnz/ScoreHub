@@ -11,7 +11,8 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import { MatchState, DEFAULT_MATCH_STATE, IndoorCricketState } from "./types";
 import { getMatchStore, allActiveStores, evictMatchStore, peekScheduledState, listMatchEvents, createLiveMatch, MatchNotFoundError, MatchEndedError } from "./persistence";
 import { prisma } from "@scorehub/db";
-import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
+import { verifyBridgeSecret, verifyControlSecret, verifyActionSecret, verifyGraphicsSecret, verifyGraphicsDataSecret, verifyDataFeedSecret, LEGACY_ROOM_ID } from "./auth";
+import { buildGraphicsDataRecord, serializeGraphicsData, GRAPHICS_DATA_FORMATS, GRAPHICS_DATA_CONTENT_TYPES } from "./graphicsDataFeed";
 import { getRedisClients, acquireTickLock, closeRedis, publishStateUpdate, subscribeStateUpdates } from "./redis";
 import { requirePlan, requireAddOn, ConcurrentMatchLimitError, orgHasAddOn, orgHasPlan, BRANDING_PLANS } from "./entitlements";
 import { r2Enabled, putObject, deleteByPrefix } from "./storage";
@@ -295,7 +296,10 @@ export function createServer(options: ServerOptions = {}) {
     io.adapter(createAdapter(redisClients.pub, redisClients.sub));
   }
 
-  const matchStates = new Map<string, { orgId: string; matchId?: string; state: MatchState }>();
+  // receivedAt: when this instance last took in a new state for the room —
+  // the clock anchor for the Graphics data feed when a bridge drives the
+  // clock (see graphicsDataFeed.ts)
+  const matchStates = new Map<string, { orgId: string; matchId?: string; state: MatchState; receivedAt?: number }>();
   const bridgeSockets = new Map<string, Socket>();
   const roomCounts = new Map<string, number>();
   // Undo stack: stores pre-change states for manual control panel updates only.
@@ -363,10 +367,19 @@ export function createServer(options: ServerOptions = {}) {
   // getState for callers that only look (the data feed). An upcoming fixture
   // nobody has opened yet is answered from its saved row, so it stays
   // upcoming and doesn't count against the Free plan's live-match limit.
+  //
+  // A match's room key is its id alone (see roomFor), so a match another org
+  // already has in memory would otherwise be served from the cache without
+  // any ownership check — the DB lookup below only runs on a cache miss.
+  // Feed callers pass a query-string matchId, so check the cached owner too.
   async function readState(orgId: string, matchId?: string): Promise<MatchState> {
-    if (matchId && !matchStates.has(roomFor(orgId, matchId))) {
-      const scheduled = await peekScheduledState(orgId, matchId);
-      if (scheduled) return scheduled;
+    if (matchId) {
+      const cached = matchStates.get(roomFor(orgId, matchId));
+      if (cached && cached.orgId !== orgId) throw new MatchNotFoundError();
+      if (!cached) {
+        const scheduled = await peekScheduledState(orgId, matchId);
+        if (scheduled) return scheduled;
+      }
     }
     return getState(orgId, matchId);
   }
@@ -387,7 +400,7 @@ export function createServer(options: ServerOptions = {}) {
   function setState(orgId: string, next: MatchState, matchId?: string, cause?: MatchEventCause): void {
     const room = roomFor(orgId, matchId);
     recordEvents(orgId, next, matchId, cause);
-    matchStates.set(room, { orgId, matchId, state: next });
+    matchStates.set(room, { orgId, matchId, state: next, receivedAt: Date.now() });
     io.to(room).emit("matchStateChange", next);
     getMatchStore(orgId, matchId)?.save(next);
     publishStateUpdate(room, next);
@@ -406,7 +419,7 @@ export function createServer(options: ServerOptions = {}) {
     const incoming = parsed.data as MatchState;
     const current = matchStates.get(room);
     if (current && incoming.sequenceId >= current.state.sequenceId) {
-      matchStates.set(room, { ...current, state: incoming });
+      matchStates.set(room, { ...current, state: incoming, receivedAt: Date.now() });
     }
   });
 
@@ -494,17 +507,31 @@ export function createServer(options: ServerOptions = {}) {
 
     const current = await getState(orgId, matchId);
     const theme = patch.displayTheme as Partial<MatchState["displayTheme"]> | undefined;
+    // outputs is an object, so it's compared by value rather than reference
+    const outputsChanged = theme?.outputs !== undefined
+      && JSON.stringify(theme.outputs) !== JSON.stringify(current.displayTheme?.outputs ?? {});
     const themeChanged = theme !== undefined
-      && (Object.keys(theme) as (keyof MatchState["displayTheme"])[]).some(key => theme[key] !== current.displayTheme?.[key]);
+      && (Object.keys(theme) as (keyof MatchState["displayTheme"])[])
+        .some(key => key === "outputs" ? outputsChanged : theme[key] !== current.displayTheme?.[key]);
     const logoChanged = (side: "home" | "visitor") =>
       patch[side]?.logoUrl !== undefined && patch[side]?.logoUrl !== current[side].logoUrl;
     if (!themeChanged && !sides.some(logoChanged)) return patch;
-    if (await orgHasPlan(orgId, BRANDING_PLANS)) return patch;
+    // Clearing every per-output style is always allowed, so an org whose
+    // Graphics add-on (or Pro plan) has lapsed isn't stuck with styles the
+    // display pages keep applying — the Outputs tab offers it then.
+    const clearsOutputs = outputsChanged && Object.keys(theme.outputs ?? {}).length === 0;
+    if (await orgHasPlan(orgId, BRANDING_PLANS)) {
+      // Per-output styling is the Graphics add-on on top of Pro — keep the
+      // rest of the theme change, but hold outputs at what's already stored.
+      if (!outputsChanged || clearsOutputs || (await orgHasAddOn(orgId, "graphics-operator"))) return patch;
+      return { ...patch, displayTheme: { ...theme, outputs: current.displayTheme?.outputs } as MatchState["displayTheme"] };
+    }
 
     const { displayTheme: _displayTheme, ...rest } = patch;
     for (const side of sides) {
       if (rest[side]) rest[side] = { ...rest[side], logoUrl: current[side].logoUrl };
     }
+    if (clearsOutputs) return { ...rest, displayTheme: { ...current.displayTheme, outputs: {} } };
     return rest;
   }
 
@@ -741,13 +768,35 @@ export function createServer(options: ServerOptions = {}) {
   // (the theme it's set on is per match), so replacing one match's background
   // doesn't swap the image out from under another match's displays.
 
-  function backgroundTarget(req: express.Request): { orgId: string; matchId?: string; segment: string } {
+  // ?output= (Graphics add-on) targets one output's own background instead
+  // of the match-wide one. Only the outputs that show a background take one.
+  const BACKGROUND_OUTPUTS = ["fullscreen", "basic", "advanced"] as const;
+  type BackgroundOutput = typeof BACKGROUND_OUTPUTS[number];
+
+  function backgroundTarget(req: express.Request): { orgId: string; matchId?: string; segment: string; output?: BackgroundOutput } {
     const orgId = (req as any).orgId as string;
     const matchId = (req as any).matchId as string | undefined;
     // Match ids are generated (cuid/uuid), but they become part of a storage key
     const safeId = matchId && /^[A-Za-z0-9_-]{1,64}$/.test(matchId) ? matchId : "org";
-    return { orgId, matchId, segment: `background-${safeId}` };
+    const output = BACKGROUND_OUTPUTS.find(o => o === req.query.output);
+    return { orgId, matchId, output, segment: output ? `background-${safeId}-${output}` : `background-${safeId}` };
   }
+
+  function withBackground(theme: MatchState["displayTheme"], url: string, output?: BackgroundOutput): MatchState["displayTheme"] {
+    if (!output) return { ...theme, backgroundImageUrl: url };
+    const outputs = theme.outputs ?? {};
+    return { ...theme, outputs: { ...outputs, [output]: { ...outputs[output], backgroundImageUrl: url } } };
+  }
+
+  // A per-output upload is the Graphics add-on; the match-wide one isn't
+  const requireOutputAddOn: express.RequestHandler = (req, res, next) => {
+    if (!req.query.output) { next(); return; }
+    if (!BACKGROUND_OUTPUTS.some(o => o === req.query.output)) {
+      res.status(400).json({ error: `output must be one of ${BACKGROUND_OUTPUTS.join(", ")}` });
+      return;
+    }
+    requireAddOn("graphics-operator")(req, res, next);
+  };
 
   async function removeStoredBackground(orgId: string, segment: string): Promise<void> {
     if (r2Enabled) {
@@ -766,9 +815,9 @@ export function createServer(options: ServerOptions = {}) {
     fileFilter: imageFileFilter,
   });
 
-  app.post("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), backgroundUpload.single("background"), async (req, res) => {
+  app.post("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), requireOutputAddOn, backgroundUpload.single("background"), async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "no file uploaded" }); return; }
-    const { orgId, matchId, segment } = backgroundTarget(req);
+    const { orgId, matchId, segment, output } = backgroundTarget(req);
     let buffer: Buffer;
     try {
       buffer = validateImageUpload(req.file.mimetype, req.file.buffer);
@@ -783,7 +832,7 @@ export function createServer(options: ServerOptions = {}) {
     const backgroundImageUrl = `${storedUrl}?t=${Date.now()}`;
     const state = await getState(orgId, matchId);
     try {
-      await applyManualUpdate(orgId, { displayTheme: { ...state.displayTheme, backgroundImageUrl } }, matchId);
+      await applyManualUpdate(orgId, { displayTheme: withBackground(state.displayTheme, backgroundImageUrl, output) }, matchId);
     } catch (err) {
       respondToStateError(res, err);
       return;
@@ -791,12 +840,12 @@ export function createServer(options: ServerOptions = {}) {
     res.json({ backgroundImageUrl });
   });
 
-  app.delete("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), async (req, res) => {
-    const { orgId, matchId, segment } = backgroundTarget(req);
+  app.delete("/api/display-background", controlRateLimit, controlAuth, requirePlan(["pro", "venue"]), requireOutputAddOn, async (req, res) => {
+    const { orgId, matchId, segment, output } = backgroundTarget(req);
     await removeStoredBackground(orgId, segment);
     const state = await getState(orgId, matchId);
     try {
-      await applyManualUpdate(orgId, { displayTheme: { ...state.displayTheme, backgroundImageUrl: "" } }, matchId);
+      await applyManualUpdate(orgId, { displayTheme: withBackground(state.displayTheme, "", output) }, matchId);
     } catch (err) {
       respondToStateError(res, err);
       return;
@@ -1129,6 +1178,41 @@ export function createServer(options: ServerOptions = {}) {
         ? await listMatchEvents(result.orgId, matchId, since, EVENTS_PAGE_SIZE)
         : eventBuffer.list(roomFor(result.orgId, matchId), since, EVENTS_PAGE_SIZE);
       res.json({ events, next: events.at(-1)?.seq ?? since });
+    } catch (err) {
+      respondToStateError(res, err);
+    }
+  });
+
+  // Graphics add-on simple data feed — flat scores/names/clock as JSON, XML
+  // or CSV for vMix/OBS data sources. Those can only be given a URL, so the
+  // read-only GRAPHICS_DATA token is accepted as ?token= as well as a header.
+  // Same polling budget as the Data Feed routes above.
+  app.get("/api/graphics/data", dataFeedRateLimit, async (req, res) => {
+    const header = req.headers["x-graphics-data-secret"];
+    const secret = typeof header === "string" ? header : typeof req.query.token === "string" ? req.query.token : undefined;
+    const result = await verifyGraphicsDataSecret(secret, GRAPHICS_SECRET);
+    if (!result) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    if (!(await orgHasAddOn(result.orgId, "graphics-operator"))) {
+      res.status(403).json({ error: "This feature requires the graphics-operator add-on — upgrade at /account/billing" });
+      return;
+    }
+    const requested = typeof req.query.format === "string" ? req.query.format.toLowerCase() : "json";
+    const format = GRAPHICS_DATA_FORMATS.find(f => f === requested);
+    if (!format) {
+      res.status(400).json({ error: `format must be one of ${GRAPHICS_DATA_FORMATS.join(", ")}` });
+      return;
+    }
+    const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
+    try {
+      const state = await readState(result.orgId, matchId);
+      const receivedAt = matchStates.get(roomFor(result.orgId, matchId))?.receivedAt;
+      const record = buildGraphicsDataRecord(state, Date.now(), receivedAt);
+      // Polled for a live clock — a cached copy is a stale clock
+      res.set("Cache-Control", "no-store");
+      res.type(GRAPHICS_DATA_CONTENT_TYPES[format]).send(serializeGraphicsData(record, format));
     } catch (err) {
       respondToStateError(res, err);
     }

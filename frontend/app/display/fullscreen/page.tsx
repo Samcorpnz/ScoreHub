@@ -29,7 +29,7 @@ export default function FullscreenDisplay() {
   const [layout, setLayout] = useState<Layout>("wide");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showHud, setShowHud] = useState(true);
-  const { textScale: _ts, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
+  const { textScale: _ts, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme, "fullscreen");
 
   const toggleFullscreen = useCallback(async () => {
     if (!document.fullscreenElement) {
@@ -176,10 +176,10 @@ function TeamSide({ team, side, possession, relayUrl, scoreText }: { readonly te
         <Image src={logoSrc} alt={team.name} width={120} height={120}
           style={{ objectFit: "contain", filter: "drop-shadow(0 0 20px rgba(0,0,0,0.6))" }} />
       )}
-      <p className="uppercase font-bold tracking-widest" style={{ fontSize: "1.2rem", color: "var(--text-secondary)", letterSpacing: "0.2em" }}>
+      <p className="uppercase font-bold tracking-widest" style={{ fontSize: "calc(1.2rem * var(--name-scale, 1))", color: "var(--text-secondary)", letterSpacing: "0.2em" }}>
         {team.name}
       </p>
-      <p data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "calc(12rem * var(--text-scale, 1))", color, textShadow: `0 0 80px ${color}33`, lineHeight: 0.9 }}>
+      <p data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "calc(12rem * var(--text-scale, 1) * var(--score-scale, 1))", color, textShadow: `0 0 80px ${color}33`, lineHeight: 0.9 }}>
         {scoreText}
       </p>
       {(team.faults > 0 || team.timeouts > 0) && (
@@ -234,20 +234,20 @@ function MinimalLayout({ state }: { readonly state: ReturnType<typeof useMatchSt
       )}
       <div className="flex items-center gap-16">
         <div className="text-center">
-          <p className="uppercase font-bold tracking-widest mb-2" style={{ fontSize: "1rem", color: "var(--text-secondary)" }}>{home.name}</p>
-          <p data-testid="display-score-home" className="score-digit" style={{ fontSize: "calc(14rem * var(--text-scale, 1))", color: homeColor, lineHeight: 0.85 }}>{formatScore(state, "home")}</p>
+          <p className="uppercase font-bold tracking-widest mb-2" style={{ fontSize: "calc(1rem * var(--name-scale, 1))", color: "var(--text-secondary)" }}>{home.name}</p>
+          <p data-testid="display-score-home" className="score-digit" style={{ fontSize: "calc(14rem * var(--text-scale, 1) * var(--score-scale, 1))", color: homeColor, lineHeight: 0.85 }}>{formatScore(state, "home")}</p>
         </div>
         <div className="flex flex-col items-center gap-3">
-          <p className="clock-digit" style={{ fontSize: "calc(5rem * var(--text-scale, 1))", color: isRunning ? "#fff" : "var(--text-secondary)" }}>
+          <p className="clock-digit" style={{ fontSize: "calc(5rem * var(--text-scale, 1) * var(--clock-scale, 1))", color: isRunning ? "#fff" : "var(--text-secondary)" }}>
             {formatClockDisplay(displayClock)}
           </p>
-          <p className="font-black tracking-widest" style={{ fontSize: "calc(2rem * var(--text-scale, 1))", color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)" }}>
+          <p className="font-black tracking-widest" style={{ fontSize: "calc(2rem * var(--text-scale, 1) * var(--period-scale, 1))", color: state.periodBreak ? "rgb(251,146,60)" : "var(--accent)" }}>
             {getPeriodText(state)}
           </p>
         </div>
         <div className="text-center">
-          <p className="uppercase font-bold tracking-widest mb-2" style={{ fontSize: "1rem", color: "var(--text-secondary)" }}>{visitor.name}</p>
-          <p data-testid="display-score-visitor" className="score-digit" style={{ fontSize: "calc(14rem * var(--text-scale, 1))", color: visitorColor, lineHeight: 0.85 }}>{formatScore(state, "visitor")}</p>
+          <p className="uppercase font-bold tracking-widest mb-2" style={{ fontSize: "calc(1rem * var(--name-scale, 1))", color: "var(--text-secondary)" }}>{visitor.name}</p>
+          <p data-testid="display-score-visitor" className="score-digit" style={{ fontSize: "calc(14rem * var(--text-scale, 1) * var(--score-scale, 1))", color: visitorColor, lineHeight: 0.85 }}>{formatScore(state, "visitor")}</p>
         </div>
       </div>
     </div>

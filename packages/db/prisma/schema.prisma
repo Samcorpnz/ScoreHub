@@ -301,6 +301,9 @@ enum ScopedTokenType {
   CONTROL
   GRAPHICS
   DATA_FEED
+  // Read-only Graphics add-on feed for vMix/OBS data sources. Travels in a
+  // URL query string, so it grants nothing beyond reading the score.
+  GRAPHICS_DATA
 }
 
 // Per-org credential for headless devices (the bridge) that can't do an

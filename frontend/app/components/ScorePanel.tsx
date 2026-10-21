@@ -30,7 +30,7 @@ function ScorebugScorePanel({ team, side, displayScore, color, logoSrc }: Scoreb
   return (
     <div className="flex items-center gap-2">
       {side === "visitor" && (
-        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
+        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "calc(1.8rem * var(--score-scale, 1))", color, lineHeight: 1 }}>{displayScore}</span>
       )}
       <div className="flex flex-col items-center" style={{ minWidth: 60 }}>
         {logoSrc ? (
@@ -48,7 +48,7 @@ function ScorebugScorePanel({ team, side, displayScore, color, logoSrc }: Scoreb
         </span>
       </div>
       {side === "home" && (
-        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "1.8rem", color, lineHeight: 1 }}>{displayScore}</span>
+        <span data-testid={`display-score-${side}`} className="score-digit" style={{ fontSize: "calc(1.8rem * var(--score-scale, 1))", color, lineHeight: 1 }}>{displayScore}</span>
       )}
     </div>
   );
@@ -90,7 +90,7 @@ export function ScorePanel({ team, side, possession, size = "full", relayUrl, sc
       {/* Team name */}
       <p
         className="uppercase font-bold tracking-widest text-center truncate w-full"
-        style={{ fontSize: isCompact ? "0.65rem" : "0.85rem", color: "var(--text-secondary)", letterSpacing: "0.15em" }}
+        style={{ fontSize: `calc(${isCompact ? "0.65rem" : "0.85rem"} * var(--name-scale, 1))`, color: "var(--text-secondary)", letterSpacing: "0.15em" }}
       >
         {team.name || (side === "home" ? "HOME" : "VISITOR")}
       </p>
@@ -100,7 +100,7 @@ export function ScorePanel({ team, side, possession, size = "full", relayUrl, sc
         data-testid={`display-score-${side}`}
         className="score-digit"
         style={{
-          fontSize: isCompact ? "3.5rem" : "calc(7rem * var(--text-scale, 1))",
+          fontSize: isCompact ? "calc(3.5rem * var(--score-scale, 1))" : "calc(7rem * var(--text-scale, 1) * var(--score-scale, 1))",
           color,
           textShadow: `0 0 40px ${color}44`,
         }}

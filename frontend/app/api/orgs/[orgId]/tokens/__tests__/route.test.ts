@@ -172,6 +172,25 @@ describe("/api/orgs/[orgId]/tokens", () => {
         expect.objectContaining({ data: expect.objectContaining({ type: "DATA_FEED" }) }),
       );
     });
+
+    it("403s when creating a GRAPHICS_DATA token without the graphics add-on", async () => {
+      orgFindUniqueMock.mockResolvedValue({ account: { addOns: ["data-feed"] } });
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({ type: "GRAPHICS_DATA" }), { params });
+      expect(res.status).toBe(403);
+      expect(tokenCreateMock).not.toHaveBeenCalled();
+    });
+
+    it("creates a GRAPHICS_DATA token when the org has the graphics add-on", async () => {
+      orgFindUniqueMock.mockResolvedValue({ account: { addOns: ["graphics-operator"] } });
+      tokenCreateMock.mockResolvedValue({});
+      const { POST } = await import("../route");
+      const res = await POST(makePostRequest({ type: "GRAPHICS_DATA" }), { params });
+      expect(res.status).toBe(201);
+      expect(tokenCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ type: "GRAPHICS_DATA" }) }),
+      );
+    });
   });
 
   describe("GET", () => {
