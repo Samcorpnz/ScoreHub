@@ -269,7 +269,19 @@ export function createServer(options: ServerOptions = {}) {
     res.setHeader("Strict-Transport-Security", "max-age=63072000");
     next();
   });
-  app.use(cors({ origin: ALLOWED_ORIGINS }));
+  // An explicit allowlist check rather than passing the array straight to
+  // cors/socket.io — same behaviour (reflect the Origin only when listed), but
+  // visibly so: CodeQL can't follow ALLOWED_ORIGINS back to its env var and
+  // flags the bare array as possibly permissive (SA code-scanning #28).
+  // Requests with no Origin (curl, the bridge, Stream Deck) get no CORS
+  // headers either way, so passing them through changes nothing.
+  const corsOrigin = (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: string | false) => void,
+  ): void => {
+    callback(null, origin !== undefined && ALLOWED_ORIGINS.includes(origin) ? origin : false);
+  };
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
   // nosniff on all served uploads; SVGs (which can carry markup) get a
   // locked-down CSP as belt-and-braces alongside upload-time sanitization.
@@ -284,7 +296,7 @@ export function createServer(options: ServerOptions = {}) {
 
   const httpServer = createHttpServer(app);
   const io = new Server(httpServer, {
-    cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
+    cors: { origin: corsOrigin, methods: ["GET", "POST"] },
   });
 
   // When REDIS_URL is set, broadcasts reach sockets connected to other relay
