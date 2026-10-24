@@ -197,13 +197,12 @@ jobs:
       # the other STRIPE_* vars) straight from this job's env — no
       # --build-arg needed, same as how NEXT_PUBLIC_RELAY_URL is already
       # wired through.
-      # Layer cache for the relay/frontend images — see
-      # .github/docker-compose.ci-cache.yml. Buildx's docker-container driver
-      # can export cache (the default docker driver can't); the runtime action
-      # exposes the cache credentials to the `docker compose build` step.
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-      - run: docker compose -f docker-compose.yml -f .github/docker-compose.ci-cache.yml build
+      # No build-layer cache here on purpose. With `docker compose build`, the
+      # only way to reach the Actions cache is exporting ACTIONS_RUNTIME_TOKEN
+      # to every later step, which hands a cache-write token to the test code
+      # and all its dependencies. That bought ~20s net (only the npm ci layer
+      # is reusable; buildx setup and cache export ate the rest).
+      - run: docker compose build
       - run: docker compose up -d
       - name: Wait for the stack to become healthy
         run: |

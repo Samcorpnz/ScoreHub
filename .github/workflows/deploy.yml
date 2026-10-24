@@ -133,27 +133,13 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Relay + frontend smoke checks
         run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --frontend "$SMOKE_FRONTEND_URL" --expect multi --auth "$SMOKE_AUTH_MODE" --wait 180
-      # Same browser cache as test.yml's E2E job (same key), so whichever runs
-      # first after a Playwright bump fills it for the other.
-      - name: Read Playwright version
-        id: pw
-        if: env.SMOKE_CONTROL_TOKEN != ''
-        working-directory: frontend
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: pw-cache
-        if: env.SMOKE_CONTROL_TOKEN != ''
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # Deliberately not using test.yml's Playwright browser cache: this job
+      # holds production smoke credentials, so it installs a fresh browser
+      # rather than running one restored from a cache other jobs can write.
       - name: Install Chromium for the display-page check
-        if: env.SMOKE_CONTROL_TOKEN != '' && steps.pw-cache.outputs.cache-hit != 'true'
+        if: env.SMOKE_CONTROL_TOKEN != ''
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-      - name: Install Chromium's system dependencies (browser cached)
-        if: env.SMOKE_CONTROL_TOKEN != '' && steps.pw-cache.outputs.cache-hit == 'true'
-        working-directory: frontend
-        run: npx playwright install-deps chromium
       - name: Display page renders a live change (real browser)
         if: env.SMOKE_CONTROL_TOKEN != ''
         working-directory: frontend
