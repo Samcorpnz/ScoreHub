@@ -3,7 +3,7 @@
 # `prisma migrate deploy` on startup, same reasoning as relay/Dockerfile.
 
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:24-alpine AS builder
+FROM node:25-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -31,7 +31,7 @@ COPY frontend ./frontend
 RUN npm run build --workspace=frontend
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
-FROM node:24-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
