@@ -12,15 +12,15 @@
     "backfill:display-tokens": "node --experimental-strip-types scripts/backfill-display-tokens.ts"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "dotenv": "^18.0.7",
     "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/pg": "^8.23.1",
-    "prisma": "^7.10.0",
+    "prisma": "^7.10.1",
     "typescript": "^6.0.3"
   }
 }
