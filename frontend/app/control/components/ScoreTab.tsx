@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { IndoorCricketState, formatClock, formatClockDisplay, formatScore } from "../../types";
+import { IndoorCricketState, MatchState, formatClock, formatClockDisplay, formatScore } from "../../types";
 import { useInterpolatedClock } from "../../hooks/useInterpolatedClock";
 import { parseClock } from "../lib/parseClock";
 import {
@@ -45,6 +45,76 @@ function endPeriodLabel(isFinalPeriod: boolean, fullTime: boolean, isLastRegulat
 function periodStatusLabel(breakLabel: string | undefined, periodLabel: string, period: string, matchLength?: number): string {
   if (breakLabel) return breakLabel;
   return matchLength ? `${periodLabel} ${period} of ${matchLength}` : `${periodLabel} ${period}`;
+}
+
+// "[" / "]" step the period back / forward: never below 1, nor past a
+// best-of match's length (null = no change).
+function steppedPeriod(s: MatchState, direction: -1 | 1): string | null {
+  const n = Number.parseInt(s.period, 10);
+  if (direction < 0) return String(Number.isNaN(n) || n <= 1 ? 1 : n - 1);
+  const max = getMatchLength(s);
+  if (max !== undefined && n >= max) return null;
+  return String(Number.isNaN(n) ? 2 : n + 1);
+}
+
+// Start / Stop — full-width, very tall.
+function StartStopButton({ isRunning, onToggle }: { readonly isRunning: boolean; readonly onToggle: () => void }) {
+  return (
+    <button
+      data-testid="score-start-stop"
+      className="w-full rounded-2xl py-8 text-3xl font-black tracking-widest uppercase transition-all"
+      style={isRunning
+        ? { background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }
+        : { background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }
+      }
+      onClick={onToggle}
+    >
+      {isRunning ? "■  STOP" : "▶  START"}
+    </button>
+  );
+}
+
+// Shown in place of Start / Stop at full time: End Match, or Start Extra
+// Time when the sport has it (extraTimeName set).
+function FullTimePanel({ extraTimeName, canEnd, ending, endMatch, endError, onStartExtraTime }: {
+  readonly extraTimeName: string | undefined;
+  readonly canEnd: boolean;
+  readonly ending: boolean;
+  readonly endMatch: () => void | Promise<void>;
+  readonly endError: string;
+  readonly onStartExtraTime: () => void;
+}) {
+  return (
+    <div data-testid="score-full-time" className="rounded-2xl p-5 space-y-3"
+      style={{ background: "rgba(251,146,60,0.08)", border: "2px solid rgba(251,146,60,0.4)" }}>
+      <p className="text-center text-2xl font-black tracking-widest" style={{ color: "rgb(251,146,60)" }}>FULL TIME</p>
+      <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+        {extraTimeName
+          ? "End the match, or start extra time if it's needed."
+          : "End the match to lock the result and move it to History."}
+      </p>
+      <div className="flex gap-3">
+        {canEnd && (
+          <button data-testid="score-end-match"
+            className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+            style={{ background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }}
+            disabled={ending}
+            onClick={endMatch}>
+            {ending ? "Ending…" : "■  END MATCH"}
+          </button>
+        )}
+        {extraTimeName && (
+          <button data-testid="score-start-extra-time"
+            className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
+            style={{ background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }}
+            onClick={onStartExtraTime}>
+            ▶  START {extraTimeName}
+          </button>
+        )}
+      </div>
+      {endError && <p className="text-xs font-semibold text-center" style={{ color: "var(--danger)" }}>{endError}</p>}
+    </div>
+  );
 }
 
 export function ScoreTab({
@@ -159,16 +229,9 @@ export function ScoreTab({
         p({ isRunning: !s.isRunning });
         return;
       }
-      if (e.key === "[") {
-        const n = Number.parseInt(s.period, 10);
-        p({ period: String(Number.isNaN(n) || n <= 1 ? 1 : n - 1) });
-        return;
-      }
-      if (e.key === "]") {
-        const n = Number.parseInt(s.period, 10);
-        const max = getMatchLength(s);
-        if (max !== undefined && n >= max) return;
-        p({ period: String(Number.isNaN(n) ? 2 : n + 1) });
+      if (e.key === "[" || e.key === "]") {
+        const next = steppedPeriod(s, e.key === "[" ? -1 : 1);
+        if (next !== null) p({ period: next });
         return;
       }
       tryScoreAdjustKey(e.key, inc, adjustRef.current);
@@ -194,50 +257,14 @@ export function ScoreTab({
 
       {/* Start / Stop — full-width, very tall. At full time the full-time
           panel below offers End Match / Start Extra Time instead. */}
-      {!fullTime && (
-      <button
-        data-testid="score-start-stop"
-        className="w-full rounded-2xl py-8 text-3xl font-black tracking-widest uppercase transition-all"
-        style={state.isRunning
-          ? { background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }
-          : { background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }
-        }
-        onClick={() => push({ isRunning: !state.isRunning })}
-      >
-        {state.isRunning ? "■  STOP" : "▶  START"}
-      </button>
-      )}
+      {!fullTime && <StartStopButton isRunning={state.isRunning} onToggle={() => push({ isRunning: !state.isRunning })} />}
 
       {fullTime && (
-        <div data-testid="score-full-time" className="rounded-2xl p-5 space-y-3"
-          style={{ background: "rgba(251,146,60,0.08)", border: "2px solid rgba(251,146,60,0.4)" }}>
-          <p className="text-center text-2xl font-black tracking-widest" style={{ color: "rgb(251,146,60)" }}>FULL TIME</p>
-          <p className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
-            {hasExtraTime
-              ? "End the match, or start extra time if it's needed."
-              : "End the match to lock the result and move it to History."}
-          </p>
-          <div className="flex gap-3">
-            {canEnd && (
-              <button data-testid="score-end-match"
-                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
-                style={{ background: "rgba(239,68,68,0.12)", border: "2px solid rgba(239,68,68,0.5)", color: "var(--danger)" }}
-                disabled={ending}
-                onClick={endMatch}>
-                {ending ? "Ending…" : "■  END MATCH"}
-              </button>
-            )}
-            {hasExtraTime && (
-              <button data-testid="score-start-extra-time"
-                className="flex-1 rounded-xl py-4 text-lg font-black tracking-widest uppercase"
-                style={{ background: "var(--accent-dim)", border: "2px solid var(--border-accent)", color: "var(--accent)" }}
-                onClick={() => push({ isRunning: true })}>
-                ▶  START {EXTRA_TIME_NAMES[template.extraTime?.label ?? ""] ?? "EXTRA TIME"}
-              </button>
-            )}
-          </div>
-          {endError && <p className="text-xs font-semibold text-center" style={{ color: "var(--danger)" }}>{endError}</p>}
-        </div>
+        <FullTimePanel
+          extraTimeName={hasExtraTime ? EXTRA_TIME_NAMES[template.extraTime?.label ?? ""] ?? "EXTRA TIME" : undefined}
+          canEnd={canEnd} ending={ending} endMatch={endMatch} endError={endError}
+          onStartExtraTime={() => push({ isRunning: true })}
+        />
       )}
 
       {/* Undo last action */}

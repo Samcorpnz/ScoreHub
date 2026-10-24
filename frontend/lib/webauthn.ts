@@ -45,7 +45,7 @@ export async function consumeChallenge(
   purpose: WebAuthnChallengePurpose,
 ): Promise<{ userId: string | null } | null> {
   const row = await prisma.webAuthnChallenge.findUnique({ where: { challenge } });
-  if (!row || row.purpose !== purpose || row.expiresAt < new Date()) return null;
+  if (row?.purpose !== purpose || row.expiresAt < new Date()) return null;
   await prisma.webAuthnChallenge.delete({ where: { id: row.id } });
   return { userId: row.userId };
 }

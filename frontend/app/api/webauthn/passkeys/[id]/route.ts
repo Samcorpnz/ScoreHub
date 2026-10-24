@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const authenticator = await prisma.authenticator.findUnique({ where: { id } });
-  if (!authenticator || authenticator.userId !== session.user.id) {
+  if (authenticator?.userId !== session.user.id) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
@@ -41,7 +41,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   const authenticator = await prisma.authenticator.findUnique({ where: { id } });
   // 404 (not 403) when it belongs to someone else, to avoid leaking existence.
-  if (!authenticator || authenticator.userId !== session.user.id) {
+  if (authenticator?.userId !== session.user.id) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 

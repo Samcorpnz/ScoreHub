@@ -112,6 +112,49 @@ async function controlToken(m: SimMatch, cfg: LoadConfig): Promise<string> {
     .sign(new TextEncoder().encode(process.env.AUTH_SECRET!));
 }
 
+type ViewerState = { sequenceId: number; home: { score: number }; visitor: { score: number } };
+
+// Records one broadcast a viewer received: latency samples for any score it
+// sees go up, against when the controller sent that value. Returns true when
+// the broadcast's sequenceId went backwards.
+function observeViewerState(v: Viewer, m: SimMatch, state: ViewerState, latencyMs: number[]): boolean {
+  const t = now();
+  if (!v.baselined) {
+    v.baselined = true;
+    v.home = state.home.score;
+    v.visitor = state.visitor.score;
+    v.lastSeq = state.sequenceId;
+    return false;
+  }
+  const regressed = state.sequenceId < v.lastSeq;
+  v.lastSeq = Math.max(v.lastSeq, state.sequenceId);
+  for (const side of ["home", "visitor"] as const) {
+    const score = state[side].score;
+    const sent = score > v[side] ? m.sentAt[side].get(score) : undefined;
+    if (sent !== undefined) latencyMs.push(t - sent);
+    v[side] = score;
+  }
+  return regressed;
+}
+
+// After the drain: every viewer should have ended on its controller's score.
+function checkViewers(matches: SimMatch[]) {
+  let viewersChecked = 0;
+  let viewersDiverged = 0;
+  const divergenceSamples: string[] = [];
+  for (const m of matches) {
+    for (const v of m.viewers) {
+      viewersChecked++;
+      if (v.home === m.expected.home && v.visitor === m.expected.visitor) continue;
+      viewersDiverged++;
+      if (divergenceSamples.length < 5) {
+        divergenceSamples.push(`match ${m.index}: viewer ${v.home}-${v.visitor}, controller expected ${m.expected.home}-${m.expected.visitor}`);
+      }
+    }
+  }
+  return { viewersChecked, viewersDiverged, divergenceSamples };
+}
+
 async function main() {
   const cfg = parseArgs(process.argv.slice(2));
   const totalSockets = cfg.matches * (1 + cfg.viewersPerMatch);
@@ -189,25 +232,8 @@ async function main() {
       const socket = await openSocket(viewerAuth);
       if (!socket) return;
       const v: Viewer = { socket, home: 0, visitor: 0, lastSeq: -1, connected: true, baselined: false };
-      socket.on("matchStateChange", (state: { sequenceId: number; home: { score: number }; visitor: { score: number } }) => {
-        const t = now();
-        if (!v.baselined) {
-          v.baselined = true;
-          v.home = state.home.score;
-          v.visitor = state.visitor.score;
-          v.lastSeq = state.sequenceId;
-          return;
-        }
-        if (state.sequenceId < v.lastSeq) sequenceRegressions++;
-        v.lastSeq = Math.max(v.lastSeq, state.sequenceId);
-        for (const side of ["home", "visitor"] as const) {
-          const score = state[side].score;
-          if (score > v[side]) {
-            const sent = m.sentAt[side].get(score);
-            if (sent !== undefined) latencyMs.push(t - sent);
-          }
-          v[side] = score;
-        }
+      socket.on("matchStateChange", (state: ViewerState) => {
+        if (observeViewerState(v, m, state, latencyMs)) sequenceRegressions++;
       });
       m.viewers.push(v);
     }));
@@ -246,7 +272,7 @@ async function main() {
         m.controller!.emit("adjustScore", { side, delta: 1 });
         actionsSent++;
       }, intervalMs);
-    }, Math.random() * intervalMs);
+    }, crypto.randomInt(Math.max(1, Math.round(intervalMs))));
     return () => { clearTimeout(kickoff); clearInterval(timer); };
   });
 
@@ -255,20 +281,7 @@ async function main() {
   await sleep(3000); // drain: let the last broadcasts land before comparing
   clearInterval(healthTimer);
 
-  let viewersChecked = 0;
-  let viewersDiverged = 0;
-  const divergenceSamples: string[] = [];
-  for (const m of matches) {
-    for (const v of m.viewers) {
-      viewersChecked++;
-      if (v.home !== m.expected.home || v.visitor !== m.expected.visitor) {
-        viewersDiverged++;
-        if (divergenceSamples.length < 5) {
-          divergenceSamples.push(`match ${m.index}: viewer ${v.home}-${v.visitor}, controller expected ${m.expected.home}-${m.expected.visitor}`);
-        }
-      }
-    }
-  }
+  const { viewersChecked, viewersDiverged, divergenceSamples } = checkViewers(matches);
 
   closing = true;
   for (const m of matches) { m.controller?.close(); m.viewers.forEach(v => v.socket.close()); }

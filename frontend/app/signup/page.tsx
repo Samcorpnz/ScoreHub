@@ -2,6 +2,7 @@
 
 import { useCallback, useState, SubmitEvent } from "react";
 import { TurnstileWidget } from "@/app/components/TurnstileWidget";
+import { Button, ErrorNotice } from "@/app/components/AuthForm";
 
 // Bounded quantifiers (rather than unbounded `+`) cap backtracking cost even
 // though the three `[^\s@]` classes overlap — see typescript:S8786.
@@ -149,29 +150,9 @@ export default function SignupPage() {
 
           <TurnstileWidget onToken={onTurnstileToken} />
 
-          {error && (
-            <p
-              className="text-sm rounded-lg px-3 py-2 font-semibold"
-              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "var(--danger)" }}
-            >
-              {error}
-            </p>
-          )}
+          <ErrorNotice message={error} />
 
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full rounded-xl py-3 text-sm font-black tracking-widest uppercase transition-opacity"
-            style={{
-              background: "var(--accent-dim)",
-              border: "1px solid var(--border-accent)",
-              color: "var(--accent)",
-              opacity: canSubmit ? 1 : 0.5,
-              cursor: canSubmit ? "pointer" : "not-allowed",
-            }}
-          >
-            {loading ? "Sending confirmation…" : "Create Account"}
-          </button>
+          <Button type="submit" disabled={!canSubmit} label={loading ? "Sending confirmation…" : "Create Account"} />
         </form>
 
         <p className="text-center text-xs mt-6" style={{ color: "var(--text-dim)" }}>

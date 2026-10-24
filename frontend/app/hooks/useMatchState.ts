@@ -39,7 +39,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
   // the match's real state, so pages can show a loader instead of a match
   // that looks brand new.
   const [stateLoaded, setStateLoaded] = useState(false);
-  const [socketStatus, setStatus] = useState<ConnectionStatus>("connecting");
+  const [socketStatus, setSocketStatus] = useState<ConnectionStatus>("connecting");
   // Set when the relay rejects a display connection for a bad/missing
   // displayToken (see DISPLAY_TOKEN_REQUIRED in relay/src/server.ts) — lets
   // display pages show a "get a fresh link" fallback instead of a blank
@@ -148,7 +148,7 @@ export function useMatchState(auth?: { secret: string; role: string }) {
     const timeSyncTimer = setInterval(runTimeSync, TIME_SYNC_INTERVAL_MS);
 
     socket.on("connect", () => {
-      setStatus("connected");
+      setSocketStatus("connected");
       setUnauthorized(false);
       setMatchEnded(false);
       lastUpdateRef.current = Date.now();
@@ -184,12 +184,12 @@ export function useMatchState(auth?: { secret: string; role: string }) {
       }
     });
     socket.on("disconnect", () => {
-      setStatus("disconnected");
+      setSocketStatus("disconnected");
       setFeedStale(false);
       disconnectedSinceRef.current ??= Date.now();
     });
     socket.on("connect_error", (err: Error) => {
-      setStatus("disconnected");
+      setSocketStatus("disconnected");
       setFeedStale(false);
       disconnectedSinceRef.current ??= Date.now();
       if (/display token/i.test(err.message)) setUnauthorized(true);

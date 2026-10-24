@@ -2,6 +2,7 @@
 
 import { useCallback, useState, SubmitEvent } from "react";
 import { TurnstileWidget } from "@/app/components/TurnstileWidget";
+import { Button, ErrorNotice } from "@/app/components/AuthForm";
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{1,63}$/;
 const TURNSTILE_REQUIRED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
@@ -69,10 +70,11 @@ export default function ForgotPasswordPage() {
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", boxShadow: "0 0 40px rgba(0,0,0,0.4)" }}
         >
           <div>
-            <label className="block text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "var(--text-dim)" }}>
+            <label htmlFor="forgot-email" className="block text-xs font-bold tracking-widest uppercase mb-2" style={{ color: "var(--text-dim)" }}>
               Email
             </label>
             <input
+              id="forgot-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -86,29 +88,9 @@ export default function ForgotPasswordPage() {
 
           <TurnstileWidget onToken={onTurnstileToken} />
 
-          {error && (
-            <p
-              className="text-sm rounded-lg px-3 py-2 font-semibold"
-              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "var(--danger)" }}
-            >
-              {error}
-            </p>
-          )}
+          <ErrorNotice message={error} />
 
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full rounded-xl py-3 text-sm font-black tracking-widest uppercase transition-opacity"
-            style={{
-              background: "var(--accent-dim)",
-              border: "1px solid var(--border-accent)",
-              color: "var(--accent)",
-              opacity: canSubmit ? 1 : 0.5,
-              cursor: canSubmit ? "pointer" : "not-allowed",
-            }}
-          >
-            {loading ? "Sending…" : "Send reset link"}
-          </button>
+          <Button type="submit" disabled={!canSubmit} label={loading ? "Sending…" : "Send reset link"} />
         </form>
 
         <p className="text-center text-xs mt-6" style={{ color: "var(--text-dim)" }}>

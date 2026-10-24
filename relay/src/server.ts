@@ -152,7 +152,8 @@ const BEST_OF_SPORTS = new Set<string>(["squash", "tennis"]);
 
 export function bestOfLength(state: Pick<MatchState, "sport" | "sportConfig">): number | undefined {
   if (!BEST_OF_SPORTS.has(state.sport)) return undefined;
-  const match = /^bo([35])$/.exec(String(state.sportConfig?.format ?? ""));
+  const format = state.sportConfig?.format;
+  const match = /^bo([35])$/.exec(typeof format === "string" ? format : "");
   return match ? Number.parseInt(match[1], 10) : undefined;
 }
 
@@ -803,11 +804,11 @@ export function createServer(options: ServerOptions = {}) {
   // A per-output upload is the Graphics add-on; the match-wide one isn't
   const requireOutputAddOn: express.RequestHandler = (req, res, next) => {
     if (!req.query.output) { next(); return; }
-    if (!BACKGROUND_OUTPUTS.some(o => o === req.query.output)) {
+    if (!(BACKGROUND_OUTPUTS as readonly unknown[]).includes(req.query.output)) {
       res.status(400).json({ error: `output must be one of ${BACKGROUND_OUTPUTS.join(", ")}` });
       return;
     }
-    requireAddOn("graphics-operator")(req, res, next);
+    void requireAddOn("graphics-operator")(req, res, next);
   };
 
   async function removeStoredBackground(orgId: string, segment: string): Promise<void> {
@@ -1109,9 +1110,10 @@ export function createServer(options: ServerOptions = {}) {
     res.json(await listSelectableMatches(result, caller === "control"));
   });
 
-  app.get("/state", controlRateLimit, async (req, res) => {
+  // Works out which org a GET /state caller is reading, or sends the
+  // 400/403 itself and returns null.
+  async function resolveStateOrg(req: express.Request, res: express.Response, matchId: string | undefined): Promise<string | null> {
     let orgId = typeof req.query.org === "string" ? req.query.org : undefined;
-    const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
     const token = typeof req.query.token === "string" ? req.query.token : undefined;
     // A display link only carries matchId (org is optional sugar) — resolve
     // orgId from the match row rather than falling through to LEGACY_ROOM_ID,
@@ -1124,27 +1126,37 @@ export function createServer(options: ServerOptions = {}) {
         orgId = orgId ?? row.orgId;
         if (!isDisplayTokenValid(row.displayToken, token, DISPLAY_TOKEN_REQUIRED)) {
           res.status(403).json({ error: "invalid or missing display token" });
-          return;
+          return null;
         }
       }
     }
     if (!orgId) {
       if (process.env.DATABASE_URL) {
         res.status(400).json({ error: "org (or a valid matchId) is required" });
-        return;
+        return null;
       }
       orgId = LEGACY_ROOM_ID;
     }
-    // See DISPLAY_ORIGIN_REQUIRED. A caller with no browser Origin can still
-    // read its own org's state by proving itself with a control token.
-    if (!isDisplayOriginAllowed(req.headers.origin)) {
-      const secret = req.headers["x-control-secret"];
-      const holder = await verifyActionSecret(typeof secret === "string" ? secret : undefined, CONTROL_SECRET);
-      if (holder?.orgId !== orgId) {
-        res.status(403).json({ error: DISPLAY_ORIGIN_REFUSED_MESSAGE });
-        return;
-      }
+    if (!(await isStateOriginAllowed(req, orgId))) {
+      res.status(403).json({ error: DISPLAY_ORIGIN_REFUSED_MESSAGE });
+      return null;
     }
+    return orgId;
+  }
+
+  // See DISPLAY_ORIGIN_REQUIRED. A caller with no browser Origin can still
+  // read its own org's state by proving itself with a control token.
+  async function isStateOriginAllowed(req: express.Request, orgId: string): Promise<boolean> {
+    if (isDisplayOriginAllowed(req.headers.origin)) return true;
+    const secret = req.headers["x-control-secret"];
+    const holder = await verifyActionSecret(typeof secret === "string" ? secret : undefined, CONTROL_SECRET);
+    return holder?.orgId === orgId;
+  }
+
+  app.get("/state", controlRateLimit, async (req, res) => {
+    const matchId = typeof req.query.matchId === "string" ? req.query.matchId : undefined;
+    const orgId = await resolveStateOrg(req, res, matchId);
+    if (!orgId) return;
     try {
       res.json(await getState(orgId, matchId));
     } catch (err) {
@@ -1152,20 +1164,28 @@ export function createServer(options: ServerOptions = {}) {
     }
   });
 
-  // Data Feed add-on: authenticated equivalent of GET /state for third-party
-  // consumers (Singular.live, VIZRT) that can't use the public/display path —
-  // see verifyDataFeedSecret and POST /api/orgs/[orgId]/tokens (frontend).
-  app.get("/api/data-feed/state", dataFeedRateLimit, async (req, res) => {
+  // Verifies a Data Feed token and the org's add-on, sending the 401/403 itself
+  // when either fails.
+  async function authorizeDataFeed(req: express.Request, res: express.Response) {
     const secret = req.headers["x-data-feed-secret"];
     const result = await verifyDataFeedSecret(typeof secret === "string" ? secret : undefined, DATA_FEED_SECRET);
     if (!result) {
       res.status(401).json({ error: "unauthorized" });
-      return;
+      return null;
     }
     if (!(await orgHasAddOn(result.orgId, "data-feed"))) {
       res.status(403).json({ error: "This feature requires the data-feed add-on — upgrade at /account/billing" });
-      return;
+      return null;
     }
+    return result;
+  }
+
+  // Data Feed add-on: authenticated equivalent of GET /state for third-party
+  // consumers (Singular.live, VIZRT) that can't use the public/display path —
+  // see verifyDataFeedSecret and POST /api/orgs/[orgId]/tokens (frontend).
+  app.get("/api/data-feed/state", dataFeedRateLimit, async (req, res) => {
+    const result = await authorizeDataFeed(req, res);
+    if (!result) return;
     const matchId = result.matchId ?? (typeof req.query.matchId === "string" ? req.query.matchId : undefined);
     try {
       res.json(await readState(result.orgId, matchId));
@@ -1181,16 +1201,8 @@ export function createServer(options: ServerOptions = {}) {
   // to send on the following poll. Same token and add-on as the state route.
   const EVENTS_PAGE_SIZE = 500;
   app.get("/api/data-feed/events", dataFeedRateLimit, async (req, res) => {
-    const secret = req.headers["x-data-feed-secret"];
-    const result = await verifyDataFeedSecret(typeof secret === "string" ? secret : undefined, DATA_FEED_SECRET);
-    if (!result) {
-      res.status(401).json({ error: "unauthorized" });
-      return;
-    }
-    if (!(await orgHasAddOn(result.orgId, "data-feed"))) {
-      res.status(403).json({ error: "This feature requires the data-feed add-on — upgrade at /account/billing" });
-      return;
-    }
+    const result = await authorizeDataFeed(req, res);
+    if (!result) return;
     const since = typeof req.query.since === "string" ? Number(req.query.since) : 0;
     if (!Number.isSafeInteger(since) || since < 0) {
       res.status(400).json({ error: "since must be a non-negative integer" });
@@ -1213,7 +1225,8 @@ export function createServer(options: ServerOptions = {}) {
   // Same polling budget as the Data Feed routes above.
   app.get("/api/graphics/data", dataFeedRateLimit, async (req, res) => {
     const header = req.headers["x-graphics-data-secret"];
-    const secret = typeof header === "string" ? header : typeof req.query.token === "string" ? req.query.token : undefined;
+    const queryToken = typeof req.query.token === "string" ? req.query.token : undefined;
+    const secret = typeof header === "string" ? header : queryToken;
     const result = await verifyGraphicsDataSecret(secret, GRAPHICS_SECRET);
     if (!result) {
       res.status(401).json({ error: "unauthorized" });
@@ -1496,6 +1509,82 @@ export function createServer(options: ServerOptions = {}) {
 
   // ─── Socket.io ───────────────────────────────────────────────────────────────
 
+  type SocketRoleAuth = { orgId: string; matchId?: string; flags: Record<string, unknown> };
+
+  // Checks a socket handshake's secret for the role it claims. null means it
+  // gets no role (a plain viewer); { error } refuses the connection outright.
+  async function authenticateSocketRole(
+    role: string | undefined, secret: string | undefined, requestedMatchId: string | undefined,
+  ): Promise<SocketRoleAuth | { error: string } | null> {
+    switch (role) {
+      case "bridge": {
+        // Unlike graphics/data-feed below, a refused bridge is a hard error
+        // rather than a silent downgrade to viewer — the venue laptop needs to
+        // be told why its console data isn't going anywhere.
+        const access = await resolveBridgeAccess(secret, BRIDGE_SECRET, requestedMatchId);
+        if (!access) return null;
+        if (!access.ok) return { error: access.error };
+        return { orgId: access.orgId, matchId: access.matchId, flags: { isBridge: true } };
+      }
+      case "control": {
+        const result = await verifyControlSecret(secret, CONTROL_SECRET);
+        if (!result) return null;
+        return { orgId: result.orgId, matchId: result.matchId, flags: { isControl: true, controlUserId: result.userId } };
+      }
+      case "graphics": {
+        // Entitlement check happens here, at the handshake, rather than lazily
+        // in the setScene handler — fail fast, and a non-entitled connection
+        // never gets isGraphics=true, so it just falls through to a normal
+        // (control-mutation-less) viewer connection rather than a hard error.
+        const result = await verifyGraphicsSecret(secret, GRAPHICS_SECRET);
+        if (!result || !(await orgHasAddOn(result.orgId, "graphics-operator"))) return null;
+        return { orgId: result.orgId, matchId: result.matchId, flags: { isGraphics: true } };
+      }
+      case "data-feed": {
+        const result = await verifyDataFeedSecret(secret, DATA_FEED_SECRET);
+        if (!result || !(await orgHasAddOn(result.orgId, "data-feed"))) return null;
+        return { orgId: result.orgId, matchId: result.matchId, flags: { isDataFeed: true } };
+      }
+      case "monitor": {
+        // Read-only state for something that already holds a control token —
+        // the Stream Deck plugin showing live values on its keys. It can
+        // already change this org's matches through /action/*, so letting it
+        // watch them gives nothing away, and unlike role "control" it never
+        // competes for the controller mutex. Registers no handlers: it only
+        // receives matchStateChange.
+        const result = await verifyActionSecret(secret, CONTROL_SECRET);
+        if (!result) return null;
+        return { orgId: result.orgId, matchId: result.matchId, flags: { isMonitor: true } };
+      }
+      default:
+        return null;
+    }
+  }
+
+  // Checks a handshake's requested matchId against its org. If orgId is
+  // absent (a display link with only ?matchId=, e.g. hand-edited or from an
+  // older link format), it's resolved from the match row instead of falling
+  // through to LEGACY_ROOM_ID — otherwise the viewer silently joins the wrong
+  // (empty) room. This is also where the displayToken is checked (see
+  // DISPLAY_TOKEN_REQUIRED) — a connection that proved itself via a signed
+  // secret skips it, so only the unauthenticated viewer path needs it.
+  async function resolveRequestedMatch(
+    requestedMatchId: string, orgId: string | null, displayToken: string | undefined,
+    provedItself: boolean, isDataFeed: boolean,
+  ): Promise<{ orgId: string | null; matchId?: string } | { error: string }> {
+    const row = await prisma.match.findUnique({ where: { id: requestedMatchId }, select: { orgId: true, displayToken: true } });
+    if (row && (!orgId || row.orgId === orgId)) {
+      if (!provedItself && !isDisplayTokenValid(row.displayToken, displayToken, DISPLAY_TOKEN_REQUIRED)) {
+        return { error: "invalid or missing display token" };
+      }
+      return { orgId: orgId ?? row.orgId, matchId: requestedMatchId };
+    }
+    // Falling through would put the feed in the org's default room, where
+    // it would quietly watch (or create) a different match.
+    if (isDataFeed) return { error: "match not found" };
+    return { orgId, matchId: undefined };
+  }
+
   io.use(async (socket, next) => {
     const { secret, role, orgId: requestedOrgId, matchId: requestedMatchId, token: requestedToken } = socket.handshake.auth as {
       secret?: string;
@@ -1505,97 +1594,33 @@ export function createServer(options: ServerOptions = {}) {
       token?: string;
     };
 
-    let orgId: string | null = null;
-    let matchId: string | undefined;
-
-    if (role === "bridge") {
-      // Unlike graphics/data-feed below, a refused bridge is a hard error
-      // rather than a silent downgrade to viewer — the venue laptop needs to
-      // be told why its console data isn't going anywhere.
-      const access = await resolveBridgeAccess(secret, BRIDGE_SECRET, requestedMatchId);
-      if (access && !access.ok) {
-        next(new Error(access.error));
-        return;
-      }
-      if (access) {
-        orgId = access.orgId;
-        matchId = access.matchId;
-        (socket as any).isBridge = true;
-      }
-    } else if (role === "control") {
-      const result = await verifyControlSecret(secret, CONTROL_SECRET);
-      if (result) {
-        orgId = result.orgId;
-        matchId = result.matchId;
-        (socket as any).isControl = true;
-        (socket as any).controlUserId = result.userId;
-      }
-    } else if (role === "graphics") {
-      const result = await verifyGraphicsSecret(secret, GRAPHICS_SECRET);
-      // Entitlement check happens here, at the handshake, rather than lazily
-      // in the setScene handler — fail fast, and a non-entitled connection
-      // never gets isGraphics=true, so it just falls through to a normal
-      // (control-mutation-less) viewer connection rather than a hard error.
-      if (result && (await orgHasAddOn(result.orgId, "graphics-operator"))) {
-        orgId = result.orgId;
-        matchId = result.matchId;
-        (socket as any).isGraphics = true;
-      }
-    } else if (role === "data-feed") {
-      const result = await verifyDataFeedSecret(secret, DATA_FEED_SECRET);
-      if (result && (await orgHasAddOn(result.orgId, "data-feed"))) {
-        orgId = result.orgId;
-        matchId = result.matchId;
-        (socket as any).isDataFeed = true;
-      }
-    } else if (role === "monitor") {
-      // Read-only state for something that already holds a control token —
-      // the Stream Deck plugin showing live values on its keys. It can
-      // already change this org's matches through /action/*, so letting it
-      // watch them gives nothing away, and unlike role "control" it never
-      // competes for the controller mutex. Registers no handlers: it only
-      // receives matchStateChange.
-      const result = await verifyActionSecret(secret, CONTROL_SECRET);
-      if (result) {
-        orgId = result.orgId;
-        matchId = result.matchId;
-        (socket as any).isMonitor = true;
-      }
+    const auth = await authenticateSocketRole(role, secret, requestedMatchId);
+    if (auth && "error" in auth) {
+      next(new Error(auth.error));
+      return;
     }
+    if (auth) Object.assign(socket, auth.flags);
 
-    // A role branch above proved itself with a secret. For a monitor the
-    // org is the token's, never the one the client asked for.
-    const s = socket as any;
-    const provedItself = s.isBridge || s.isControl || s.isGraphics || s.isDataFeed || s.isMonitor;
-    orgId = orgId ?? requestedOrgId ?? null;
+    // A role above proved itself with a secret. For a monitor the org is the
+    // token's, never the one the client asked for.
+    const provedItself = auth !== null;
+    let orgId: string | null = auth?.orgId ?? requestedOrgId ?? null;
+    let matchId = auth?.matchId;
 
     // Viewer/display connections have no signed token — they pass orgId and
     // an optional matchId straight from the display URL's query params, so
     // matchId has to be validated against orgId here before it's trusted.
-    // If orgId is absent (a display link with only ?matchId=, e.g. hand-edited
-    // or from an older link format), resolve it from the match row instead of
-    // falling through to LEGACY_ROOM_ID — otherwise the lookup below always
-    // misses and the viewer silently joins the wrong (empty) room. This is
-    // also where the displayToken is checked (see DISPLAY_TOKEN_REQUIRED) —
-    // a role branch above (bridge/control/graphics/data-feed) already proved
-    // itself via a signed secret, so only the unauthenticated viewer path
-    // needs this. A token that isn't pinned to one match gets here too, to
-    // have the matchId it asked for checked against its own org (SA-163).
+    // A token that isn't pinned to one match gets here too, to have the
+    // matchId it asked for checked against its own org (SA-163).
     if (!matchId && requestedMatchId && process.env.DATABASE_URL) {
-      const row = await prisma.match.findUnique({ where: { id: requestedMatchId }, select: { orgId: true, displayToken: true } });
-      if (row && (!orgId || row.orgId === orgId)) {
-        if (!provedItself && !isDisplayTokenValid(row.displayToken, requestedToken, DISPLAY_TOKEN_REQUIRED)) {
-          next(new Error("invalid or missing display token"));
-          return;
-        }
-        matchId = requestedMatchId;
-        orgId = orgId ?? row.orgId;
-      } else if (s.isDataFeed) {
-        // Falling through would put the feed in the org's default room, where
-        // it would quietly watch (or create) a different match.
-        next(new Error("match not found"));
+      const resolved = await resolveRequestedMatch(
+        requestedMatchId, orgId, requestedToken, provedItself, (socket as any).isDataFeed === true,
+      );
+      if ("error" in resolved) {
+        next(new Error(resolved.error));
         return;
       }
+      ({ orgId, matchId } = resolved);
     }
 
     // Same reasoning as /state above: LEGACY_ROOM_ID isn't a real org once

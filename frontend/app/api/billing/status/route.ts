@@ -25,7 +25,7 @@ export async function GET() {
     currentPeriodEnd: number | null;
     amount: number | null;
     currency: string | null;
-    interval: "month" | "year" | null;
+    interval: BillingInterval | null;
   };
 
   async function summarize(subscriptionId: string): Promise<SubscriptionSummary> {
@@ -37,7 +37,7 @@ export async function GET() {
       currentPeriodEnd: item?.current_period_end ?? null,
       amount: item?.price.unit_amount ?? null,
       currency: sub.currency,
-      interval: (item?.price.recurring?.interval as "month" | "year" | undefined) ?? null,
+      interval: (item?.price.recurring?.interval as BillingInterval | undefined) ?? null,
     };
   }
 
@@ -48,7 +48,7 @@ export async function GET() {
       currentPeriodEnd: currentPeriodEnd(sub),
       amount: item?.price.unit_amount ?? null,
       currency: sub.currency,
-      interval: (item?.price.recurring?.interval as "month" | "year" | undefined) ?? null,
+      interval: (item?.price.recurring?.interval as BillingInterval | undefined) ?? null,
     };
   }
 
@@ -81,7 +81,7 @@ export async function GET() {
         currentPeriodEnd: Math.floor(account!.addOnsEndAt.getTime() / 1000),
         amount: price.unit_amount,
         currency: price.currency,
-        interval: (price.recurring?.interval as "month" | "year" | undefined) ?? null,
+        interval: (price.recurring?.interval as BillingInterval | undefined) ?? null,
       };
     };
     return {

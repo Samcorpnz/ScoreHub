@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@scorehub/db";
+import type { Session } from "next-auth";
 import { auth } from "@/auth";
 import { clientIp, isRateLimited } from "@/lib/rateLimit";
 import { logger } from "@/lib/logger";
@@ -37,6 +38,38 @@ async function planFor(orgId: string | null): Promise<{ plan?: string; addOns?: 
   return org?.account ?? {};
 }
 
+type SessionUser = Session["user"];
+
+// Who the request is filed as: the signed-in user with their org/plan/role,
+// or (login category only) an unverified email that passed the bot check.
+async function identifyRequester(
+  req: NextRequest, body: Record<string, unknown> | null, user: SessionUser | null, category: string,
+): Promise<
+  { requester: SupportRequest["requester"]; context: SupportRequest["context"] } | { error: string; status: number }
+> {
+  if (user) {
+    if (isRateLimited(`support:${user.id}`, 5, TEN_MINUTES)) return { error: "rate_limited", status: 429 };
+    return {
+      requester: { name: user.name ?? "", email: user.email as string, verified: true },
+      context: {
+        organisation: user.memberships.find((m) => m.orgId === user.activeOrgId)?.orgName,
+        role: user.activeRole ?? undefined,
+        ...(await planFor(user.activeOrgId)),
+      },
+    };
+  }
+  if (category !== "login") return { error: "unauthorized", status: 401 };
+  const email = str(body?.email, 254).toLowerCase();
+  if (!EMAIL_RE.test(email)) return { error: "invalid_request", status: 400 };
+  if (isRateLimited(`support-anon:${clientIp(req)}`, 3, TEN_MINUTES)) return { error: "rate_limited", status: 429 };
+  // Same bot check as the other signed-out endpoints (signup,
+  // forgot-password): this one creates a JSM request per call.
+  if (!(await verifyTurnstileToken(str(body?.turnstileToken, 4096), clientIp(req)))) {
+    return { error: "captcha verification failed", status: 400 };
+  }
+  return { requester: { name: str(body?.name, 120), email, verified: false }, context: undefined };
+}
+
 // Files a support request in Jira Service Management.
 //
 // Signed-in users (the help centre's case form, called cross-origin with the
@@ -64,32 +97,9 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   const user = session?.user?.email ? session.user : null;
 
-  let requester: SupportRequest["requester"];
-  let context: SupportRequest["context"];
-  if (user) {
-    if (isRateLimited(`support:${user.id}`, 5, TEN_MINUTES)) {
-      return respond({ error: "rate_limited" }, 429);
-    }
-    requester = { name: user.name ?? "", email: user.email as string, verified: true };
-    context = {
-      organisation: user.memberships.find((m) => m.orgId === user.activeOrgId)?.orgName,
-      role: user.activeRole ?? undefined,
-      ...(await planFor(user.activeOrgId)),
-    };
-  } else {
-    if (category !== "login") return respond({ error: "unauthorized" }, 401);
-    const email = str(body?.email, 254).toLowerCase();
-    if (!EMAIL_RE.test(email)) return respond({ error: "invalid_request" }, 400);
-    if (isRateLimited(`support-anon:${clientIp(req)}`, 3, TEN_MINUTES)) {
-      return respond({ error: "rate_limited" }, 429);
-    }
-    // Same bot check as the other signed-out endpoints (signup,
-    // forgot-password): this one creates a JSM request per call.
-    if (!(await verifyTurnstileToken(str(body?.turnstileToken, 4096), clientIp(req)))) {
-      return respond({ error: "captcha verification failed" }, 400);
-    }
-    requester = { name: str(body?.name, 120), email, verified: false };
-  }
+  const identity = await identifyRequester(req, body, user, category);
+  if ("error" in identity) return respond({ error: identity.error }, identity.status);
+  const { requester, context } = identity;
 
   if (!supportDeskConfigured()) {
     return respond({ error: "case_unavailable" }, 503);

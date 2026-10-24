@@ -487,9 +487,16 @@ type MatchPeriodState = Pick<MatchState, "sport" | "sportConfig" | "period">;
 // The template for this match: the sport's, with the chosen format's
 // differences applied (e.g. Fast5's 6:00 quarters and 1/2/3-point buttons).
 // Use this, not getTemplate, wherever a match's own state is to hand.
+// The match's sportConfig.format, when it has one. Stored as free-form JSON,
+// so anything that isn't a string counts as unset.
+export function matchFormat(state: MatchFormatState): string | undefined {
+  const format = state.sportConfig?.format;
+  return typeof format === "string" ? format : undefined;
+}
+
 export function getMatchTemplate(state: MatchFormatState): SportTemplate {
   const template = getTemplate(state.sport);
-  const format = template.formats?.[String(state.sportConfig?.format ?? "")];
+  const format = template.formats?.[matchFormat(state) ?? ""];
   return format ? { ...template, ...format } : template;
 }
 
@@ -548,7 +555,7 @@ export function getScoreIncrements(
 // Mirrored by bestOfLength in relay/src/server.ts for Stream Deck/the Control API.
 export function getMatchLength(state: Pick<MatchState, "sport" | "sportConfig">): number | undefined {
   const formatField = getTemplate(state.sport).matchConfig?.find(f => f.key === "format");
-  const format = String(state.sportConfig?.format ?? "");
+  const format = matchFormat(state) ?? "";
   if (!formatField?.options.some(o => o.value === format)) return undefined;
   const match = /^bo(\d+)$/.exec(format);
   return match ? Number.parseInt(match[1], 10) : undefined;

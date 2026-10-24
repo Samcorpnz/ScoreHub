@@ -80,7 +80,7 @@ export default function SetupPage() {
       batters: [], bowlers: [], currentBatter1Index: 0, currentBatter2Index: 1, currentBowlerIndex: 0,
       thisOverBalls: [],
     };
-    sendManualUpdate({
+    void sendManualUpdate({
       sport,
       matchName: matchName.trim(),
       clockSeconds: template.clockSeconds,

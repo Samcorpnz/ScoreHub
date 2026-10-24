@@ -32,7 +32,7 @@ function clockTextShadow(isRunning: boolean, hornActive: boolean): string {
   return "none";
 }
 
-export function ClockPanel({ clockSeconds, countDown, period, periodBreak, periodLabel = "QTR", breakLabel, notice, shootout, isRunning, hornActive, matchName, size = "full", clockAnchorMs, clockCarryMs }: Props) {
+export function ClockPanel({ clockSeconds, countDown, period, periodBreak, periodLabel = "QTR", breakLabel, notice, shootout, isRunning, hornActive, matchName, size = "full", clockAnchorMs, clockCarryMs }: Readonly<Props>) {
   const isCompact = size === "compact";
   const display = useInterpolatedClock({ clockSeconds, isRunning, countDown, clockAnchorMs, clockCarryMs });
   let clockColor: string;
@@ -129,7 +129,7 @@ export function ShootoutAttempts({ attempts, color }: { readonly attempts: reado
       {attempts.map((scored, i) => (
         <span
           // attempts are positional and only ever appended or popped
-          key={i}
+          key={i} // NOSONAR — no identity beyond position
           title={scored ? "Scored" : "Missed"}
           style={{ width: 10, height: 10, borderRadius: "50%", border: `2px solid ${color}`, background: scored ? color : "transparent" }}
         />

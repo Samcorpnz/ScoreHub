@@ -84,44 +84,46 @@ function applyBallRuns(
   batter1: CricketBatter | undefined,
   bowler: CricketBowler | undefined,
 ): number {
-  if (payload.isWide) {
-    inn.extras.wides += 1 + payload.runs;
-    inn.runs += 1 + payload.runs;
-    if (bowler) bowler.runs += 1 + payload.runs;
-    return 1 + payload.runs;
-  }
-  if (payload.isNoBall) {
-    inn.extras.noBalls += 1;
-    inn.runs += 1 + payload.runs;
-    if (bowler) bowler.runs += 1 + payload.runs;
-    if (batter1 && payload.runs > 0) {
-      batter1.runs += payload.runs;
-      if (payload.runs === 4) batter1.fours += 1;
-      if (payload.runs === 6) batter1.sixes += 1;
-    }
-    return 1 + payload.runs;
-  }
-  if (payload.isBye) {
-    inn.extras.byes += payload.runs;
-    inn.runs += payload.runs;
-    if (batter1) batter1.ballsFaced += 1;
-    return payload.runs;
-  }
-  if (payload.isLegBye) {
-    inn.extras.legByes += payload.runs;
-    inn.runs += payload.runs;
-    if (batter1) batter1.ballsFaced += 1;
-    return payload.runs;
-  }
+  if (payload.isWide || payload.isNoBall) return applyPenaltyBall(inn, payload, batter1, bowler);
   inn.runs += payload.runs;
+  if (payload.isBye || payload.isLegBye) {
+    if (payload.isBye) inn.extras.byes += payload.runs;
+    else inn.extras.legByes += payload.runs;
+    if (batter1) batter1.ballsFaced += 1;
+    return payload.runs;
+  }
   if (batter1) {
-    batter1.runs += payload.runs;
+    creditBatterRuns(batter1, payload.runs);
     batter1.ballsFaced += 1;
-    if (payload.runs === 4) batter1.fours += 1;
-    if (payload.runs === 6) batter1.sixes += 1;
   }
   if (bowler) bowler.runs += payload.runs;
   return payload.runs;
+}
+
+// A wide or no-ball: one penalty run plus whatever was run, all charged to
+// the bowler. Runs off the bat on a no-ball still go to the batter.
+function applyPenaltyBall(
+  inn: CricketInningsState,
+  payload: CricketBallEventPayload,
+  batter1: CricketBatter | undefined,
+  bowler: CricketBowler | undefined,
+): number {
+  const conceded = 1 + payload.runs;
+  inn.runs += conceded;
+  if (bowler) bowler.runs += conceded;
+  if (payload.isWide) {
+    inn.extras.wides += conceded;
+  } else {
+    inn.extras.noBalls += 1;
+    if (batter1 && payload.runs > 0) creditBatterRuns(batter1, payload.runs);
+  }
+  return conceded;
+}
+
+function creditBatterRuns(batter: CricketBatter, runs: number): void {
+  batter.runs += runs;
+  if (runs === 4) batter.fours += 1;
+  if (runs === 6) batter.sixes += 1;
 }
 
 // Applies the dismissal (if any) for this delivery, honouring the free-hit

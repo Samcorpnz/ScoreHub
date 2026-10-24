@@ -69,7 +69,7 @@ export function describeSupportRequest(request: SupportRequest): string {
     lines.push(
       `Organisation: ${context?.organisation || "(none)"}`,
       `Role: ${context?.role || "(none)"}`,
-      `Plan: ${context?.plan || "(unknown)"}${context?.addOns?.length ? ` + ${context.addOns.join(", ")}` : ""}`,
+      `Plan: ${context?.plan || "(unknown)"}${context?.addOns?.length ? " + " + context.addOns.join(", ") : ""}`,
       "",
       "Identity verified: raised by a signed-in ScoreHub user.",
     );

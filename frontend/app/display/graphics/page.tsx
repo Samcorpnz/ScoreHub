@@ -37,7 +37,7 @@ export default function GraphicsDisplay() {
   // Read once from the URL. Only consumed by useRoster, whose result is empty
   // until its fetch resolves, so the server and first client render agree.
   const [org] = useState<string | null>(() =>
-    typeof globalThis.window === "undefined" ? null : new URLSearchParams(globalThis.location.search).get("org"),
+    globalThis.window === undefined ? null : new URLSearchParams(globalThis.location.search).get("org"),
   );
   // Only the ids currently on the live feed are fetched from the roster
   // endpoint (which returns nothing for ids it isn't given) — the whole-roster

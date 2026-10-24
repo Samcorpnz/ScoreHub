@@ -20,9 +20,10 @@ export function localFixtureTimeToUtc(value: string): string | null {
   const text = value.trim();
   if (!text) return null;
   const dateOnly = DATE_ONLY.exec(text);
+  const isoText = hasExplicitOffset(text) ? text : text.replace(" ", "T");
   const parsed = dateOnly
     ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(hasExplicitOffset(text) ? text : text.replace(" ", "T"));
+    : new Date(isoText);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 

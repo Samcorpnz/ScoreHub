@@ -164,14 +164,24 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   });
 }
 
+// A pre-migration add-on on its own subscription: metadata names the account,
+// or (older ones) the account holds the subscription id.
+async function findLegacyAddOnAccount(subscription: Stripe.Subscription) {
+  const accountId = subscription.metadata?.accountId;
+  return accountId
+    ? prisma.account.findUnique({ where: { id: accountId } })
+    : findAccountByAddOnSubscription(subscription.id);
+}
+
+function isEndingWithAccess(subscription: Stripe.Subscription): boolean {
+  return Boolean(subscription.cancel_at_period_end || subscription.cancel_at) && keepsPaidAccess(subscription.status);
+}
+
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<void> {
   const legacy = legacyAddOn(subscription);
   if (legacy === "migrated") return;
   if (legacy) {
-    const accountId = subscription.metadata?.accountId;
-    const account = accountId
-      ? await prisma.account.findUnique({ where: { id: accountId } })
-      : await findAccountByAddOnSubscription(subscription.id);
+    const account = await findLegacyAddOnAccount(subscription);
     if (!account) return;
     if (keepsPaidAccess(subscription.status)) {
       await addAddOn(account.id, legacy, subscription.id);
@@ -186,9 +196,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   // Set to end (here or in the billing portal): collect mid-period charges
   // that were waiting for a renewal invoice that won't now come.
-  if ((subscription.cancel_at_period_end || subscription.cancel_at) && keepsPaidAccess(subscription.status)) {
-    await invoicePendingCharges(getStripe(), subscription);
-  }
+  if (isEndingWithAccess(subscription)) await invoicePendingCharges(getStripe(), subscription);
 
   const discountUsed = !account.upgradeDiscountUsedAt && await hasUpgradeDiscount(subscription);
   const { nowFree, previousPlan } = await syncAccountFromSubscription(
@@ -230,10 +238,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
   const legacy = legacyAddOn(subscription);
   if (legacy === "migrated") return;
   if (legacy) {
-    const accountId = subscription.metadata?.accountId;
-    const account = accountId
-      ? await prisma.account.findUnique({ where: { id: accountId } })
-      : await findAccountByAddOnSubscription(subscription.id);
+    const account = await findLegacyAddOnAccount(subscription);
     if (account) await removeAddOn(account.id, legacy);
     return;
   }

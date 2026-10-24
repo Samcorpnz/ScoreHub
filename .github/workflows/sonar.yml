@@ -31,7 +31,13 @@ jobs:
       - run: npm run test:coverage --workspace=relay
       - run: npm run test:coverage --workspace=bridge
 
+      # See scripts/sonar-version.sh — keeps the new-code baseline moving.
+      - id: version
+        run: echo "value=$(scripts/sonar-version.sh)" >> "$GITHUB_OUTPUT"
+
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: -Dsonar.projectVersion=${{ steps.version.outputs.value }}
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

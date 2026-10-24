@@ -128,18 +128,22 @@ export function evaluate(s: Summary, t: Thresholds): Verdict {
   if (s.actionsSent === 0) failures.push("no score actions were sent, so nothing was measured");
   if (s.sequenceRegressions > 0) failures.push(`${s.sequenceRegressions} out-of-order sequenceId(s) seen by viewers`);
 
-  if (s.viewersChecked > 0) {
-    if (s.latencyMs.length === 0) {
-      failures.push("no viewer ever observed a score change (0 latency samples)");
-    } else {
-      const p95 = percentile(s.latencyMs, 95);
-      const p99 = percentile(s.latencyMs, 99);
-      if (p95 > t.p95LatencyMs) failures.push(`p95 latency ${p95.toFixed(0)}ms > ${t.p95LatencyMs}ms`);
-      if (p99 > t.p99LatencyMs) failures.push(`p99 latency ${p99.toFixed(0)}ms > ${t.p99LatencyMs}ms`);
-    }
-    if (s.viewersDiverged > t.maxDivergedViewers) {
-      failures.push(`${s.viewersDiverged} viewer(s) ended on a different score than their controller (max ${t.maxDivergedViewers})`);
-    }
-  }
+  if (s.viewersChecked > 0) failures.push(...viewerFailures(s, t));
   return { pass: failures.length === 0, failures };
+}
+
+function viewerFailures(s: Summary, t: Thresholds): string[] {
+  const failures: string[] = [];
+  if (s.latencyMs.length === 0) {
+    failures.push("no viewer ever observed a score change (0 latency samples)");
+  } else {
+    const p95 = percentile(s.latencyMs, 95);
+    const p99 = percentile(s.latencyMs, 99);
+    if (p95 > t.p95LatencyMs) failures.push(`p95 latency ${p95.toFixed(0)}ms > ${t.p95LatencyMs}ms`);
+    if (p99 > t.p99LatencyMs) failures.push(`p99 latency ${p99.toFixed(0)}ms > ${t.p99LatencyMs}ms`);
+  }
+  if (s.viewersDiverged > t.maxDivergedViewers) {
+    failures.push(`${s.viewersDiverged} viewer(s) ended on a different score than their controller (max ${t.maxDivergedViewers})`);
+  }
+  return failures;
 }
