@@ -1,9 +1,12 @@
 name: SonarQube
 
+# main only. The shared SonarQube is Community edition: one result per
+# project, no PR analysis, so a PR scan (Dependabot opens several a day)
+# just overwrites main's result with the PR's. Local pre-push scans
+# (scripts/sonar-scan.sh) cover work in progress.
 on:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
