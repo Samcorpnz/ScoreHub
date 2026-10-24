@@ -1,0 +1,23 @@
+# CI-only Compose override, layered over the root docker-compose.yml by
+# test.yml's E2E job: `docker compose -f docker-compose.yml -f
+# .github/docker-compose.ci-cache.yml build`. Stores image build layers in the
+# GitHub Actions cache so the `npm ci` layer (~40s per image) is reused until
+# package-lock.json changes. mode=max is needed for that: npm ci lives in the
+# builder stage, which mode=min wouldn't export. Kept out of the root file so
+# local `docker compose up --build` is unchanged.
+#
+# type=gha needs the runner's cache credentials in the environment of the step
+# running the build, which test.yml exposes with crazy-max/ghaction-github-runtime.
+services:
+  relay:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-relay
+      cache_to:
+        - type=gha,scope=e2e-relay,mode=max
+  frontend:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-frontend
+      cache_to:
+        - type=gha,scope=e2e-frontend,mode=max

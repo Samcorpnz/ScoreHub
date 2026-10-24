@@ -29,8 +29,9 @@ installer published as a GitHub Release asset by the `bridge-release` CI pipelin
 Installers are **not** stored in R2/S3 — the repo is public, so release assets are already public
 URLs, and `electron-updater` (SA-92) consumes the GitHub release feed natively; see the SA-88 epic
 for the full decision). All three build/deploy independently of `frontend/`'s Vercel pipeline, but
-share its gating: `deploy.yml`'s `deploy-marketing`/`deploy-help`/`deploy-downloads` jobs push to
-Cloudflare Workers on every push to `main`, behind the same `production` GitHub Environment
+share its gating: `deploy.yml`'s single `deploy-sites` job pushes to
+Cloudflare Workers on every push to `main` (each site only when its folder changed since the last
+successful deploy run; `workflow_dispatch` deploys all three), behind the same `production` GitHub Environment
 required-reviewer gate as relay/frontend (needs a `CLOUDFLARE_API_TOKEN` repo secret, scoped to
 account `c0c396b5f4c3cf71c2ecb3821febaf92`). UAT (`uat` branch) is ungated: `help/` auto-deploys on
 every push to `uat` (`deploy-uat.yml`'s `deploy-help-uat` job), while `marketing/` and `downloads/`
