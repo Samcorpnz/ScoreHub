@@ -17,6 +17,16 @@ permissions:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
+    with:
+      skip-e2e-rest: true
+    # Pushes landing in quick succession each used to run the full suite before
+    # cancel-superseded (below) could cancel the older ones. This cancels an
+    # older run's tests as soon as a newer push arrives; its deploy jobs are then
+    # skipped. Scoped to the test job only — an approved, mid-deploy run is never
+    # cancelled (see cancel-superseded for why).
+    concurrency:
+      group: deploy-tests-${{ github.ref }}
+      cancel-in-progress: true
 
   # A run paused at the production approval gate stays approvable indefinitely,
   # and approving an old one would ship that older commit over a newer deploy.
@@ -123,6 +133,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Relay + frontend smoke checks
         run: node scripts/smoke.mjs --relay "$SMOKE_RELAY_URL" --frontend "$SMOKE_FRONTEND_URL" --expect multi --auth "$SMOKE_AUTH_MODE" --wait 180
+      # Deliberately not using test.yml's Playwright browser cache: this job
+      # holds production smoke credentials, so it installs a fresh browser
+      # rather than running one restored from a cache other jobs can write.
       - name: Install Chromium for the display-page check
         if: env.SMOKE_CONTROL_TOKEN != ''
         working-directory: frontend
@@ -139,66 +152,75 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  deploy-marketing:
-    name: Deploy marketing site (Cloudflare Worker)
+  # The three standalone Cloudflare Workers (marketing site, help centre,
+  # downloads redirect) in one job, behind the same production-environment gate
+  # as relay/frontend. They were three jobs, each billed a full minute for well
+  # under one minute of work. Each site deploys only when something under its
+  # folder (or this workflow) changed since the last fully successful deploy
+  # run — not since the previous push, since a superseded run that got cancelled
+  # never deployed its changes. workflow_dispatch deploys all three.
+  deploy-sites:
+    name: Deploy marketing, help, downloads (Cloudflare Workers)
     needs: test
     runs-on: ubuntu-24.04
-    # Same production-environment gate as relay/frontend above — previously
-    # this site deployed manually (`cd marketing && npm run build && npx
-    # wrangler deploy`) with no CI and no review step at all.
     environment: production
-    defaults:
-      run:
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Work out which sites changed
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty')
+          all=false
+          if [ "$GITHUB_EVENT_NAME" != "push" ] || [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "No usable previous deploy (event=$GITHUB_EVENT_NAME, base=${base:-none}); deploying every site"
+            all=true
+          else
+            echo "Diffing against last successful deploy $base"
+            changed=$(git diff --name-only "$base" "$GITHUB_SHA")
+          fi
+          for site in marketing help downloads; do
+            if [ "$all" = true ] || grep -qE "^($site/|\.github/workflows/deploy\.yml$)" <<<"$changed"; then
+              echo "$site: deploying"
+              echo "$site=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$site: unchanged, skipping"
+              echo "$site=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            marketing/package-lock.json
+            help/package-lock.json
+            downloads/package-lock.json
+      # `!cancelled()` so one site failing doesn't stop the others deploying,
+      # as when they were separate jobs; the job still goes red.
+      - name: Deploy marketing site
+        if: ${{ !cancelled() && steps.changed.outputs.marketing == 'true' }}
         working-directory: marketing
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: marketing/package-lock.json
-      - run: npm ci
-      - run: npm run deploy
+        run: npm ci && npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-  deploy-help:
-    name: Deploy help centre (Cloudflare Worker)
-    needs: test
-    runs-on: ubuntu-24.04
-    environment: production
-    defaults:
-      run:
+      - name: Deploy help centre
+        if: ${{ !cancelled() && steps.changed.outputs.help == 'true' }}
         working-directory: help
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: help/package-lock.json
-      - run: npm ci
-      - run: npm run deploy
+        run: npm ci && npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-  deploy-downloads:
-    name: Deploy downloads redirect (Cloudflare Worker)
-    needs: test
-    runs-on: ubuntu-24.04
-    environment: production
-    defaults:
-      run:
+      - name: Deploy downloads redirect
+        if: ${{ !cancelled() && steps.changed.outputs.downloads == 'true' }}
         working-directory: downloads
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: downloads/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run deploy
+        run: npm ci && npm test && npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

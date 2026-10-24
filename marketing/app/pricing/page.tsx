@@ -38,7 +38,7 @@ const faq: FaqItem[] = [
   },
   {
     q: "Can I use the add-ons on the Free plan?",
-    a: "No. The Graphics and Data Feed add-ons need an active Pro or Venue plan. Each add-on is billed separately on top of the plan.",
+    a: "No. The Graphics and Data Feed add-ons need an active Pro or Venue plan. Add-ons are billed on the same invoice as your plan, monthly or annually to match it.",
   },
   {
     q: "Does one plan cover more than one organisation?",

@@ -93,6 +93,9 @@ beforeEach(() => {
   seedToken("bridge-pinned", { type: "BRIDGE", orgId: "org-paid", matchId: "m-live" });
   seedToken("bridge-free", { type: "BRIDGE", orgId: "org-free" });
   seedToken("control-free", { type: "CONTROL", orgId: "org-free" });
+  seedToken("feed-paid", { type: "DATA_FEED", orgId: "org-paid" });
+  seedToken("feed-pinned", { type: "DATA_FEED", orgId: "org-paid", matchId: "m-next" });
+  seedToken("feed-free", { type: "DATA_FEED", orgId: "org-free" });
   seedMatch("m-live", { orgId: "org-paid" });
   seedMatch("m-next", { orgId: "org-paid", status: "SCHEDULED", homeName: "Kea", visitorName: "Tui" });
   seedMatch("m-done", { orgId: "org-paid", status: "ENDED" });
@@ -163,5 +166,28 @@ describe("GET /api/matches", () => {
     const res = await request(app).get("/api/matches").set("x-control-secret", "control-free");
     expect(res.status).toBe(200);
     expect(res.body.matches).toEqual([expect.objectContaining({ id: "m-free", displayToken: "dt-m-free" })]);
+  });
+
+  it("lists the org's live and upcoming matches for a data feed token, without display tokens", async () => {
+    const res = await request(app).get("/api/matches").set("x-data-feed-secret", "feed-paid");
+    expect(res.status).toBe(200);
+    expect(res.body.pinnedMatchId).toBeNull();
+    expect(res.body.matches.map((m: { id: string }) => m.id).sort()).toEqual(["m-live", "m-next"]);
+    expect(res.body.matches[0]).not.toHaveProperty("displayToken");
+  });
+
+  it("returns only the pinned match for a pinned data feed token", async () => {
+    const res = await request(app).get("/api/matches").set("x-data-feed-secret", "feed-pinned");
+    expect(res.body.pinnedMatchId).toBe("m-next");
+    expect(res.body.matches.map((m: { id: string }) => m.id)).toEqual(["m-next"]);
+  });
+
+  it("401s a bad data feed token and 403s one whose org lacks the add-on", async () => {
+    expect((await request(app).get("/api/matches").set("x-data-feed-secret", "nope")).status).toBe(401);
+    // A Bridge token isn't a data feed token, even sent in the data feed header.
+    expect((await request(app).get("/api/matches").set("x-data-feed-secret", "bridge-paid")).status).toBe(401);
+    const res = await request(app).get("/api/matches").set("x-data-feed-secret", "feed-free");
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/data-feed add-on/);
   });
 });

@@ -17,7 +17,8 @@ export const metadata = { title: "Data Feed add-on" };
 | --- | --- | --- |
 | Data Feed | $39 | $390 |
 
-It's an add-on, not a plan — it bills on its own subscription, on top of whichever plan you're on.
+It's an add-on, not a plan — it's added to your Pro or Venue subscription, so it renews with your
+plan and appears on the same invoice. It's billed monthly or annually to match your plan.
 It requires an active **Pro** or **Venue** plan; it isn't available on Free.
 
 ## Do I need it?
@@ -34,18 +35,22 @@ It requires an active **Pro** or **Venue** plan; it isn't available on Free.
 
 ## Buying it
 
-On the Account page, an Admin scrolls to the **Add-ons** card, chooses Monthly or Annual next to
-Data Feed, and selects **Add Data Feed**. Checkout works the same way as a plan upgrade, and the
-add-on activates as soon as payment completes.
+On the Account page, an Admin scrolls to the **Add-ons** card and selects **Add Data Feed**.
+ScoreHub shows what it will cost — nothing today; the rest of the current billing period is added
+to your next invoice — and you select **Confirm**. It's charged to the card already on file, so
+there's no checkout, and the add-on works straight away.
 
 ## Connecting your graphics software
 
-1. On a match's control panel, open the **Settings** tab and find the **Data Feed** card. Admins
-   and Managers see it. (The **Outputs** tab has a **Graphics Software** note that points here.)
-2. Enter a label, such as "Singular.live", and select **Generate Token**. Copy the token straight
-   away — it's shown once.
+1. Open the **Account** page and find the **Data Feed Integrations** card. Admins and Managers see
+   it. (A match's **Outputs** tab has a **Graphics Software** note that points here.)
+2. Enter a label, such as "Singular.live", and select **Generate Token**. Leave the selector on
+   **All matches** so one token works for every match; choose a match only to lock the token to
+   it. Copy the token straight away — it's shown once.
 3. In your graphics software, request the feed address shown on the card, sending the token in an
-   `x-data-feed-secret` header.
+   `x-data-feed-secret` header and the match's ID as `matchId`. The card also shows the address
+   that lists your matches and their IDs — see the
+   [developer reference](/connecting-the-bridge/developer-reference#data-feed).
 
 The feed is a `GET` request that returns the current match state as JSON:
 
@@ -73,11 +78,11 @@ For every field, the limits and the error responses, see the
 address that takes the same token — see
 [Match events](/connecting-the-bridge/developer-reference#match-events).
 
-To cut off an integration, select **Revoke** next to its token on the Data Feed card.
+To cut off an integration, select **Revoke** next to its token on the Data Feed Integrations card.
 
 ## Cancelling the add-on
 
-The add-on cancels independently of your plan, from **Cancel add-on** on the Account page. It
-stays active until the end of the current billing period — see
+Select **Cancel add-on** on the Account page; your plan carries on as it is. The add-on stays
+active until the end of the billing period you've paid for, and isn't on your next invoice — see
 [Cancelling your plan](/billing/cancelling). Once it lapses, requests with a data feed token are
 refused and Bridge can no longer connect, so switch to scoring from the control panel first.

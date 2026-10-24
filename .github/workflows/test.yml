@@ -9,7 +9,15 @@ on:
     paths-ignore:
       - "infra/betterstack/**"
       - ".github/workflows/infra-betterstack.yml"
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      # The informational E2E specs are ~12 of the E2E job's ~16 minutes and
+      # can never fail the job. deploy.yml sets this: every commit on main
+      # arrives through a PR that already ran them, so the deploy only needs
+      # the gating @critical tier.
+      skip-e2e-rest:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -189,13 +197,33 @@ jobs:
       # the other STRIPE_* vars) straight from this job's env — no
       # --build-arg needed, same as how NEXT_PUBLIC_RELAY_URL is already
       # wired through.
+      # No build-layer cache here on purpose. With `docker compose build`, the
+      # only way to reach the Actions cache is exporting ACTIONS_RUNTIME_TOKEN
+      # to every later step, which hands a cache-write token to the test code
+      # and all its dependencies. That bought ~20s net (only the npm ci layer
+      # is reusable; buildx setup and cache export ate the rest).
       - run: docker compose build
       - run: docker compose up -d
       - name: Wait for the stack to become healthy
         run: |
           timeout 120 sh -c 'until curl -sf http://localhost:3000 && curl -sf http://localhost:4000/health; do sleep 2; done'
 
-      - run: npx playwright install --with-deps chromium
+      # The browser download is cached per Playwright version; the apt system
+      # deps aren't cacheable this way, so a cache hit still installs those.
+      - name: Read Playwright version
+        id: pw
+        working-directory: frontend
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
         working-directory: frontend
       # DATABASE_URL is step-scoped, not job env: docker-compose.yml
       # interpolates ${DATABASE_URL:-...@postgres:5432/...} from the shell
@@ -208,8 +236,10 @@ jobs:
         env:
           DATABASE_URL: postgresql://scorehub:scorehub@localhost:5432/scorehub
 
+      # `!inputs.skip-e2e-rest` rather than `== false`: on pull_request there
+      # are no inputs, and null == false is true in Actions expressions.
       - name: E2E remaining specs (informational)
-        if: always()
+        if: always() && !inputs.skip-e2e-rest
         continue-on-error: true
         run: npm run test:e2e:rest
         env:

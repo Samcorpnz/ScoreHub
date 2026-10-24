@@ -29,8 +29,9 @@ installer published as a GitHub Release asset by the `bridge-release` CI pipelin
 Installers are **not** stored in R2/S3 — the repo is public, so release assets are already public
 URLs, and `electron-updater` (SA-92) consumes the GitHub release feed natively; see the SA-88 epic
 for the full decision). All three build/deploy independently of `frontend/`'s Vercel pipeline, but
-share its gating: `deploy.yml`'s `deploy-marketing`/`deploy-help`/`deploy-downloads` jobs push to
-Cloudflare Workers on every push to `main`, behind the same `production` GitHub Environment
+share its gating: `deploy.yml`'s single `deploy-sites` job pushes to
+Cloudflare Workers on every push to `main` (each site only when its folder changed since the last
+successful deploy run; `workflow_dispatch` deploys all three), behind the same `production` GitHub Environment
 required-reviewer gate as relay/frontend (needs a `CLOUDFLARE_API_TOKEN` repo secret, scoped to
 account `c0c396b5f4c3cf71c2ecb3821febaf92`). UAT (`uat` branch) is ungated: `help/` and `downloads/`
 auto-deploy on every push to `uat` (`deploy-uat.yml`'s `deploy-help-uat`/`deploy-downloads-uat`
@@ -128,7 +129,7 @@ different caller:
 - **CONTROL ScopedToken** — long-lived, DB-backed (hashed with SHA-256, never stored raw), for
   Stream Deck / Control API callers that can't do an interactive login. ("Control API" is the
   product name for the `/action/*` routes; "webhooks" is reserved for outbound notifications.)
-- **BRIDGE ScopedToken** — long-lived, per-org, generated from the control panel's Settings tab;
+- **BRIDGE ScopedToken** — long-lived, per-org, generated from the Account page's Bridge Devices card;
   authenticates the venue-laptop bridge process.
 
 When `DATABASE_URL` is unset (local dev / Jest, or a self-hosted single-tenant deployment with no

@@ -82,7 +82,7 @@ The bridge ships a built-in admin UI (port 4002 by default) for picking a COM
 port and monitoring connection status — see `bridge/src/ui`. For manual setup:
 1. `npm run build` then `npm start` (or just `npm run dev`)
 2. Set `RELAY_URL` in `.env` to the Fly.io URL
-3. Generate a bridge token from the control panel's Settings tab (Bridge Devices card) and set it as `BRIDGE_SECRET`/the bridge's token field
+3. Generate a bridge token from the Account page (Bridge Devices card) and set it as `BRIDGE_SECRET`/the bridge's token field
 4. Set `SERIAL_PORT` to your COM port (Windows: `COM3`, Mac/Linux: `/dev/tty.usbserial-XXXX`)
 
 ### Human-gated production deploys (SA-12)

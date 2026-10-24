@@ -45,6 +45,19 @@ describe("buildCsp", () => {
     expect(directive(buildCsp({ isDev: true }), "script-src")).toContain("'unsafe-eval'");
   });
 
+  it("allows the Vercel toolbar and Cloudflare beacon on previews only", () => {
+    const preview = buildCsp({ isPreview: true });
+    expect(directive(preview, "script-src")).toEqual(
+      expect.arrayContaining(["https://vercel.live", "https://static.cloudflareinsights.com"]),
+    );
+    expect(directive(preview, "frame-src")).toContain("https://vercel.live");
+    expect(directive(preview, "connect-src")).toEqual(
+      expect.arrayContaining(["https://vercel.live", "https://cloudflareinsights.com"]),
+    );
+    expect(csp).not.toContain("vercel.live");
+    expect(csp).not.toContain("cloudflareinsights");
+  });
+
   it("locks down object, base and form targets", () => {
     expect(directive(csp, "object-src")).toEqual(["'none'"]);
     expect(directive(csp, "base-uri")).toEqual(["'self'"]);

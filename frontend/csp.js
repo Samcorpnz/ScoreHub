@@ -35,21 +35,28 @@ function origins(httpUrl) {
   }
 }
 
-/** @param {{ relayUrl?: string, sentryDsn?: string, sentryEnvironment?: string, isDev?: boolean, report?: boolean }} [options] */
-function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false, report = true } = {}) {
+// Preview deployments (UAT, PR previews) only: Vercel injects its toolbar
+// there, and UAT sits behind Cloudflare, which injects its Web Analytics
+// beacon. Production is served by Vercel directly, so gets neither.
+const vercelToolbar = "https://vercel.live";
+const cloudflareBeacon = "https://static.cloudflareinsights.com";
+
+/** @param {{ relayUrl?: string, sentryDsn?: string, sentryEnvironment?: string, isDev?: boolean, isPreview?: boolean, report?: boolean }} [options] */
+function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false, isPreview = false, report = true } = {}) {
   const relay = origins(relayUrl);
   const sentryIngest = sentryDsn ? origins(sentryDsn).slice(0, 1) : [];
   const stripeScript = ["https://js.stripe.com", "https://*.js.stripe.com", "https://checkout.stripe.com"];
   const turnstile = "https://challenges.cloudflare.com";
+  const preview = (...sources) => (isPreview ? sources : []);
 
   const directives = {
     "default-src": ["'self'"],
     // 'unsafe-eval' is dev-only: React uses eval to rebuild server stacks.
-    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...stripeScript, turnstile],
+    "script-src": ["'self'", "'unsafe-inline'", ...(isDev ? ["'unsafe-eval'"] : []), ...stripeScript, turnstile, ...preview(vercelToolbar, cloudflareBeacon)],
     // Components style with inline `style` attributes, which nonces can't cover.
     // Google Fonts: display themes load their chosen font at runtime.
-    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-    "font-src": ["'self'", "data:", "https://fonts.gstatic.com"],
+    "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", ...preview(vercelToolbar)],
+    "font-src": ["'self'", "data:", "https://fonts.gstatic.com", ...preview(vercelToolbar, "https://assets.vercel.com")],
     // Logos and player photos can be any https URL a customer supplies.
     "img-src": ["'self'", "data:", "blob:", "https:", ...relay.slice(0, 1)],
     "media-src": ["'self'", "blob:", "https:", ...relay.slice(0, 1)],
@@ -59,10 +66,11 @@ function buildCsp({ relayUrl, sentryDsn, sentryEnvironment, isDev = false, repor
       ...sentryIngest,
       "https://api.stripe.com",
       "https://checkout.stripe.com",
+      ...preview(vercelToolbar, "wss://ws-us3.pusher.com", "https://cloudflareinsights.com"),
       // Dev only: Turbopack's HMR socket.
       ...(isDev ? ["ws:"] : []),
     ],
-    "frame-src": ["'self'", turnstile, ...stripeScript, "https://hooks.stripe.com"],
+    "frame-src": ["'self'", turnstile, ...stripeScript, "https://hooks.stripe.com", ...preview(vercelToolbar)],
     "worker-src": ["'self'", "blob:"],
     "manifest-src": ["'self'"],
     "object-src": ["'none'"],

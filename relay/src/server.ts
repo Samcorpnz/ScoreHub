@@ -270,7 +270,19 @@ export function createServer(options: ServerOptions = {}) {
     res.setHeader("Strict-Transport-Security", "max-age=63072000");
     next();
   });
-  app.use(cors({ origin: ALLOWED_ORIGINS }));
+  // An explicit allowlist check rather than passing the array straight to
+  // cors/socket.io — same behaviour (reflect the Origin only when listed), but
+  // visibly so: CodeQL can't follow ALLOWED_ORIGINS back to its env var and
+  // flags the bare array as possibly permissive (SA code-scanning #28).
+  // Requests with no Origin (curl, the bridge, Stream Deck) get no CORS
+  // headers either way, so passing them through changes nothing.
+  const corsOrigin = (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: string | false) => void,
+  ): void => {
+    callback(null, origin !== undefined && ALLOWED_ORIGINS.includes(origin) ? origin : false);
+  };
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
   // nosniff on all served uploads; SVGs (which can carry markup) get a
   // locked-down CSP as belt-and-braces alongside upload-time sanitization.
@@ -285,7 +297,7 @@ export function createServer(options: ServerOptions = {}) {
 
   const httpServer = createHttpServer(app);
   const io = new Server(httpServer, {
-    cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"] },
+    cors: { origin: corsOrigin, methods: ["GET", "POST"] },
   });
 
   // When REDIS_URL is set, broadcasts reach sockets connected to other relay
@@ -1067,22 +1079,34 @@ export function createServer(options: ServerOptions = {}) {
   // Feeds the match pickers in the Bridge app (x-bridge-secret) and the
   // Stream Deck plugin (x-control-secret) — both hold tokens that usually
   // aren't pinned to a match, so they have to choose one themselves (SA-145).
+  // The match list a Bridge, Stream Deck or data feed token picks from — the
+  // token belongs to the org, and the caller chooses which match to feed or
+  // read unless the token is pinned to one.
   app.get("/api/matches", controlRateLimit, async (req, res) => {
     const bridgeSecret = req.headers["x-bridge-secret"];
+    const dataFeedSecret = req.headers["x-data-feed-secret"];
     const controlSecret = req.headers["x-control-secret"];
-    const asBridge = typeof bridgeSecret === "string";
-    const result = asBridge
-      ? await verifyBridgeSecret(bridgeSecret, BRIDGE_SECRET)
-      : await verifyActionSecret(typeof controlSecret === "string" ? controlSecret : undefined, CONTROL_SECRET);
+    let caller: "bridge" | "data-feed" | "control";
+    if (typeof bridgeSecret === "string") caller = "bridge";
+    else if (typeof dataFeedSecret === "string") caller = "data-feed";
+    else caller = "control";
+    let result;
+    if (caller === "bridge") result = await verifyBridgeSecret(bridgeSecret as string, BRIDGE_SECRET);
+    else if (caller === "data-feed") result = await verifyDataFeedSecret(dataFeedSecret as string, DATA_FEED_SECRET);
+    else result = await verifyActionSecret(typeof controlSecret === "string" ? controlSecret : undefined, CONTROL_SECRET);
     if (!result) {
       res.status(401).json({ error: "unauthorized" });
       return;
     }
-    if (asBridge && !(await orgHasAddOn(result.orgId, "data-feed"))) {
-      res.status(403).json({ error: BRIDGE_ADDON_REQUIRED_MESSAGE });
+    if (caller !== "control" && !(await orgHasAddOn(result.orgId, "data-feed"))) {
+      res.status(403).json({
+        error: caller === "bridge"
+          ? BRIDGE_ADDON_REQUIRED_MESSAGE
+          : "This feature requires the data-feed add-on — upgrade at /account/billing",
+      });
       return;
     }
-    res.json(await listSelectableMatches(result, !asBridge));
+    res.json(await listSelectableMatches(result, caller === "control"));
   });
 
   app.get("/state", controlRateLimit, async (req, res) => {

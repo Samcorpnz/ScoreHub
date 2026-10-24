@@ -1,0 +1,52 @@
+name: Dependency Audit
+
+# Daily check for advisories published since the last PR. test.yml's audits only
+# run when code changes, and Dependabot can take hours to raise an alert, or
+# can't fix one at all when a parent pins an exact version. A failed scheduled
+# run emails the person who last edited the cron below. It checks lockfiles only,
+# with no install, so it takes about a minute per branch.
+#
+# Scheduled workflows only run from the default branch, so this starts running
+# once it reaches `main`. It audits both `main` and `uat`.
+#
+# Excluded: stream-deck-plugin/. @elgato/utils (latest 0.6.1) requires zod@^3,
+# and GHSA-mrhx-c7xc-m3w5 is only fixed in zod 4.6.6. That leaves no fix to
+# apply, so including it would fail every day. The plugin uses zod only on the
+# local Stream Deck JSON-RPC channel. Dependabot alerts still cover its lockfile.
+# Add it back once @elgato/utils supports zod 4.
+on:
+  schedule:
+    - cron: '23 18 * * *'  # 07:23 NZDT / 06:23 NZST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+
+      - name: Audit workspace (frontend, relay, bridge, packages)
+        if: ${{ !cancelled() }}
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Audit downloads
+        if: ${{ !cancelled() }}
+        run: npm audit --package-lock-only --audit-level=high
+        working-directory: downloads
+
+      - name: Audit help
+        if: ${{ !cancelled() }}
+        run: npm audit --package-lock-only --audit-level=high
+        working-directory: help
+
+      - name: Audit marketing
+        if: ${{ !cancelled() }}
+        run: npm audit --package-lock-only --audit-level=high
+        working-directory: marketing

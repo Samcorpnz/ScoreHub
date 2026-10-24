@@ -59,7 +59,7 @@ export interface MatchPickerList {
   matches: SelectableMatch[];
 }
 
-// Matches a Bridge or Stream Deck token may attach to: the org's live and
+// Matches a Bridge, Stream Deck or data feed token may attach to: the org's live and
 // upcoming ones (or just the pinned one). `includeDisplayToken` is for
 // CONTROL-token callers only — the Stream Deck plugin needs it to open its
 // read-only state socket once DISPLAY_TOKEN_REQUIRED is on.

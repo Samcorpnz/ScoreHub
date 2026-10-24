@@ -20,6 +20,7 @@ const cspOptions = {
   sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   sentryEnvironment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
   isDev: process.env.NODE_ENV === "development",
+  isPreview: process.env.VERCEL_ENV === "preview",
 };
 const contentSecurityPolicy = buildCsp({ ...cspOptions, report: false });
 

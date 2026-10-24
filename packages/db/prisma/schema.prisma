@@ -21,13 +21,19 @@ model Account {
   // pragmatic choice while there's a single add-on; revisit as a proper
   // join model if/when several independent add-ons exist.
   addOns               String[] @default([])
-  // Add-ons bill on their own Stripe subscription (separate from the base
-  // plan's stripeSubscriptionId) so an add-on purchase/cancellation never
-  // touches the base plan's subscription items. One dedicated column per
-  // add-on (see ADDON_SUBSCRIPTION_FIELD in frontend/lib/plans.ts) — becomes
-  // a join table if a third add-on makes this unwieldy.
+  // Legacy: add-ons used to bill on their own Stripe subscription, one column
+  // per add-on (see ADDON_SUBSCRIPTION_FIELD in frontend/lib/plans.ts). They
+  // are now items on the base plan's stripeSubscriptionId, so the customer
+  // gets one invoice. These stay set only for accounts not yet moved over by
+  // frontend/scripts/migrate-addon-subscriptions.ts; drop them once none are.
   graphicsSubscriptionId String?
   dataFeedSubscriptionId String?
+  // Add-ons removed from the subscription that stay usable until the period
+  // already paid for runs out, at addOnsEndAt. Stripe has no per-item
+  // cancel-at-period-end, so the item is removed straight away (without a
+  // refund) and access is ended here, by the renewal webhook.
+  addOnsEnding         String[] @default([])
+  addOnsEndAt          DateTime?
   // Set the first time a plan-upgrade discount (see UPGRADE_DISCOUNT_COUPON_ID
   // in frontend/lib/plans.ts) is applied to this account, so the offer can't
   // be re-triggered by downgrading and upgrading again.
