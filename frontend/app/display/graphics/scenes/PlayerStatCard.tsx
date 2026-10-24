@@ -77,7 +77,7 @@ function Card({ children }: { readonly children: React.ReactNode }) {
         background: "var(--graphics-card-bg, rgba(7,9,15,0.92))",
         borderRadius: 10,
         padding: "14px 20px",
-        boxShadow: "0 4px 32px rgba(0,0,0,0.7)",
+        boxShadow: "var(--keyed-panel-shadow, 0 4px 32px rgba(0,0,0,0.7))",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
         minWidth: 280,

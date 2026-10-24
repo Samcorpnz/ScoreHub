@@ -256,7 +256,7 @@ export const SOLUTIONS: Solution[] = [
       },
       {
         q: "Do I need a chroma key?",
-        a: "No. The overlay, scorebug and graphics displays have transparent backgrounds, so they layer straight over your camera.",
+        a: "No. The overlay, scorebug and graphics displays have transparent backgrounds, so they layer straight over your camera. If your switcher can't take a transparent source, such as an ATEM over HDMI, the Graphics add-on gives you green and blue key versions.",
       },
       {
         q: "Which streaming software does it work with?",

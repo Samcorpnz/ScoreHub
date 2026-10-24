@@ -45,7 +45,7 @@ jobs:
       group: smoke-uat
       cancel-in-progress: false
     env:
-      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL_UAT || 'https://scorehub-relay-uat.fly.dev' }}
+      SMOKE_RELAY_URL: ${{ vars.SMOKE_RELAY_URL_UAT || 'https://relay.uat.scorehub.co.nz' }}
       SMOKE_AUTH_MODE: ${{ vars.SMOKE_AUTH_MODE || 'optional' }}
       SMOKE_ORG_ID: ${{ vars.SMOKE_UAT_ORG_ID }}
       SMOKE_MATCH_ID: ${{ vars.SMOKE_UAT_MATCH_ID }}
@@ -53,7 +53,7 @@ jobs:
       SMOKE_DISPLAY_TOKEN: ${{ secrets.SMOKE_UAT_DISPLAY_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -79,13 +79,41 @@ jobs:
         working-directory: help
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: help/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npx wrangler deploy --env uat
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  # Bridge download redirect (Cloudflare Worker `scorehub-downloads-uat`,
+  # downloads.uat.scorehub.co.nz, SA-255). Serves the latest `bridge-uat-v*`
+  # pre-release; the custom domain is created by the first deploy. Manual
+  # equivalent: `cd downloads && npx wrangler deploy --env uat`.
+  deploy-downloads-uat:
+    name: Deploy downloads redirect (Cloudflare Worker UAT)
+    needs: test
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-downloads-uat
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: downloads
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: downloads/package-lock.json
+      - run: npm ci
+      - run: npm test
       - run: npx wrangler deploy --env uat
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

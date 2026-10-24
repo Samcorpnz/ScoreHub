@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { useMatchState } from "../../hooks/useMatchState";
 import { useGraphicsScene } from "../../hooks/useGraphicsScene";
+import { useChromaKey, KEYED_PANEL_VARS } from "../../hooks/useChromaKey";
 import { useDisplayTheme } from "../../hooks/useDisplayTheme";
 import { useRoster } from "../../hooks/useRoster";
 import { SCENE_REGISTRY } from "./scenes/sceneRegistry";
@@ -45,6 +46,8 @@ export default function GraphicsDisplay() {
   const roster = useRoster(org, feedPlayerIds);
   const { backgroundColor, backgroundImage: _bi, backgroundSize: _bs, backgroundPosition: _bp, textScale: _textScale, competitionLogoUrl: _cl, ...themeStyle } = useDisplayTheme(state.displayTheme);
 
+  const chromaKey = useChromaKey();
+
   useEffect(() => {
     const url = org ? `${RELAY_URL}/api/graphics/entitlement?org=${encodeURIComponent(org)}` : `${RELAY_URL}/api/graphics/entitlement`;
     fetch(url)
@@ -60,10 +63,13 @@ export default function GraphicsDisplay() {
       style={{
         ...themeStyle,
         // Themed vars (accent/font/scale) apply; background stays transparent
-        // for OBS/vMix compositing — the theme's backgroundColor is only used
+        // for OBS/vMix compositing (or a solid ?key= colour for hardware
+        // switchers) — the theme's backgroundColor is only used
         // as a tint for scene card backgrounds via --graphics-card-bg below.
-        background: "transparent",
-        "--graphics-card-bg": hexToRgba(backgroundColor ?? "#07090F", 0.92),
+        background: chromaKey ?? "transparent",
+        // Opaque cards and no shadows on a key colour (see KEYED_PANEL_VARS)
+        "--graphics-card-bg": hexToRgba(backgroundColor ?? "#07090F", chromaKey ? 1 : 0.92),
+        ...(chromaKey && KEYED_PANEL_VARS),
         width: "100vw",
         minHeight: "100vh",
         display: "flex",

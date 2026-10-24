@@ -24,20 +24,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   const body = await req.json().catch(() => ({}));
   const label = typeof body?.label === "string" ? body.label.slice(0, 100) : undefined;
   const matchId = typeof body?.matchId === "string" ? body.matchId : undefined;
-  const requestedType = body?.type === "CONTROL" || body?.type === "DATA_FEED" ? body.type : "BRIDGE";
-  const type: "BRIDGE" | "CONTROL" | "DATA_FEED" = requestedType;
+  const requestedType = body?.type === "CONTROL" || body?.type === "DATA_FEED" || body?.type === "GRAPHICS_DATA" ? body.type : "BRIDGE";
+  const type: "BRIDGE" | "CONTROL" | "DATA_FEED" | "GRAPHICS_DATA" = requestedType;
 
   // Console bridging and the third-party feed are both the paid Data Feed
   // add-on (SA-114) — the relay enforces the same thing at the bridge and
   // data-feed socket handshakes. Stream Deck (CONTROL) tokens stay ungated.
-  if (type === "DATA_FEED" || type === "BRIDGE") {
+  // The read-only GRAPHICS_DATA feed token (vMix/OBS data sources) comes
+  // with the Graphics add-on instead.
+  const requiredAddOn = type === "DATA_FEED" || type === "BRIDGE" ? "data-feed"
+    : type === "GRAPHICS_DATA" ? "graphics-operator"
+    : null;
+  if (requiredAddOn) {
     const org = await prisma.org.findUnique({
       where: { id: orgId },
       select: { account: { select: { addOns: true } } },
     });
-    if (!org?.account.addOns.includes("data-feed")) {
+    if (!org?.account.addOns.includes(requiredAddOn)) {
       return NextResponse.json(
-        { error: "This feature requires the data-feed add-on — upgrade at /account/billing" },
+        { error: `This feature requires the ${requiredAddOn} add-on — upgrade at /account/billing` },
         { status: 403 }
       );
     }

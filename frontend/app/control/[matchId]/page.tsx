@@ -290,7 +290,7 @@ function ControlPanelInner() {
             onEnded={() => router.push("/dashboard")}
           />
         )}
-        {tab === "outputs"  && <OutputsTab matchId={matchId} />}
+        {tab === "outputs"  && <OutputsTab matchId={matchId} state={state} push={push} controlToken={controlToken} />}
         {tab === "logos"    && (brandingLocked
           ? <BrandingUpgradePrompt feature="Team logos" />
           : <LogosTab state={state} push={push} controlToken={controlToken} />)}

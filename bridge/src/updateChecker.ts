@@ -6,9 +6,14 @@
  * anything — the operator is pointed at downloads.scorehub.co.nz and installs
  * manually. Superseded by electron-updater once SA-92/SA-94 land.
  *
+ * A UAT build (SA-255) instead follows `bridge-uat-v*` pre-releases and points
+ * at downloads.uat.scorehub.co.nz — the defaults come from releaseChannel.ts.
+ *
  * Automatic (scheduled) checks fail silently so nothing surfaces mid-event;
  * only a user-initiated check reports errors.
  */
+
+import { CHANNEL } from "./releaseChannel";
 
 export type UpdateStatus = "idle" | "checking" | "up-to-date" | "available" | "error";
 
@@ -25,6 +30,9 @@ export interface UpdateCheckerOptions {
   platform?: NodeJS.Platform;
   repo?: string;
   tagPrefix?: string;
+  /** Also consider GitHub pre-releases (UAT builds). */
+  includePrerelease?: boolean;
+  downloadsBase?: string;
   checkIntervalMs?: number;
   /** Manual re-checks within this window of the last completed check reuse its result. */
   manualDebounceMs?: number;
@@ -40,11 +48,9 @@ interface GitHubRelease {
 }
 
 const DEFAULT_REPO = "Samcorpnz/ScoreHub";
-const DEFAULT_TAG_PREFIX = "bridge-v";
 const DEFAULT_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_MANUAL_DEBOUNCE_MS = 10_000;
 const FETCH_TIMEOUT_MS = 10_000;
-const DOWNLOADS_BASE = "https://downloads.scorehub.co.nz";
 
 /** Parses "1.2.3" (optionally "v"-prefixed, with a -prerelease/+build suffix) into [major, minor, patch]. */
 export function parseVersion(raw: string): [number, number, number] | null {
@@ -64,11 +70,14 @@ export function isNewerVersion(candidate: string, current: string): boolean {
   return false;
 }
 
-export function downloadUrlForPlatform(platform: NodeJS.Platform): string {
-  if (platform === "darwin") return `${DOWNLOADS_BASE}/mac`;
-  if (platform === "win32") return `${DOWNLOADS_BASE}/windows`;
+export function downloadUrlForPlatform(
+  platform: NodeJS.Platform,
+  downloadsBase: string = CHANNEL.downloadsBase
+): string {
+  if (platform === "darwin") return `${downloadsBase}/mac`;
+  if (platform === "win32") return `${downloadsBase}/windows`;
   // Anything else: the root path sniffs the User-Agent itself.
-  return `${DOWNLOADS_BASE}/`;
+  return `${downloadsBase}/`;
 }
 
 export class UpdateChecker {
@@ -76,6 +85,8 @@ export class UpdateChecker {
   private readonly platform: NodeJS.Platform;
   private readonly repo: string;
   private readonly tagPrefix: string;
+  private readonly includePrerelease: boolean;
+  private readonly downloadsBase: string;
   private readonly intervalMs: number;
   private readonly manualDebounceMs: number;
   private readonly fetchImpl: typeof fetch;
@@ -90,7 +101,9 @@ export class UpdateChecker {
     this.currentVersion = opts.currentVersion;
     this.platform = opts.platform ?? process.platform;
     this.repo = opts.repo ?? DEFAULT_REPO;
-    this.tagPrefix = opts.tagPrefix ?? DEFAULT_TAG_PREFIX;
+    this.tagPrefix = opts.tagPrefix ?? CHANNEL.tagPrefix;
+    this.includePrerelease = opts.includePrerelease ?? CHANNEL.includePrerelease;
+    this.downloadsBase = opts.downloadsBase ?? CHANNEL.downloadsBase;
     this.intervalMs = opts.checkIntervalMs ?? DEFAULT_INTERVAL_MS;
     this.manualDebounceMs = opts.manualDebounceMs ?? DEFAULT_MANUAL_DEBOUNCE_MS;
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -164,7 +177,7 @@ export class UpdateChecker {
       currentVersion: this.currentVersion,
       status: available ? "available" : "up-to-date",
       latestVersion: available ? latestVersion : null,
-      downloadUrl: available ? downloadUrlForPlatform(this.platform) : null,
+      downloadUrl: available ? downloadUrlForPlatform(this.platform, this.downloadsBase) : null,
       checkedAt: this.now(),
     };
   }
@@ -187,7 +200,8 @@ export class UpdateChecker {
     // date, which a re-cut or backported tag can put out of version order.
     let best: string | null = null;
     for (const release of releases) {
-      if (release.draft || release.prerelease || !release.tag_name.startsWith(this.tagPrefix)) continue;
+      if (release.draft || !release.tag_name.startsWith(this.tagPrefix)) continue;
+      if (release.prerelease && !this.includePrerelease) continue;
       const version = release.tag_name.slice(this.tagPrefix.length);
       if (!parseVersion(version)) continue;
       if (best === null || isNewerVersion(version, best)) best = version;

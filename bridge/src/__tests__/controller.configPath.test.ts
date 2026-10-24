@@ -95,8 +95,8 @@ describe("controller default relay URL", () => {
 
   it("is overridden by RELAY_URL", () => {
     process.env.BRIDGE_CONFIG_DIR = "/fake/userData";
-    process.env.RELAY_URL = "https://scorehub-relay-uat.fly.dev";
-    expect(freshDefaultRelayUrl()).toBe("https://scorehub-relay-uat.fly.dev");
+    process.env.RELAY_URL = "https://relay.uat.scorehub.co.nz";
+    expect(freshDefaultRelayUrl()).toBe("https://relay.uat.scorehub.co.nz");
   });
 
   it("never replaces a relay URL the operator already saved", () => {

@@ -7,6 +7,8 @@ export type {
   NetballTeamStats,
   NetballMatchStats,
   DisplayTheme,
+  DisplayOutputKey,
+  OutputStyle,
   MatchState,
   IndoorCricketState,
   SoftballState,
@@ -29,7 +31,7 @@ export type {
 
 import type { MatchState, CricketState } from "@scorehub/types";
 
-export { DEFAULT_DISPLAY_THEME } from "@scorehub/types";
+export { DEFAULT_DISPLAY_THEME, DISPLAY_OUTPUT_KEYS } from "@scorehub/types";
 
 export const DEFAULT_MATCH_STATE = {
   sequenceId: -1,

@@ -272,7 +272,9 @@ export function ThemeTab({ state, push, controlToken }: { readonly state: MatchS
         <button
           className="rounded-lg px-4 py-2 text-sm font-bold"
           style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "var(--danger)" }}
-          onClick={() => push({ displayTheme: { ...DEFAULT_DISPLAY_THEME } })}
+          // Per-output styles (Graphics add-on) have their own reset on the
+          // Outputs tab, so they survive this one
+          onClick={() => push({ displayTheme: { ...DEFAULT_DISPLAY_THEME, outputs: theme.outputs } })}
         >
           Reset Theme to Defaults
         </button>

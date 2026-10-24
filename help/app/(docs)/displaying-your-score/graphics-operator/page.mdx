@@ -126,6 +126,58 @@ or network that has already loaded the photo can keep showing its own saved copy
 If you can't remove something yourself, or you need someone's details removed quickly, email
 [hello@scorehub.co.nz](mailto:hello@scorehub.co.nz) and we'll delete it.
 
+## Output options
+
+The add-on also gives you more control over the regular display outputs. All three are on the
+match's **Outputs** tab.
+
+### Customise each output
+
+Under **Customise each output**, pick an output and set its own:
+
+- **Font** — any Google Font name. Leave it blank to use the Theme tab's font.
+- **Text sizes** — separate sliders for scores, clock, team names and period, from 0.5× to 2×.
+  They stack on top of the Theme tab's text scale.
+- **Background colour** and **background image** — Fullscreen, Basic and Advanced only. The
+  lower-third and scorebug stay transparent.
+
+Anything you leave unset follows the [Theme tab](/displaying-your-score/branding). **Reset … to
+theme** clears one output's settings. **Reset Theme to Defaults** on the Theme tab doesn't touch
+these.
+
+### Green and blue key outputs
+
+The lower-third, scorebug and graphics display are transparent, which suits OBS, vMix and
+Wirecast. A hardware switcher, like an ATEM fed over HDMI or SDI, can't use a transparent source.
+For those, select **Copy Green key URL** or **Copy Blue key URL** on the output. You get the same
+output on a solid chroma green (`#00B140`) or blue (`#0047BB`) background to key out on the
+switcher. Use blue if a team plays in green.
+
+### Data out
+
+**Data out** gives you a live URL with the match as one flat record, for a vMix or OBS data
+source, a spreadsheet, or your own titles. An Admin or Manager selects **Create data link**, then
+copies the JSON, XML or CSV version. Copy what you need straight away. The link includes a token
+that isn't shown again. **Revoke** stops a link working.
+
+| Field | What it holds |
+| --- | --- |
+| `matchName`, `sport`, `period`, `inBreak` | Match details |
+| `homeName`, `homeScore`, `homeColor`, `homeTimeouts`, `homeFouls` | Home team (and the same for `visitor…`) |
+| `possession` | `home`, `visitor`, `both` or `none` |
+| `clockDisplay` | The clock, ready to show: MM:SS, or SS.t under a minute |
+| `clockSeconds`, `clockRunning`, `clockDirection`, `clockAnchorMs`, `serverTimeMs` | For software that runs its own timer between polls |
+
+Poll the link about once a second. `clockDisplay` is worked out when each request arrives, so it
+ticks on every poll. A polled clock can be up to one poll behind, so for a frame-accurate clock on
+screen use the lower-third, scorebug or a key output instead.
+
+<Callout>
+  The data link works for anyone who has it. Treat it like a password and revoke it if it gets
+  out. For a full feed with the event log, or to connect a console, see the
+  [Data Feed add-on](/billing/data-feed-addon).
+</Callout>
+
 ## If the add-on isn't active
 
 Graphics Control and Player Roster show an **Unlock** screen, and the graphics display shows a
