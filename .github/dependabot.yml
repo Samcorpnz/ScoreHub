@@ -1,9 +1,21 @@
 version: 2
+# Daily checks; version updates go to `uat` and reach `main` with the next
+# promotion. The 7-day cooldown keeps a freshly hijacked release out of the
+# lockfile. Security updates skip the cooldown but ignore target-branch, so they
+# open against `main`. They also cover lockfiles not listed here.
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    # "/" covers the npm workspace (frontend, relay, bridge, packages/*); the
+    # standalone Workers and the Stream Deck plugin have their own lockfiles.
+    directories:
+      - "/"
+      - "/downloads"
+      - "/help"
+      - "/marketing"
+      - "/stream-deck-plugin"
+    target-branch: uat
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     groups:
@@ -17,9 +29,23 @@ updates:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
-  - package-ecosystem: github-actions
-    directory: "/"
+  - package-ecosystem: docker
+    directories:
+      - "/frontend"
+      - "/relay"
+    target-branch: uat
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: uat
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
