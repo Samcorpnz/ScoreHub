@@ -31,7 +31,41 @@ jobs:
       - run: npm run test:coverage --workspace=relay
       - run: npm run test:coverage --workspace=bridge
 
+      # SonarQube sits behind Cloudflare Access, and the scanner can't send custom
+      # headers. This local proxy adds the CI service token's headers and forwards
+      # to the real host; the scan step below points at it instead.
+      - name: Start Cloudflare Access proxy for SonarQube
+        env:
+          SONAR_UPSTREAM: ${{ secrets.SONAR_HOST_URL }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          cat > "$RUNNER_TEMP/sonar-access-proxy.mjs" <<'EOF'
+          import http from "node:http";
+          import https from "node:https";
+          const upstream = new URL(process.env.SONAR_UPSTREAM);
+          const access = {
+            "cf-access-client-id": process.env.CF_ACCESS_CLIENT_ID ?? "",
+            "cf-access-client-secret": process.env.CF_ACCESS_CLIENT_SECRET ?? "",
+          };
+          http.createServer((req, res) => {
+            const up = https.request(
+              { host: upstream.hostname, port: upstream.port || 443, method: req.method, path: req.url,
+                headers: { ...req.headers, host: upstream.host, ...access } },
+              (r) => { res.writeHead(r.statusCode, r.headers); r.pipe(res); });
+            up.on("error", (e) => { res.writeHead(502); res.end(String(e)); });
+            req.pipe(up);
+          }).listen(9000, "127.0.0.1");
+          EOF
+          nohup node "$RUNNER_TEMP/sonar-access-proxy.mjs" > "$RUNNER_TEMP/sonar-access-proxy.log" 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:9000/api/system/status && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/sonar-access-proxy.log"
+          exit 1
+
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_HOST_URL: http://127.0.0.1:9000
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
