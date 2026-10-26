@@ -9,12 +9,12 @@
     "package": "node build.mjs && rm -f ../frontend/public/scorehub.streamDeckPlugin && zip -r -X -q ../frontend/public/scorehub.streamDeckPlugin com.scorehub.sdPlugin -x '*.DS_Store'"
   },
   "dependencies": {
-    "@elgato/streamdeck": "^2.1.0",
-    "socket.io-client": "^4.7.0"
+    "@elgato/streamdeck": "^3.0.2",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "esbuild": "^0.28.1",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "typescript": "^5.4.0"
   },
   "allowScripts": {
