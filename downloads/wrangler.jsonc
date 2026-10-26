@@ -16,7 +16,9 @@
   "env": {
     "uat": {
       "name": "scorehub-downloads-uat",
-      "workers_dev": true,
+      // Only downloads.uat serves this Worker; no stray *.workers.dev or preview URL.
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [
         { "pattern": "downloads.uat.scorehub.co.nz", "custom_domain": true }
       ],
