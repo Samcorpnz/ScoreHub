@@ -9,7 +9,7 @@
     "package": "node build.mjs && rm -f ../frontend/public/scorehub.streamDeckPlugin && zip -r -X -q ../frontend/public/scorehub.streamDeckPlugin com.scorehub.sdPlugin -x '*.DS_Store'"
   },
   "dependencies": {
-    "@elgato/streamdeck": "^3.0.2",
+    "@elgato/streamdeck": "^3.0.3",
     "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
