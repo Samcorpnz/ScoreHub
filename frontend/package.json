@@ -22,7 +22,7 @@
     "@logtail/next": "^0.5.1",
     "@scorehub/db": "*",
     "@scorehub/types": "*",
-    "@sentry/nextjs": "^11.8.0",
+    "@sentry/nextjs": "^11.9.0",
     "@simplewebauthn/browser": "^14.0.0",
     "@simplewebauthn/server": "^14.0.3",
     "@stripe/react-stripe-js": "^7.0.0",
