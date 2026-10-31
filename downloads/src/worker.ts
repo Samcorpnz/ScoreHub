@@ -16,6 +16,7 @@ export interface Env {
   GITHUB_REPO: string; // "Samcorpnz/ScoringApp"
   RELEASE_TAG_PREFIX: string; // "bridge-v"
   INCLUDE_PRERELEASE?: string; // "true" to serve pre-releases (UAT only)
+  GITHUB_TOKEN?: string; // Worker secret; read-only, for GitHub's per-token rate limit
 }
 
 export interface GitHubAsset {
@@ -39,11 +40,14 @@ export interface LookupDeps {
   cache: Pick<Cache, "match" | "put">;
 }
 
-type Platform = "mac" | "windows";
+type Platform = "mac" | "mac-intel" | "windows";
 
-function matchAsset(assets: GitHubAsset[], platform: Platform): GitHubAsset | undefined {
-  const extension = platform === "mac" ? ".dmg" : ".exe";
-  return assets.find((asset) => asset.name.toLowerCase().endsWith(extension));
+export function matchAsset(assets: GitHubAsset[], platform: Platform): GitHubAsset | undefined {
+  const names = assets.map((asset) => ({ asset, name: asset.name.toLowerCase() }));
+  if (platform === "windows") return names.find(({ name }) => name.endsWith(".exe"))?.asset;
+  // electron-builder marks only the Apple Silicon .dmg with its arch.
+  const wantArm = platform === "mac";
+  return names.find(({ name }) => name.endsWith(".dmg") && name.includes("arm64") === wantArm)?.asset;
 }
 
 function lastGoodKey(env: Env): string {
@@ -52,8 +56,8 @@ function lastGoodKey(env: Env): string {
 
 /**
  * The newest matching release. GitHub's unauthenticated limit is shared across
- * Cloudflare's egress IPs, so a 403 here is routine rather than an outage: when
- * the lookup fails, this answers from the last release it saw. It only throws
+ * Cloudflare's egress IPs, so without GITHUB_TOKEN a 403 here is routine rather
+ * than an outage: when the lookup fails, this answers from the last release it saw. It only throws
  * when there is no such release to fall back on.
  */
 export async function findLatestBridgeRelease(env: Env, deps: LookupDeps): Promise<GitHubRelease | undefined> {
@@ -62,6 +66,7 @@ export async function findLatestBridgeRelease(env: Env, deps: LookupDeps): Promi
       headers: {
         "User-Agent": "scorehub-downloads-worker",
         Accept: "application/vnd.github+json",
+        ...(env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {}),
       },
       // By status: a plain cacheTtl would also hold a 403 for the full five minutes.
       cf: { cacheTtlByStatus: { "200-299": CACHE_TTL_SECONDS, "400-599": 0 }, cacheEverything: true },
@@ -87,7 +92,7 @@ export async function findLatestBridgeRelease(env: Env, deps: LookupDeps): Promi
   } catch (err) {
     const lastGood = await deps.cache.match(lastGoodKey(env));
     if (!lastGood) throw err;
-    console.warn("Serving the last good release:", err);
+    console.warn(`Serving the last good release: ${String(err)}`);
     return (await lastGood.json()) as GitHubRelease;
   }
 }
@@ -117,7 +122,7 @@ async function handleDownload(platform: Platform, env: Env): Promise<Response> {
   try {
     release = await findLatestBridgeRelease(env, { fetch, cache: caches.default });
   } catch (err) {
-    console.error("No release to serve, sending to the releases page:", err);
+    console.error(`No release to serve, sending to the releases page: ${String(err)}`);
     return Response.redirect(`https://github.com/${env.GITHUB_REPO}/releases`, 302);
   }
 
@@ -141,12 +146,13 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/mac") return handleDownload("mac", env);
+    if (url.pathname === "/mac-intel") return handleDownload("mac-intel", env);
     if (url.pathname === "/windows") return handleDownload("windows", env);
 
     if (url.pathname === "/" || url.pathname === "") {
       return handleDownload(detectPlatform(request.headers.get("user-agent")), env);
     }
 
-    return notFound("Not found. Try /mac or /windows.");
+    return notFound("Not found. Try /mac, /mac-intel or /windows.");
   },
 };
