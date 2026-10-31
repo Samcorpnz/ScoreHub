@@ -18,6 +18,12 @@ jobs:
     runs-on: ubuntu-24.04
     # No required-reviewer gate here (unlike deploy.yml's production environment) —
     # UAT isn't customer-facing, so pushes to `uat` deploy immediately.
+    # Two back-to-back pushes otherwise run flyctl deploy against the same app at
+    # once; the overlap killed the older run's release_command (prisma migrate
+    # deploy) mid-flight. Queue rather than cancel, so a migration is never cut off.
+    concurrency:
+      group: deploy-relay-uat
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6

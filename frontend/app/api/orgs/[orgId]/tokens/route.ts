@@ -7,6 +7,13 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+// The add-on each token type needs — see the comment in POST below.
+const REQUIRED_ADD_ON: Partial<Record<string, "data-feed" | "graphics-operator">> = {
+  DATA_FEED: "data-feed",
+  BRIDGE: "data-feed",
+  GRAPHICS_DATA: "graphics-operator",
+};
+
 // Generates a per-org bridge credential. The plaintext is returned once and
 // never stored — only its SHA-256 hash is persisted (see ScopedToken in
 // packages/db/prisma/schema.prisma). The bridge config's BRIDGE_SECRET takes
@@ -32,9 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
   // data-feed socket handshakes. Stream Deck (CONTROL) tokens stay ungated.
   // The read-only GRAPHICS_DATA feed token (vMix/OBS data sources) comes
   // with the Graphics add-on instead.
-  const requiredAddOn = type === "DATA_FEED" || type === "BRIDGE" ? "data-feed"
-    : type === "GRAPHICS_DATA" ? "graphics-operator"
-    : null;
+  const requiredAddOn = REQUIRED_ADD_ON[type] ?? null;
   if (requiredAddOn) {
     const org = await prisma.org.findUnique({
       where: { id: orgId },

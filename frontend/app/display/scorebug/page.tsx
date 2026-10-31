@@ -68,7 +68,8 @@ function Scorebug() {
 
   const homeLogo    = resolveScorebugLogo(home.logoUrl);
   const visitorLogo = resolveScorebugLogo(visitor.logoUrl);
-  const clockColor  = hornActive ? "#EF4444" : isRunning ? "#fff" : "#94A3B8";
+  const runningColor = isRunning ? "#fff" : "#94A3B8";
+  const clockColor  = hornActive ? "#EF4444" : runningColor;
   const periodText  = getPeriodText(state);
 
   return (

@@ -148,10 +148,7 @@ export default function TermsPage() {
           </p>
           <p>
             See also our{" "}
-            <a href="/privacy" style={{ color: "var(--accent)" }}>
-              Privacy Policy
-            </a>
-            .
+            <a href="/privacy" style={{ color: "var(--accent)" }}>Privacy Policy</a>.
           </p>
         </Section>
       </div>

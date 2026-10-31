@@ -43,7 +43,8 @@ function MobileControlInner() {
   useSession({
     required: true,
     onUnauthenticated() {
-      router.push(`/login?callbackUrl=${matchId ? encodeURIComponent(`/control/mobile${matchQuery}`) : "/control/mobile"}`);
+      const callbackUrl = matchId ? encodeURIComponent("/control/mobile" + matchQuery) : "/control/mobile";
+      router.push(`/login?callbackUrl=${callbackUrl}`);
     },
   });
 
@@ -264,7 +265,7 @@ function MobileControlInner() {
             label={`${periodName(period + 1)} ▶`}
             onClick={() => {
               const max = getMatchLength(state);
-              if (max === undefined || period < max) push({ period: String(period + 1) });
+              if (max === undefined || period < max) void push({ period: String(period + 1) });
             }}
           />
         </div>

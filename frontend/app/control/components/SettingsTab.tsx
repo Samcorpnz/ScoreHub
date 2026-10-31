@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { MatchState } from "../../types";
-import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel } from "../../sport-templates";
+import { SPORT_TEMPLATES, getMatchTemplate, getStructureLabel, matchFormat } from "../../sport-templates";
 import { RELAY_URL } from "../lib/relay";
 import { useEndMatch } from "../lib/useEndMatch";
 import { Card, ColorSwatch, TemplateRow } from "./primitives";
@@ -127,7 +127,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
   // Only offered where the format is just a different template (Netball /
   // Fast5) — cricket's and softball's formats are baked into their sportState.
   const formatField = template.formats ? template.matchConfig?.find(f => f.key === "format") : undefined;
-  const currentFormat = String(state.sportConfig?.format ?? formatField?.defaultValue ?? "");
+  const currentFormat = matchFormat(state) ?? formatField?.defaultValue ?? "";
   const { data: session } = useSession();
   const { endMatch: handleEndMatch, ending, endError } = useEndMatch({ matchId, isRunning: state.isRunning, push, onEnded });
 
@@ -136,7 +136,7 @@ export function SettingsTab({ state, push, matchId, onEnded }: {
     // Bring the clock along if it's still sitting untouched on the old
     // format's opening value; anything else is the operator's to change.
     const untouched = !state.isRunning && state.period === "1" && state.clockSeconds === template.clockSeconds;
-    push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
+    void push({ sportConfig, ...(untouched && { clockSeconds: getMatchTemplate({ sport: state.sport, sportConfig }).clockSeconds }) });
   }
 
   return (

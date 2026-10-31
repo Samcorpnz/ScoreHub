@@ -95,6 +95,80 @@ function parseArgs(argv: string[]) {
   };
 }
 
+type LegacyAccount = Awaited<ReturnType<typeof prisma.account.findMany>>[number];
+type Tally = { migrated: number; cleared: number; skipped: number };
+
+async function migrateAccount(stripe: Stripe, account: LegacyAccount, apply: boolean, tally: Tally): Promise<void> {
+  console.log(`${account.name} (${account.id}) — plan ${account.plan}, subscription ${account.stripeSubscriptionId ?? "none"}`);
+  let plan: Stripe.Subscription | null = account.stripeSubscriptionId
+    ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId)
+    : null;
+  if (plan?.discounts.length) {
+    console.log("  note: the plan's subscription has a discount, which will also apply to add-ons moved onto it");
+  }
+
+  for (const [addOn, field] of Object.entries(ADDON_FIELDS) as [AddOn, (typeof ADDON_FIELDS)[AddOn]][]) {
+    const legacyId = account[field];
+    if (!legacyId) continue;
+    const step = planAddOn(addOn, await stripe.subscriptions.retrieve(legacyId), plan);
+    plan = await runStep(stripe, account.id, field, step, plan, apply, tally);
+  }
+}
+
+// Logs (and with --apply, carries out) one add-on's step. Returns the plan
+// subscription as it now stands.
+async function runStep(
+  stripe: Stripe,
+  accountId: string,
+  field: (typeof ADDON_FIELDS)[AddOn],
+  step: Step,
+  plan: Stripe.Subscription | null,
+  apply: boolean,
+  tally: Tally,
+): Promise<Stripe.Subscription | null> {
+  if (step.action === "skip") {
+    tally.skipped++;
+    console.log(`  ${step.addOn}: SKIP — ${step.reason}`);
+    return plan;
+  }
+  if (step.action === "clear-stale") {
+    tally.cleared++;
+    console.log(`  ${step.addOn}: clear stale ${step.legacyId} (${step.reason})`);
+    if (apply) await prisma.account.update({ where: { id: accountId }, data: { [field]: null } });
+    return plan;
+  }
+  tally.migrated++;
+  console.log(`  ${step.addOn}: move ${step.legacyId} onto ${plan!.id}${step.alreadyOnPlan ? " (already added; finishing)" : ""}`);
+  return apply ? moveOntoPlan(stripe, accountId, field, step, plan!) : plan;
+}
+
+// Marks the old subscription migratedTo (so the webhook ignores its
+// cancellation), adds the add-on to the plan, then cancels the old one.
+// Returns the plan subscription as it now stands.
+async function moveOntoPlan(
+  stripe: Stripe,
+  accountId: string,
+  field: (typeof ADDON_FIELDS)[AddOn],
+  step: Extract<Step, { action: "migrate" }>,
+  plan: Stripe.Subscription,
+): Promise<Stripe.Subscription> {
+  const legacy = await stripe.subscriptions.retrieve(step.legacyId);
+  await stripe.subscriptions.update(step.legacyId, { metadata: { ...legacy.metadata, migratedTo: plan.id } });
+  const updatedPlan = step.alreadyOnPlan
+    ? plan
+    : await stripe.subscriptions.update(plan.id, {
+      items: [{ price: step.price, quantity: 1 }],
+      proration_behavior: "create_prorations",
+    });
+  await stripe.subscriptions.cancel(step.legacyId, { prorate: true, invoice_now: true });
+  const fresh = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { [field]: null, addOns: [...new Set([...fresh.addOns, step.addOn])] },
+  });
+  return updatedPlan;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -118,51 +192,7 @@ async function main() {
   console.log(`\n${accounts.length} account(s) with an add-on on its own subscription\n`);
   const tally = { migrated: 0, cleared: 0, skipped: 0 };
 
-  for (const account of accounts) {
-    console.log(`${account.name} (${account.id}) — plan ${account.plan}, subscription ${account.stripeSubscriptionId ?? "none"}`);
-    let plan = account.stripeSubscriptionId ? await stripe.subscriptions.retrieve(account.stripeSubscriptionId) : null;
-    if (plan?.discounts.length) {
-      console.log("  note: the plan's subscription has a discount, which will also apply to add-ons moved onto it");
-    }
-
-    for (const [addOn, field] of Object.entries(ADDON_FIELDS) as [AddOn, (typeof ADDON_FIELDS)[AddOn]][]) {
-      const legacyId = account[field];
-      if (!legacyId) continue;
-      const step = planAddOn(addOn, await stripe.subscriptions.retrieve(legacyId), plan);
-
-      if (step.action === "skip") {
-        tally.skipped++;
-        console.log(`  ${addOn}: SKIP — ${step.reason}`);
-        continue;
-      }
-      if (step.action === "clear-stale") {
-        tally.cleared++;
-        console.log(`  ${addOn}: clear stale ${legacyId} (${step.reason})`);
-        if (args.apply) {
-          await prisma.account.update({ where: { id: account.id }, data: { [field]: null } });
-        }
-        continue;
-      }
-
-      tally.migrated++;
-      console.log(`  ${addOn}: move ${legacyId} onto ${plan!.id}${step.alreadyOnPlan ? " (already added; finishing)" : ""}`);
-      if (!args.apply) continue;
-      const legacy = await stripe.subscriptions.retrieve(legacyId);
-      await stripe.subscriptions.update(legacyId, { metadata: { ...legacy.metadata, migratedTo: plan!.id } });
-      if (!step.alreadyOnPlan) {
-        plan = await stripe.subscriptions.update(plan!.id, {
-          items: [{ price: step.price, quantity: 1 }],
-          proration_behavior: "create_prorations",
-        });
-      }
-      await stripe.subscriptions.cancel(legacyId, { prorate: true, invoice_now: true });
-      const fresh = await prisma.account.findUniqueOrThrow({ where: { id: account.id } });
-      await prisma.account.update({
-        where: { id: account.id },
-        data: { [field]: null, addOns: [...new Set([...fresh.addOns, addOn])] },
-      });
-    }
-  }
+  for (const account of accounts) await migrateAccount(stripe, account, args.apply, tally);
 
   console.log(`\n${tally.migrated} to move, ${tally.cleared} stale to clear, ${tally.skipped} skipped`);
   if (!args.apply) {

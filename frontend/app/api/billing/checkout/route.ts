@@ -121,11 +121,22 @@ function planChange(
     return "Upgrade on annual billing for now. You can switch to monthly from your next renewal.";
   }
   if (planDown || toMonthly) return { kind: "schedule", target: { plan: plan!, interval } };
+  return immediateUpdate(current, current.planItem, plan!, interval, applyDiscount);
+}
 
+// An upgrade (or a move to annual) applied straight away. Moving interval
+// takes the add-ons with it and invoices now.
+function immediateUpdate(
+  current: ReturnType<typeof readSubscription>,
+  planItem: Stripe.SubscriptionItem,
+  plan: PaidPlan,
+  interval: BillingInterval,
+  applyDiscount: boolean,
+): PlannedChange {
   const intervalChanges = current.interval !== interval;
   const items: Stripe.SubscriptionUpdateParams.Item[] = [{
-    id: current.planItem.id,
-    price: priceIdForPlan(plan!, interval),
+    id: planItem.id,
+    price: priceIdForPlan(plan, interval),
     quantity: 1,
     // On the plan item, not the subscription, so the discount doesn't spread
     // to add-ons on the same subscription.

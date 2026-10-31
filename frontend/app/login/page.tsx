@@ -42,8 +42,8 @@ function LoginForm() {
   // The help centre sends people here and expects them back afterwards, so
   // an allowed callbackUrl may be on another origin (a full page load).
   function continueAfterSignIn() {
-    const { url, external } = postLoginDestination(searchParams.get("callbackUrl"), window.location.origin);
-    if (external) window.location.assign(url);
+    const { url, external } = postLoginDestination(searchParams.get("callbackUrl"), globalThis.location.origin);
+    if (external) globalThis.location.assign(url);
     else router.push(url);
   }
 
@@ -65,7 +65,7 @@ function LoginForm() {
   // and the client then re-renders with the real value.
   const passkeySupported = useSyncExternalStore(
     subscribeNever,
-    () => "PublicKeyCredential" in window,
+    () => "PublicKeyCredential" in globalThis,
     () => false,
   );
 

@@ -3,12 +3,11 @@
 import { useEffect, useRef } from "react";
 
 declare global {
-  interface Window {
-    turnstile?: {
-      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
-      reset: (id?: string) => void;
-    };
-  }
+  // `var` is what puts it on globalThis (Cloudflare's script assigns it there).
+  var turnstile: {
+    render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+    reset: (id?: string) => void;
+  } | undefined;
 }
 
 const SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
@@ -26,15 +25,15 @@ export function TurnstileWidget({ onToken }: { readonly onToken: (token: string)
     if (!siteKey) return;
 
     function render() {
-      if (!containerRef.current || !window.turnstile || widgetId.current) return;
-      widgetId.current = window.turnstile.render(containerRef.current, {
+      if (!containerRef.current || !globalThis.turnstile || widgetId.current) return;
+      widgetId.current = globalThis.turnstile.render(containerRef.current, {
         sitekey: siteKey,
         action: "turnstile-spin-v2",
         callback: onToken,
       });
     }
 
-    if (window.turnstile) {
+    if (globalThis.turnstile) {
       render();
       return;
     }
@@ -52,7 +51,7 @@ export function TurnstileWidget({ onToken }: { readonly onToken: (token: string)
     script.addEventListener("load", render);
     document.head.appendChild(script);
     // Intentionally leave the script tag in place on unmount — other forms
-    // on the same navigation may still need window.turnstile.
+    // on the same navigation may still need globalThis.turnstile.
   }, [siteKey, onToken]);
 
   if (!siteKey) return null;

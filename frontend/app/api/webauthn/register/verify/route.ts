@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   const challengeRow = await consumeChallenge(clientData.challenge, "registration");
-  if (!challengeRow || challengeRow.userId !== session.user.id) {
+  if (challengeRow?.userId !== session.user.id) {
     return NextResponse.json({ error: "this registration attempt has expired, please try again" }, { status: 400 });
   }
 

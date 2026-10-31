@@ -44,7 +44,7 @@ function ControlPanelInner() {
   const { data: session, status: authStatus } = useSession({
     required: true,
     onUnauthenticated() {
-      router.push(`/login?callbackUrl=${encodeURIComponent(`/control/${matchId}`)}`);
+      router.push(`/login?callbackUrl=${encodeURIComponent("/control/" + matchId)}`);
     },
   });
   const [tab, setTab] = useState<Tab>("score");

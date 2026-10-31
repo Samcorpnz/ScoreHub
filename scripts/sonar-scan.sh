@@ -31,4 +31,4 @@ npm run test:coverage --workspace=frontend
 npm run test:coverage --workspace=relay
 npm run test:coverage --workspace=bridge
 
-exec sonar-scanner -Dsonar.token="$SONAR_TOKEN"
+exec sonar-scanner -Dsonar.token="$SONAR_TOKEN" -Dsonar.projectVersion="$(scripts/sonar-version.sh)"

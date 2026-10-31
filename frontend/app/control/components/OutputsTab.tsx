@@ -63,21 +63,21 @@ export function OutputsTab({ matchId, state, push, controlToken }: {
   const { data: session } = useSession();
   const hasGraphics = useHasAddOn("graphics-operator");
   const orgId = session?.user?.activeOrgId;
-  const origin = typeof globalThis.window !== "undefined" ? globalThis.window.location.origin : "";
+  const origin = globalThis.window === undefined ? "" : globalThis.window.location.origin;
 
   // Required alongside matchId once DISPLAY_TOKEN_REQUIRED is on
   // (relay/src/server.ts) — fetched here rather than threaded down as a prop
   // since this is the only tab that needs it.
-  const [fetchedDisplayToken, setDisplayToken] = useState<string | null>(null);
+  const [fetchedDisplayToken, setFetchedDisplayToken] = useState<string | null>(null);
   const displayToken = orgId && matchId ? fetchedDisplayToken : null;
   useEffect(() => {
     if (!orgId || !matchId) return;
     fetch(`/api/orgs/${orgId}/matches?id=${matchId}`)
       .then(res => res.json())
-      .then(data => setDisplayToken(data?.matches?.[0]?.displayToken ?? null))
+      .then(data => setFetchedDisplayToken(data?.matches?.[0]?.displayToken ?? null))
       .catch(err => {
         console.warn("[OutputsTab] failed to fetch display token:", err);
-        setDisplayToken(null);
+        setFetchedDisplayToken(null);
       });
   }, [orgId, matchId]);
 
@@ -95,7 +95,7 @@ export function OutputsTab({ matchId, state, push, controlToken }: {
       const res = await fetch(`/api/orgs/${orgId}/matches/${matchId}/rotate-display-token`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
-        setDisplayToken(data.displayToken);
+        setFetchedDisplayToken(data.displayToken);
       } else {
         setRotateError("Couldn't regenerate the display link — the existing link still works. Try again.");
       }

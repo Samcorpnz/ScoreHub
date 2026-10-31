@@ -9,6 +9,7 @@
 /coverage
 /e2e/.auth
 /playwright-report
+/playwright-smoke-report
 /test-results
 /blob-report
 

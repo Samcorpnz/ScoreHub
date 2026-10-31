@@ -46,7 +46,7 @@ export interface CleanupPlan {
 // percent-escapes resolved, so a url that serves a file always matches its key.
 function urlPath(photoUrl: string): string {
   try {
-    return decodeURIComponent(new URL(photoUrl, "http://relative.invalid").pathname);
+    return decodeURIComponent(new URL(photoUrl, "https://relative.invalid").pathname);
   } catch {
     return photoUrl.split(/[?#]/)[0];
   }

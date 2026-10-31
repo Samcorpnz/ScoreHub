@@ -49,9 +49,9 @@ export function CantSignIn({ email: initialEmail }: { readonly email: string }) 
 
   if (sentKey !== undefined) {
     return (
-      <p className="text-center text-sm mt-6" role="status" style={{ color: "var(--text-secondary)" }}>
+      <output className="block text-center text-sm mt-6" style={{ color: "var(--text-secondary)" }}>
         Request sent{sentKey ? ` (${sentKey})` : ""}. We&apos;ll reply by email.
-      </p>
+      </output>
     );
   }
 

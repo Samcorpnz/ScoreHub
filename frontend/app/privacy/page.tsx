@@ -109,10 +109,7 @@ export default function PrivacyPage() {
           </p>
           <p>
             See also our{" "}
-            <a href="/terms" style={{ color: "var(--accent)" }}>
-              Terms of Use
-            </a>
-            .
+            <a href="/terms" style={{ color: "var(--accent)" }}>Terms of Use</a>.
           </p>
         </Section>
       </div>

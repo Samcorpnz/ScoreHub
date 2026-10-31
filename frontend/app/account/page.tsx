@@ -178,7 +178,7 @@ export default function AccountPage() {
   }
 
   useEffect(() => {
-    fetchBillingStatus();
+    void fetchBillingStatus();
   }, [fetchBillingStatus]);
 
   async function upgrade(plan: "pro" | "venue", interval: BillingInterval = billingInterval) {
@@ -202,9 +202,7 @@ export default function AccountPage() {
         const preview: ChangePreview = data.preview;
         setPendingChange({
           target: "plan",
-          description: preview.kind === "keep"
-            ? `Stay on ${name}, billed ${interval === "year" ? "annually" : "monthly"}`
-            : `Switch to ${name}, billed ${interval === "year" ? "annually" : "monthly"}`,
+          description: `${preview.kind === "keep" ? "Stay on" : "Switch to"} ${name}, billed ${cadenceLabel(interval)}`,
           request,
           preview: data.preview,
         });
@@ -341,7 +339,7 @@ export default function AccountPage() {
               onComplete: () => {
                 const previousPlan = billingStatus?.plan;
                 setCheckoutSecret(null);
-                waitForPlanChange(previousPlan);
+                void waitForPlanChange(previousPlan);
               },
             }}
           >
@@ -708,6 +706,10 @@ function formatAmount(amount: number | null, currency: string | null, interval: 
   return `${value}/${interval === "year" ? "yr" : "mo"}`;
 }
 
+function cadenceLabel(interval: BillingInterval | null | undefined): string {
+  return interval === "year" ? "annually" : "monthly";
+}
+
 function SubscriptionPanel({
   billingStatus,
   billingInterval,
@@ -738,15 +740,13 @@ function SubscriptionPanel({
   readonly onResume: () => void;
 }) {
   const plan = PLANS.find(p => p.id === billingStatus.plan);
-  // Pro offers Venue as an upgrade; Venue offers Pro as a downgrade.
-  const otherTier = PLANS.find(p => p.id === (billingStatus.plan === "pro" ? "venue" : "pro"))!;
-  const otherIsUpgrade = otherTier.id === "venue";
   const sub = billingStatus.subscription;
   const interval = billingStatus.billingInterval ?? "month";
   const scheduled = billingStatus.scheduledChange;
   const scheduledName = PLANS.find(p => p.id === scheduled?.plan)?.name;
   const currentPlanId = billingStatus.plan as "pro" | "venue";
   const otherInterval: BillingInterval = interval === "year" ? "month" : "year";
+  const otherIntervalName = otherInterval === "year" ? "annual" : "monthly";
 
   return (
     <div>
@@ -765,7 +765,7 @@ function SubscriptionPanel({
             {formatAmount(sub?.amount ?? null, sub?.currency ?? null, interval)}
           </p>
           <p className="text-xs mt-0.5" style={{ color: "var(--text-dim)" }}>
-            Billed {interval === "year" ? "annually" : "monthly"}
+            Billed {cadenceLabel(interval)}
           </p>
           {sub?.cancelAtPeriodEnd ? (
             <p className="text-xs mt-1" style={{ color: "var(--danger, #e05252)" }}>
@@ -778,21 +778,11 @@ function SubscriptionPanel({
           )}
           {scheduled && (
             <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }} data-testid="scheduled-change">
-              Changes to {scheduledName}, billed {scheduled.interval === "year" ? "annually" : "monthly"}, on {formatRenewalDate(scheduled.at)}.
+              Changes to {scheduledName}, billed {cadenceLabel(scheduled.interval)}, on {formatRenewalDate(scheduled.at)}.
             </p>
           )}
 
-          <div className="mt-3 pt-3 space-y-1" style={{ borderTop: "1px solid var(--border)" }}>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              Payment method:{" "}
-              {billingStatus.paymentMethod
-                ? `${capitalize(billingStatus.paymentMethod.brand)} •••• ${billingStatus.paymentMethod.last4}`
-                : "—"}
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              Invoices sent to: {billingStatus.invoiceEmail ?? "—"}
-            </p>
-          </div>
+          <PaymentDetails paymentMethod={billingStatus.paymentMethod} invoiceEmail={billingStatus.invoiceEmail} />
         </div>
 
         {isAdmin && (
@@ -806,7 +796,7 @@ function SubscriptionPanel({
             )}
             {!scheduled && !sub?.cancelAtPeriodEnd && (
               <SmallBtn
-                label={billingBusy ? "Loading…" : `Switch to ${otherInterval === "year" ? "annual" : "monthly"} billing`}
+                label={billingBusy ? "Loading…" : `Switch to ${otherIntervalName} billing`}
                 onClick={() => onUpgrade(currentPlanId, otherInterval)}
               />
             )}
@@ -820,32 +810,72 @@ function SubscriptionPanel({
       </div>
 
       {isAdmin && !scheduled && !sub?.cancelAtPeriodEnd && (
-        <div
-          className="rounded-xl p-4 mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-          style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-        >
-          <div>
-            <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
-              {otherIsUpgrade ? `Need more capacity? Upgrade to ${otherTier.name}` : `Need less? Switch to ${otherTier.name}`}
-            </p>
-            <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
-              {otherIsUpgrade
-                ? otherTier.tagline
-                : `${otherTier.tagline}. Takes effect at the end of the period you've paid for, with no refund.`}
-            </p>
-            {otherIsUpgrade && billingStatus.upgradeDiscountAvailable && <DiscountBanner className="mt-2" compact />}
-          </div>
-          <div className="flex items-center gap-2">
-            <SmallBtn label="Monthly" onClick={() => setBillingInterval("month")} active={billingInterval === "month"} />
-            <SmallBtn label="Annual (2 months free)" onClick={() => setBillingInterval("year")} active={billingInterval === "year"} />
-            <SmallBtn
-              label={billingBusy ? "Loading…" : `${otherIsUpgrade ? "Upgrade" : "Switch"} to ${otherTier.name}`}
-              onClick={() => onUpgrade(otherTier.id as "pro" | "venue")}
-              primary={otherIsUpgrade}
-            />
-          </div>
-        </div>
+        <OtherTierOffer
+          currentPlan={billingStatus.plan}
+          upgradeDiscountAvailable={billingStatus.upgradeDiscountAvailable}
+          billingInterval={billingInterval}
+          setBillingInterval={setBillingInterval}
+          billingBusy={billingBusy}
+          onUpgrade={onUpgrade}
+        />
       )}
+    </div>
+  );
+}
+
+function PaymentDetails({ paymentMethod, invoiceEmail }: {
+  readonly paymentMethod: { brand: string; last4: string } | null; readonly invoiceEmail: string | null;
+}) {
+  return (
+    <div className="mt-3 pt-3 space-y-1" style={{ borderTop: "1px solid var(--border)" }}>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        Payment method:{" "}
+        {paymentMethod ? `${capitalize(paymentMethod.brand)} •••• ${paymentMethod.last4}` : "—"}
+      </p>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        Invoices sent to: {invoiceEmail ?? "—"}
+      </p>
+    </div>
+  );
+}
+
+// Pro offers Venue as an upgrade; Venue offers Pro as a downgrade.
+function OtherTierOffer({ currentPlan, upgradeDiscountAvailable, billingInterval, setBillingInterval, billingBusy, onUpgrade }: {
+  readonly currentPlan: string;
+  readonly upgradeDiscountAvailable: boolean;
+  readonly billingInterval: BillingInterval;
+  readonly setBillingInterval: (interval: BillingInterval) => void;
+  readonly billingBusy: boolean;
+  readonly onUpgrade: (plan: "pro" | "venue", interval?: BillingInterval) => void;
+}) {
+  const otherTier = PLANS.find(p => p.id === (currentPlan === "pro" ? "venue" : "pro"))!;
+  const otherIsUpgrade = otherTier.id === "venue";
+  const action = otherIsUpgrade ? "Upgrade" : "Switch";
+  return (
+    <div
+      className="rounded-xl p-4 mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+      style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+    >
+      <div>
+        <p className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+          {otherIsUpgrade ? `Need more capacity? Upgrade to ${otherTier.name}` : `Need less? Switch to ${otherTier.name}`}
+        </p>
+        <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
+          {otherIsUpgrade
+            ? otherTier.tagline
+            : `${otherTier.tagline}. Takes effect at the end of the period you've paid for, with no refund.`}
+        </p>
+        {otherIsUpgrade && upgradeDiscountAvailable && <DiscountBanner className="mt-2" compact />}
+      </div>
+      <div className="flex items-center gap-2">
+        <SmallBtn label="Monthly" onClick={() => setBillingInterval("month")} active={billingInterval === "month"} />
+        <SmallBtn label="Annual (2 months free)" onClick={() => setBillingInterval("year")} active={billingInterval === "year"} />
+        <SmallBtn
+          label={billingBusy ? "Loading…" : `${action} to ${otherTier.name}`}
+          onClick={() => onUpgrade(otherTier.id as "pro" | "venue")}
+          primary={otherIsUpgrade}
+        />
+      </div>
     </div>
   );
 }
@@ -1359,7 +1389,7 @@ function PasskeysCard() {
                     style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)", outline: "none" }}
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") handleRename(pk.id); }}
+                    onKeyDown={e => { if (e.key === "Enter") void handleRename(pk.id); }}
                   />
                   <SmallBtn label={busy ? "Working…" : "Save"} onClick={() => handleRename(pk.id)} primary />
                   <SmallBtn label="Cancel" onClick={() => { setEditingId(null); setEditName(""); }} />
@@ -1391,7 +1421,7 @@ function PasskeysCard() {
               style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-primary)", outline: "none" }}
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+              onKeyDown={e => { if (e.key === "Enter") void handleAdd(); }}
             />
             <SmallBtn label={busy ? "Working…" : "Continue"} onClick={handleAdd} primary />
             <SmallBtn label="Cancel" onClick={() => { setAdding(false); setNewName(""); }} />

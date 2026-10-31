@@ -37,13 +37,7 @@ async function main() {
     ? await prisma.scopedToken.findMany({ where: { orgId: match.orgId, matchId: match.id, type: "CONTROL", label: SMOKE_TOKEN_LABEL, revokedAt: null } })
     : [];
 
-  const plan: string[] = [];
-  if (!account) plan.push("create account");
-  if (!org) plan.push("create org");
-  if (!match) plan.push("create LIVE match");
-  else if (!match.displayToken) plan.push("assign the match a display token");
-  if (activeTokens.length === 0) plan.push("create CONTROL token pinned to the match");
-  else if (args.rotateToken) plan.push(`revoke ${activeTokens.length} existing CONTROL token(s) and create a new one`);
+  const plan = describePlan(!!account, !!org, match, activeTokens.length, args.rotateToken);
   console.log(plan.length ? `plan: ${plan.join("; ")}` : "plan: nothing to create — smoke org already provisioned");
 
   if (!args.apply) {
@@ -55,22 +49,7 @@ async function main() {
 
   account = account ?? await prisma.account.create({ data: { name: SMOKE_ACCOUNT_NAME, plan: "free" } });
   org = org ?? await prisma.org.create({ data: { accountId: account.id, name: SMOKE_ORG_NAME } });
-  if (!match) {
-    const state = {
-      ...DEFAULT_MATCH_STATE,
-      matchName: "ScoreHub smoke test (do not delete)",
-      home: { ...DEFAULT_MATCH_STATE.home, name: "Smoke Home" },
-      visitor: { ...DEFAULT_MATCH_STATE.visitor, name: "Smoke Visitor" },
-    };
-    match = await prisma.match.create({
-      data: {
-        orgId: org.id, status: "LIVE", sport: "netball", homeName: "Smoke Home", visitorName: "Smoke Visitor",
-        state: state as unknown as object, displayToken: newDisplayToken(),
-      },
-    });
-  } else if (!match.displayToken) {
-    match = await prisma.match.update({ where: { id: match.id }, data: { displayToken: newDisplayToken() } });
-  }
+  match = await ensureLiveMatch(org.id, match);
 
   let plaintext: string | undefined;
   if (args.rotateToken && activeTokens.length) {
@@ -86,6 +65,42 @@ async function main() {
   console.log("\napplied.");
   printIds(args.env, org.id, match.id, match.displayToken ?? undefined, plaintext);
   await prisma.$disconnect();
+}
+
+type SmokeMatch = NonNullable<Awaited<ReturnType<typeof prisma.match.findFirst>>>;
+
+function describePlan(
+  hasAccount: boolean, hasOrg: boolean, match: SmokeMatch | null, activeTokenCount: number, rotateToken: boolean,
+): string[] {
+  const plan: string[] = [];
+  if (!hasAccount) plan.push("create account");
+  if (!hasOrg) plan.push("create org");
+  if (!match) plan.push("create LIVE match");
+  else if (!match.displayToken) plan.push("assign the match a display token");
+  if (activeTokenCount === 0) plan.push("create CONTROL token pinned to the match");
+  else if (rotateToken) plan.push(`revoke ${activeTokenCount} existing CONTROL token(s) and create a new one`);
+  return plan;
+}
+
+// Creates the smoke org's LIVE match, or gives an existing one a display token if it lacks one.
+async function ensureLiveMatch(orgId: string, match: SmokeMatch | null): Promise<SmokeMatch> {
+  if (match) {
+    return match.displayToken
+      ? match
+      : prisma.match.update({ where: { id: match.id }, data: { displayToken: newDisplayToken() } });
+  }
+  const state = {
+    ...DEFAULT_MATCH_STATE,
+    matchName: "ScoreHub smoke test (do not delete)",
+    home: { ...DEFAULT_MATCH_STATE.home, name: "Smoke Home" },
+    visitor: { ...DEFAULT_MATCH_STATE.visitor, name: "Smoke Visitor" },
+  };
+  return prisma.match.create({
+    data: {
+      orgId, status: "LIVE", sport: "netball", homeName: "Smoke Home", visitorName: "Smoke Visitor",
+      state: state as unknown as object, displayToken: newDisplayToken(),
+    },
+  });
 }
 
 function printIds(env: "prod" | "uat" | "local", orgId: string, matchId: string, displayToken: string | undefined, controlToken: string | undefined) {

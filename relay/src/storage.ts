@@ -49,7 +49,8 @@ export async function deleteObjects(keys: string[]): Promise<void> {
     // DeleteObjects answers 200 even when individual keys fail, listing them here.
     const failed = res?.Errors ?? [];
     if (failed.length) {
-      throw new Error(`failed to delete ${failed.length} object(s): ${failed.map(e => `${e.Key} (${e.Code})`).join(", ")}`);
+      const detail = failed.map(e => `${e.Key} (${e.Code})`).join(", ");
+      throw new Error(`failed to delete ${failed.length} object(s): ${detail}`);
     }
   }
 }

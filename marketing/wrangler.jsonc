@@ -24,7 +24,10 @@
   "env": {
     "uat": {
       "name": "scorehub-marketing-uat",
-      "workers_dev": true,
+      // UAT sits behind Cloudflare Access on its custom domain; a *.workers.dev or
+      // preview URL would serve the same Worker without it.
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [
         { "pattern": "uat.scorehub.co.nz", "custom_domain": true }
       ],

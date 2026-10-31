@@ -1,9 +1,12 @@
 name: SonarQube
 
+# main only. The shared SonarQube is Community edition: one result per
+# project, no PR analysis, so a PR scan (Dependabot opens several a day)
+# just overwrites main's result with the PR's. Local pre-push scans
+# (scripts/sonar-scan.sh) cover work in progress.
 on:
   push:
     branches: [main]
-  pull_request:
 
 permissions:
   contents: read
@@ -30,6 +33,10 @@ jobs:
       - run: npm run test:coverage --workspace=frontend
       - run: npm run test:coverage --workspace=relay
       - run: npm run test:coverage --workspace=bridge
+
+      # See scripts/sonar-version.sh — keeps the new-code baseline moving.
+      - id: version
+        run: echo "value=$(scripts/sonar-version.sh)" >> "$GITHUB_OUTPUT"
 
       # SonarQube sits behind Cloudflare Access, and the scanner can't send custom
       # headers. This local proxy adds the CI service token's headers and forwards
@@ -66,6 +73,8 @@ jobs:
           exit 1
 
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: -Dsonar.projectVersion=${{ steps.version.outputs.value }}
         env:
           SONAR_HOST_URL: http://127.0.0.1:9000
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

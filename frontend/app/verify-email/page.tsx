@@ -15,8 +15,8 @@ export default function VerifyEmailPage() {
 function VerifyEmailContent() {
   const params = useSearchParams();
   const token = params.get("token");
-  const [fetchState, setState] = useState<"checking" | "ok" | "error">("checking");
-  const [fetchError, setError] = useState<string | null>(null);
+  const [fetchState, setFetchState] = useState<"checking" | "ok" | "error">("checking");
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const state = token ? fetchState : "error";
   const error = token ? fetchError : "Missing verification token.";
 
@@ -30,11 +30,11 @@ function VerifyEmailContent() {
       .then(async res => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error ?? "verification failed");
-        setState("ok");
+        setFetchState("ok");
       })
       .catch((e: Error) => {
-        setState("error");
-        setError(e.message);
+        setFetchState("error");
+        setFetchError(e.message);
       });
   }, [token]);
 
