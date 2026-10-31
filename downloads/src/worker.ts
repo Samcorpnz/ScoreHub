@@ -31,6 +31,13 @@ export interface GitHubRelease {
 }
 
 const CACHE_TTL_SECONDS = 300;
+const LAST_GOOD_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** The parts of the runtime the release lookup needs, injectable for tests. */
+export interface LookupDeps {
+  fetch: typeof fetch;
+  cache: Pick<Cache, "match" | "put">;
+}
 
 type Platform = "mac" | "windows";
 
@@ -39,21 +46,50 @@ function matchAsset(assets: GitHubAsset[], platform: Platform): GitHubAsset | un
   return assets.find((asset) => asset.name.toLowerCase().endsWith(extension));
 }
 
-async function findLatestBridgeRelease(env: Env): Promise<GitHubRelease | undefined> {
-  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/releases`, {
-    headers: {
-      "User-Agent": "scorehub-downloads-worker",
-      Accept: "application/vnd.github+json",
-    },
-    cf: { cacheTtl: CACHE_TTL_SECONDS, cacheEverything: true },
-  });
+function lastGoodKey(env: Env): string {
+  return `https://downloads.internal/last-good/${env.RELEASE_TAG_PREFIX}`;
+}
 
-  if (!response.ok) {
-    throw new Error(`GitHub releases lookup failed: ${response.status}`);
+/**
+ * The newest matching release. GitHub's unauthenticated limit is shared across
+ * Cloudflare's egress IPs, so a 403 here is routine rather than an outage: when
+ * the lookup fails, this answers from the last release it saw. It only throws
+ * when there is no such release to fall back on.
+ */
+export async function findLatestBridgeRelease(env: Env, deps: LookupDeps): Promise<GitHubRelease | undefined> {
+  try {
+    const response = await deps.fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/releases`, {
+      headers: {
+        "User-Agent": "scorehub-downloads-worker",
+        Accept: "application/vnd.github+json",
+      },
+      // By status: a plain cacheTtl would also hold a 403 for the full five minutes.
+      cf: { cacheTtlByStatus: { "200-299": CACHE_TTL_SECONDS, "400-599": 0 }, cacheEverything: true },
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub releases lookup failed: ${response.status}`);
+    }
+
+    const releases = (await response.json()) as GitHubRelease[];
+    const release = pickRelease(releases, env);
+    if (release) {
+      await deps.cache
+        .put(
+          lastGoodKey(env),
+          new Response(JSON.stringify(release), {
+            headers: { "Cache-Control": `max-age=${LAST_GOOD_TTL_SECONDS}` },
+          })
+        )
+        .catch((err) => console.error("Could not store the last good release:", err));
+    }
+    return release;
+  } catch (err) {
+    const lastGood = await deps.cache.match(lastGoodKey(env));
+    if (!lastGood) throw err;
+    console.warn("Serving the last good release:", err);
+    return (await lastGood.json()) as GitHubRelease;
   }
-
-  const releases = (await response.json()) as GitHubRelease[];
-  return pickRelease(releases, env);
 }
 
 /** The first (newest-created) published release with the channel's tag prefix. */
@@ -77,7 +113,14 @@ function notFound(message: string): Response {
 }
 
 async function handleDownload(platform: Platform, env: Env): Promise<Response> {
-  const release = await findLatestBridgeRelease(env);
+  let release: GitHubRelease | undefined;
+  try {
+    release = await findLatestBridgeRelease(env, { fetch, cache: caches.default });
+  } catch (err) {
+    console.error("No release to serve, sending to the releases page:", err);
+    return Response.redirect(`https://github.com/${env.GITHUB_REPO}/releases`, 302);
+  }
+
   if (!release) {
     return notFound(
       "No Bridge installer has been published yet. Check back soon, or see " +
