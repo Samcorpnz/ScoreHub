@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { hashLinkToken, invalidLinkResponse, isLinkUsable, readTokenAndPassword, tokenFromQuery } from "../linkToken";
+import { hashLinkToken, invalidLinkResponse, isLinkUsable, readLinkSubmission, tokenFromQuery } from "../linkToken";
 
 const post = (body: unknown) =>
   new NextRequest("http://localhost/api/x", { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) });
@@ -42,19 +42,19 @@ describe("tokenFromQuery", () => {
   });
 });
 
-describe("readTokenAndPassword", () => {
+describe("readLinkSubmission", () => {
   it("returns a valid token and password", async () => {
-    expect(await readTokenAndPassword(post({ token: "t", password: "12345678" }))).toEqual({ token: "t", password: "12345678" });
+    expect(await readLinkSubmission(post({ token: "t", password: "12345678" }))).toEqual({ token: "t", password: "12345678" });
   });
   it("400s on a missing token, a short password or a bad body", async () => {
     for (const req of [post({ password: "12345678" }), post({ token: "t", password: "short" }), post("not json")]) {
-      const res = await readTokenAndPassword(req);
+      const res = await readLinkSubmission(req);
       expect(res).toBeInstanceOf(NextResponse);
       expect((res as NextResponse).status).toBe(400);
     }
   });
   it("says which rule failed", async () => {
-    const res = (await readTokenAndPassword(post({ token: "t", password: 12345678 }))) as NextResponse;
+    const res = (await readLinkSubmission(post({ token: "t", password: 12345678 }))) as NextResponse;
     expect(await res.json()).toEqual({ error: "password must be at least 8 characters" });
   });
 });

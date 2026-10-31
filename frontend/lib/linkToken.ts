@@ -25,7 +25,7 @@ export function tokenFromQuery(req: NextRequest): string | NextResponse {
 }
 
 /** Reads and validates a `{ token, password }` POST body, or returns the 400 to send back. */
-export async function readTokenAndPassword(
+export async function readLinkSubmission(
   req: NextRequest,
 ): Promise<{ token: string; password: string } | NextResponse> {
   const body = await req.json().catch(() => null);

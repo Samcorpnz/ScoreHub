@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@scorehub/db";
 import { isRateLimited, clientIp } from "@/lib/rateLimit";
-import { hashLinkToken, invalidLinkResponse, isLinkUsable, readTokenAndPassword, tokenFromQuery } from "@/lib/linkToken";
+import { hashLinkToken, invalidLinkResponse, isLinkUsable, readLinkSubmission, tokenFromQuery } from "@/lib/linkToken";
 
 // Looks up a pending reset request by token (without consuming it) so the
 // reset page can confirm the link is still valid before asking for a
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "too many requests" }, { status: 429 });
   }
 
-  const input = await readTokenAndPassword(req);
+  const input = await readLinkSubmission(req);
   if (input instanceof NextResponse) return input;
 
   const resetRequest = await prisma.passwordResetRequest.findUnique({ where: { tokenHash: hashLinkToken(input.token) } });
