@@ -2,7 +2,7 @@
 // Kept outside src/ so the Worker's tsconfig, which has no Node types, skips it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findLatestBridgeRelease, pickRelease, type Env, type GitHubRelease, type LookupDeps } from "../src/worker.ts";
+import { findLatestBridgeRelease, matchAsset, pickRelease, type Env, type GitHubRelease, type LookupDeps } from "../src/worker.ts";
 
 const production: Env = { GITHUB_REPO: "Samcorpnz/ScoreHub", RELEASE_TAG_PREFIX: "bridge-v" };
 const uat: Env = {
@@ -94,4 +94,25 @@ test("a failed cache write does not fail the download", async () => {
   };
   const release = await findLatestBridgeRelease(production, { fetch: githubReturning(200, releases), cache });
   assert.equal(release?.tag_name, "bridge-v0.3.1");
+});
+
+test("the lookup sends GITHUB_TOKEN when it is set, and no auth header otherwise", async () => {
+  const seen: (string | null)[] = [];
+  const recording: LookupDeps["fetch"] = async (_url, init) => {
+    seen.push(new Headers(init?.headers).get("Authorization"));
+    return new Response(JSON.stringify(releases));
+  };
+  await findLatestBridgeRelease(production, { fetch: recording, cache: fakeCache() });
+  await findLatestBridgeRelease({ ...production, GITHUB_TOKEN: "t" }, { fetch: recording, cache: fakeCache() });
+  assert.deepEqual(seen, [null, "Bearer t"]);
+});
+
+test("each platform gets its own installer, whatever order GitHub lists them in", () => {
+  const names = ["ScoreHub.Bridge-0.3.1-arm64.dmg", "ScoreHub.Bridge-0.3.1.dmg", "ScoreHub.Bridge.Setup.0.3.1.exe"];
+  const assets = names.map((name) => ({ name, browser_download_url: `https://example.test/${name}` }));
+  for (const list of [assets, [...assets].reverse()]) {
+    assert.equal(matchAsset(list, "mac")?.name, "ScoreHub.Bridge-0.3.1-arm64.dmg");
+    assert.equal(matchAsset(list, "mac-intel")?.name, "ScoreHub.Bridge-0.3.1.dmg");
+    assert.equal(matchAsset(list, "windows")?.name, "ScoreHub.Bridge.Setup.0.3.1.exe");
+  }
 });

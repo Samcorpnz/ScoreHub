@@ -10,6 +10,8 @@
   "routes": [
     { "pattern": "downloads.scorehub.co.nz", "custom_domain": true }
   ],
+  // Secret, set per environment and not stored here: GITHUB_TOKEN, a read-only
+  // token for the release lookup (npx wrangler secret put GITHUB_TOKEN [--env uat]).
   "observability": {
     "enabled": true
   },
